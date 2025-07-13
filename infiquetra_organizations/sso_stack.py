@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
-import aws_cdk as cdk
-from aws_cdk import Stack, aws_sso as sso, aws_iam as iam, CfnOutput, Tags
-from constructs import Construct
 from typing import Dict, List, Optional
+
+import aws_cdk as cdk
+from aws_cdk import CfnOutput, Stack, Tags
+from aws_cdk import aws_iam as iam
+from aws_cdk import aws_sso as sso
+from constructs import Construct
+
 from .organization_stack import OrganizationStack
 
 
