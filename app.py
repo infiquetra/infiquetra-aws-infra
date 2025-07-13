@@ -14,15 +14,15 @@ app = cdk.App()
 # Environment configuration
 env = cdk.Environment(
     account=os.getenv("CDK_DEFAULT_ACCOUNT"),
-    region=os.getenv("CDK_DEFAULT_REGION", "us-east-1")
+    region=os.getenv("CDK_DEFAULT_REGION", "us-east-1"),
 )
 
 # Create the main organization stack
 organization_stack = OrganizationStack(
-    app, 
+    app,
     "InfiquetraOrganizationStack",
     env=env,
-    description="AWS Organizations structure for Infiquetra LLC"
+    description="AWS Organizations structure for Infiquetra LLC",
 )
 
 # Create the SSO stack
@@ -32,7 +32,7 @@ sso_stack = SSOStack(
     env=env,
     description="AWS SSO configuration for Infiquetra LLC",
     # Make SSO stack depend on organization stack
-    organization_stack=organization_stack
+    organization_stack=organization_stack,
 )
 
 app.synth()

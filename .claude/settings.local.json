@@ -22,7 +22,20 @@
       "Bash(aws sso-admin list-instances:*)",
       "Bash(aws sso-admin list-permission-sets:*)",
       "Bash(aws sso-admin describe-permission-set:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(--method PUT )",
+      "Bash(--field required_status_checks[strict]=true )",
+      "Bash(--field required_status_checks[contexts][]=\"validate\" )",
+      "Bash(--field enforce_admins=true )",
+      "Bash(--field required_pull_request_reviews[required_approving_review_count]=1 )",
+      "Bash(--field required_pull_request_reviews[dismiss_stale_reviews]=true )",
+      "Bash(--field restrictions=null)",
+      "Bash(git checkout:*)",
+      "Bash(gh pr create:*)",
+      "Bash(black:*)",
+      "Bash(pip install:*)",
+      "Bash(python3 -m pip install:*)",
+      "Bash(source:*)"
     ],
     "deny": []
   }
