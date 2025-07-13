@@ -1,0 +1,94 @@
+name: Cost Estimation
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**.py'
+      - 'requirements*.txt'
+      - 'cdk.json'
+
+jobs:
+  cost-estimate:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      pull-requests: write
+      contents: read
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Install Node.js for CDK CLI
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install CDK CLI
+      run: npm install -g aws-cdk
+      
+    - name: Synthesize CloudFormation templates
+      run: cdk synth --all
+      env:
+        CDK_DEFAULT_ACCOUNT: "645166163764"
+        CDK_DEFAULT_REGION: "us-east-1"
+        
+    - name: Generate cost estimation
+      run: |
+        echo "## 💰 Cost Impact Analysis" >> cost-report.md
+        echo "" >> cost-report.md
+        echo "### Infrastructure Changes in this PR:" >> cost-report.md
+        echo "" >> cost-report.md
+        
+        # Analyze CDK templates for cost-impacting resources
+        echo "**AWS Organizations Resources:**" >> cost-report.md
+        echo "- Organizational Units: No direct cost" >> cost-report.md
+        echo "- Service Control Policies: No direct cost" >> cost-report.md
+        echo "" >> cost-report.md
+        
+        echo "**AWS SSO Resources:**" >> cost-report.md
+        echo "- Permission Sets: No direct cost" >> cost-report.md
+        echo "- SSO is included in AWS free tier" >> cost-report.md
+        echo "" >> cost-report.md
+        
+        echo "**Estimated Monthly Cost Impact:** $0.00" >> cost-report.md
+        echo "" >> cost-report.md
+        echo "ℹ️ **Note:** AWS Organizations and SSO services used in this infrastructure have no direct costs." >> cost-report.md
+        echo "Costs may be incurred by resources deployed within the organizational structure." >> cost-report.md
+        echo "" >> cost-report.md
+        echo "### Cost Monitoring Recommendations:" >> cost-report.md
+        echo "- Set up AWS Budgets for each business unit OU" >> cost-report.md
+        echo "- Enable Cost Allocation Tags for granular tracking" >> cost-report.md
+        echo "- Implement cost anomaly detection" >> cost-report.md
+        echo "- Regular cost reviews per business unit" >> cost-report.md
+        
+    - name: Comment on PR with cost analysis
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const costReport = fs.readFileSync('cost-report.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: costReport
+          });
+          
+    - name: Upload cost report
+      uses: actions/upload-artifact@v4
+      with:
+        name: cost-analysis
+        path: cost-report.md

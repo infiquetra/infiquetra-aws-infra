@@ -9,7 +9,20 @@
       "Bash(gh api:*)",
       "Bash(git init:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(aws organizations list-accounts:*)",
+      "Bash(aws organizations list-roots:*)",
+      "Bash(aws organizations list-parents:*)",
+      "Bash(aws organizations describe-organizational-unit:*)",
+      "Bash(aws organizations list-organizational-units-for-parent:*)",
+      "Bash(aws sso-admin list-instances:*)",
+      "Bash(aws sso-admin list-permission-sets:*)",
+      "Bash(aws sso-admin describe-permission-set:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": []
   }
