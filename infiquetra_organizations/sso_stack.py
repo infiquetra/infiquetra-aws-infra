@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-from typing import Dict, List, Optional
+import json
+from typing import Any
 
 import aws_cdk as cdk
-from aws_cdk import CfnOutput, Stack, Tags
-from aws_cdk import aws_iam as iam
+from aws_cdk import CfnOutput, Stack
 from aws_cdk import aws_sso as sso
 from constructs import Construct
 
@@ -27,7 +27,7 @@ class SSOStack(Stack):
         scope: Construct,
         construct_id: str,
         organization_stack: OrganizationStack,
-        **kwargs
+        **kwargs: Any,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -50,7 +50,7 @@ class SSOStack(Stack):
             self,
             "CoreAdminPermissionSet",
             name="CoreAdministrator",
-            description="Full administrative access for core infrastructure and security",
+            description="Full administrative access for core infrastructure",
             instance_arn=self.sso_instance_arn,
             session_duration="PT4H",  # 4 hours
             managed_policy_arns=["arn:aws:iam::aws:policy/AdministratorAccess"],
@@ -199,7 +199,7 @@ class SSOStack(Stack):
             self,
             "ConsultingAdminPermissionSet",
             name="ConsultingAdministrator",
-            description="Administrative access for Infiquetra Consulting, LLC resources",
+            description="Administrative access for Infiquetra Consulting, LLC",
             instance_arn=self.sso_instance_arn,
             session_duration="PT4H",  # 4 hours
             managed_policy_arns=["arn:aws:iam::aws:policy/AdministratorAccess"],
@@ -226,7 +226,7 @@ class SSOStack(Stack):
         )
 
     def create_campps_developer_policy(self) -> str:
-        """Create inline policy for CAMPPS developers with specific CAMPPS resource access."""
+        """Create inline policy for CAMPPS developers."""
 
         campps_policy = {
             "Version": "2012-10-17",
@@ -262,7 +262,7 @@ class SSOStack(Stack):
             ],
         }
 
-        return campps_policy
+        return json.dumps(campps_policy)
 
     def create_outputs(self) -> None:
         """Create CloudFormation outputs for permission sets."""
@@ -345,18 +345,32 @@ class SSOStack(Stack):
         )
 
     @property
-    def permission_sets(self) -> Dict[str, str]:
+    def permission_sets(self) -> dict[str, str]:
         """Return permission set ARNs for use by other resources."""
         return {
             "core_admin": self.core_admin_permission_set.attr_permission_set_arn,
-            "security_auditor": self.security_auditor_permission_set.attr_permission_set_arn,
-            "billing_manager": self.billing_manager_permission_set.attr_permission_set_arn,
-            "media_developer": self.media_developer_permission_set.attr_permission_set_arn,
+            "security_auditor": (
+                self.security_auditor_permission_set.attr_permission_set_arn
+            ),
+            "billing_manager": (
+                self.billing_manager_permission_set.attr_permission_set_arn
+            ),
+            "media_developer": (
+                self.media_developer_permission_set.attr_permission_set_arn
+            ),
             "media_admin": self.media_admin_permission_set.attr_permission_set_arn,
-            "apps_developer": self.apps_developer_permission_set.attr_permission_set_arn,
+            "apps_developer": (
+                self.apps_developer_permission_set.attr_permission_set_arn
+            ),
             "apps_admin": self.apps_admin_permission_set.attr_permission_set_arn,
-            "campps_developer": self.campps_developer_permission_set.attr_permission_set_arn,
-            "consulting_developer": self.consulting_developer_permission_set.attr_permission_set_arn,
-            "consulting_admin": self.consulting_admin_permission_set.attr_permission_set_arn,
+            "campps_developer": (
+                self.campps_developer_permission_set.attr_permission_set_arn
+            ),
+            "consulting_developer": (
+                self.consulting_developer_permission_set.attr_permission_set_arn
+            ),
+            "consulting_admin": (
+                self.consulting_admin_permission_set.attr_permission_set_arn
+            ),
             "readonly": self.readonly_permission_set.attr_permission_set_arn,
         }

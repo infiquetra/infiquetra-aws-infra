@@ -27,8 +27,7 @@ Root (645166163764 - infiquetra)
 ├── Apps OU (Infiquetra Apps, LLC)
 │   └── CAMPPS (Migrated CAMPPS accounts)
 │       ├── Production
-│       ├── Development
-│       └── CICD
+│       └── NonProd
 └── Consulting OU (Infiquetra Consulting, LLC)
 ```
 
@@ -67,8 +66,8 @@ cd infiquetra-organizations
 
 2. Set up the Python environment:
 ```bash
-./setup-env.sh
-source .env/bin/activate
+uv sync
+source .venv/bin/activate
 ```
 
 3. Install CDK CLI:
@@ -115,7 +114,6 @@ cdk deploy InfiquetraSSOStack --profile infiquetra-root
 ├── app.py                             # CDK application entry point
 ├── requirements.txt                   # Python dependencies
 ├── requirements-dev.txt               # Development dependencies
-└── setup-env.sh                       # Environment setup script
 ```
 
 ## Migration from Current State
@@ -139,7 +137,7 @@ The existing CAMPPS accounts are currently organized as:
   - Denies root user actions
   - Prevents deletion of logging resources
   - Requires MFA for sensitive actions
-- **Development Cost Control**: Restricts expensive instance types in dev environments
+- **NonProduction Cost Control**: Restricts expensive instance types in non-prod environments
 
 ### Branch Protection
 - Requires pull request reviews
@@ -181,7 +179,7 @@ The existing CAMPPS accounts are currently organized as:
 2. Make your changes to the CDK stacks
 3. Run local validation:
    ```bash
-   source .env/bin/activate
+   source .venv/bin/activate
    black .
    flake8 .
    cdk synth

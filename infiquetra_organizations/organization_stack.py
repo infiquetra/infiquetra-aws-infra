@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
-from typing import Dict, List, Optional
+from typing import Any
 
 import aws_cdk as cdk
-from aws_cdk import CfnOutput, Stack, Tags
-from aws_cdk import aws_iam as iam
+from aws_cdk import CfnOutput, Stack
 from aws_cdk import aws_organizations as organizations
 from constructs import Construct
 
@@ -20,7 +19,7 @@ class OrganizationStack(Stack):
       └── Infiquetra Consulting, LLC (Contracting & consulting services)
     """
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, **kwargs: Any) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         # Organization root ID - this will be looked up from existing organization
@@ -114,24 +113,13 @@ class OrganizationStack(Stack):
             ],
         )
 
-        self.campps_development_ou = organizations.CfnOrganizationalUnit(
+        self.campps_nonprod_ou = organizations.CfnOrganizationalUnit(
             self,
-            "CamppsDevelopmentOU",
-            name="Development",
+            "CamppsNonProdOU",
+            name="NonProd",
             parent_id=self.apps_campps_ou.ref,
             tags=[
-                cdk.CfnTag(key="Environment", value="Development"),
-                cdk.CfnTag(key="Project", value="CAMPPS"),
-            ],
-        )
-
-        self.campps_cicd_ou = organizations.CfnOrganizationalUnit(
-            self,
-            "CamppsCicdOU",
-            name="CICD",
-            parent_id=self.apps_campps_ou.ref,
-            tags=[
-                cdk.CfnTag(key="Environment", value="CICD"),
+                cdk.CfnTag(key="AccountType", value="NonProduction"),
                 cdk.CfnTag(key="Project", value="CAMPPS"),
             ],
         )
@@ -229,18 +217,18 @@ class OrganizationStack(Stack):
             ],
         }
 
-        # Apply cost control to development environments
-        self.dev_cost_control_scp = organizations.CfnPolicy(
+        # Apply cost control to non-production environments
+        self.nonprod_cost_control_scp = organizations.CfnPolicy(
             self,
-            "DevCostControlSCP",
-            name="DevelopmentCostControl",
-            description="Cost controls for development environments",
+            "NonProdCostControlSCP",
+            name="NonProductionCostControl",
+            description="Cost controls for non-production environments",
             type="SERVICE_CONTROL_POLICY",
             content=dev_cost_control_policy,
-            target_ids=[self.campps_development_ou.ref],
+            target_ids=[self.campps_nonprod_ou.ref],
             tags=[
                 cdk.CfnTag(key="PolicyType", value="CostControl"),
-                cdk.CfnTag(key="Environment", value="Development"),
+                cdk.CfnTag(key="AccountType", value="NonProduction"),
             ],
         )
 
@@ -291,20 +279,13 @@ class OrganizationStack(Stack):
 
         CfnOutput(
             self,
-            "CamppsDevelopmentOUId",
-            value=self.campps_development_ou.ref,
-            description="CAMPPS Development OU ID",
-        )
-
-        CfnOutput(
-            self,
-            "CamppsCicdOUId",
-            value=self.campps_cicd_ou.ref,
-            description="CAMPPS CICD OU ID",
+            "CamppsNonProdOUId",
+            value=self.campps_nonprod_ou.ref,
+            description="CAMPPS NonProd OU ID",
         )
 
     @property
-    def organization_structure(self) -> Dict[str, str]:
+    def organization_structure(self) -> dict[str, str]:
         """Return the organization structure mapping for use by other stacks."""
         return {
             "core_ou_id": self.core_ou.ref,
@@ -313,6 +294,5 @@ class OrganizationStack(Stack):
             "consulting_ou_id": self.consulting_ou.ref,
             "campps_ou_id": self.apps_campps_ou.ref,
             "campps_production_ou_id": self.campps_production_ou.ref,
-            "campps_development_ou_id": self.campps_development_ou.ref,
-            "campps_cicd_ou_id": self.campps_cicd_ou.ref,
+            "campps_nonprod_ou_id": self.campps_nonprod_ou.ref,
         }
