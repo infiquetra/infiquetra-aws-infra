@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import json
 from typing import Any
 
 import aws_cdk as cdk
@@ -53,7 +52,7 @@ class SSOStack(Stack):
             description="Full administrative access for core infrastructure",
             instance_arn=self.sso_instance_arn,
             session_duration="PT4H",  # 4 hours
-            managed_policy_arns=["arn:aws:iam::aws:policy/AdministratorAccess"],
+            managed_policies=["arn:aws:iam::aws:policy/AdministratorAccess"],
             tags=[
                 cdk.CfnTag(key="Role", value="CoreAdministrator"),
                 cdk.CfnTag(key="BusinessUnit", value="Core"),
@@ -69,7 +68,7 @@ class SSOStack(Stack):
             description="Read-only access for security auditing and compliance",
             instance_arn=self.sso_instance_arn,
             session_duration="PT8H",  # 8 hours
-            managed_policy_arns=[
+            managed_policies=[
                 "arn:aws:iam::aws:policy/SecurityAudit",
                 "arn:aws:iam::aws:policy/ReadOnlyAccess",
             ],
@@ -88,7 +87,7 @@ class SSOStack(Stack):
             description="Billing and cost management access",
             instance_arn=self.sso_instance_arn,
             session_duration="PT12H",  # 12 hours
-            managed_policy_arns=["arn:aws:iam::aws:policy/job-function/Billing"],
+            managed_policies=["arn:aws:iam::aws:policy/job-function/Billing"],
             tags=[
                 cdk.CfnTag(key="Role", value="BillingManager"),
                 cdk.CfnTag(key="BusinessUnit", value="Core"),
@@ -104,7 +103,7 @@ class SSOStack(Stack):
             description="Development access for media content and branding workloads",
             instance_arn=self.sso_instance_arn,
             session_duration="PT8H",  # 8 hours
-            managed_policy_arns=["arn:aws:iam::aws:policy/PowerUserAccess"],
+            managed_policies=["arn:aws:iam::aws:policy/PowerUserAccess"],
             tags=[
                 cdk.CfnTag(key="Role", value="Developer"),
                 cdk.CfnTag(key="BusinessUnit", value="Media"),
@@ -120,7 +119,7 @@ class SSOStack(Stack):
             description="Administrative access for Infiquetra Media, LLC resources",
             instance_arn=self.sso_instance_arn,
             session_duration="PT4H",  # 4 hours
-            managed_policy_arns=["arn:aws:iam::aws:policy/AdministratorAccess"],
+            managed_policies=["arn:aws:iam::aws:policy/AdministratorAccess"],
             tags=[
                 cdk.CfnTag(key="Role", value="Administrator"),
                 cdk.CfnTag(key="BusinessUnit", value="Media"),
@@ -136,7 +135,7 @@ class SSOStack(Stack):
             description="Development access for software product development",
             instance_arn=self.sso_instance_arn,
             session_duration="PT8H",  # 8 hours
-            managed_policy_arns=["arn:aws:iam::aws:policy/PowerUserAccess"],
+            managed_policies=["arn:aws:iam::aws:policy/PowerUserAccess"],
             tags=[
                 cdk.CfnTag(key="Role", value="Developer"),
                 cdk.CfnTag(key="BusinessUnit", value="Apps"),
@@ -152,7 +151,7 @@ class SSOStack(Stack):
             description="Administrative access for Infiquetra Apps, LLC resources",
             instance_arn=self.sso_instance_arn,
             session_duration="PT4H",  # 4 hours
-            managed_policy_arns=["arn:aws:iam::aws:policy/AdministratorAccess"],
+            managed_policies=["arn:aws:iam::aws:policy/AdministratorAccess"],
             tags=[
                 cdk.CfnTag(key="Role", value="Administrator"),
                 cdk.CfnTag(key="BusinessUnit", value="Apps"),
@@ -168,7 +167,7 @@ class SSOStack(Stack):
             description="Development access for CAMPPS application workloads",
             instance_arn=self.sso_instance_arn,
             session_duration="PT8H",  # 8 hours
-            managed_policy_arns=["arn:aws:iam::aws:policy/PowerUserAccess"],
+            managed_policies=["arn:aws:iam::aws:policy/PowerUserAccess"],
             inline_policy=self.create_campps_developer_policy(),
             tags=[
                 cdk.CfnTag(key="Role", value="Developer"),
@@ -186,7 +185,7 @@ class SSOStack(Stack):
             description="Development access for consulting and contracting projects",
             instance_arn=self.sso_instance_arn,
             session_duration="PT8H",  # 8 hours
-            managed_policy_arns=["arn:aws:iam::aws:policy/PowerUserAccess"],
+            managed_policies=["arn:aws:iam::aws:policy/PowerUserAccess"],
             tags=[
                 cdk.CfnTag(key="Role", value="Developer"),
                 cdk.CfnTag(key="BusinessUnit", value="Consulting"),
@@ -202,7 +201,7 @@ class SSOStack(Stack):
             description="Administrative access for Infiquetra Consulting, LLC",
             instance_arn=self.sso_instance_arn,
             session_duration="PT4H",  # 4 hours
-            managed_policy_arns=["arn:aws:iam::aws:policy/AdministratorAccess"],
+            managed_policies=["arn:aws:iam::aws:policy/AdministratorAccess"],
             tags=[
                 cdk.CfnTag(key="Role", value="Administrator"),
                 cdk.CfnTag(key="BusinessUnit", value="Consulting"),
@@ -218,14 +217,14 @@ class SSOStack(Stack):
             description="Read-only access for contractors and temporary users",
             instance_arn=self.sso_instance_arn,
             session_duration="PT4H",  # 4 hours
-            managed_policy_arns=["arn:aws:iam::aws:policy/ReadOnlyAccess"],
+            managed_policies=["arn:aws:iam::aws:policy/ReadOnlyAccess"],
             tags=[
                 cdk.CfnTag(key="Role", value="ReadOnly"),
                 cdk.CfnTag(key="AccessLevel", value="ReadOnly"),
             ],
         )
 
-    def create_campps_developer_policy(self) -> str:
+    def create_campps_developer_policy(self) -> dict:
         """Create inline policy for CAMPPS developers."""
 
         campps_policy = {
@@ -262,7 +261,7 @@ class SSOStack(Stack):
             ],
         }
 
-        return json.dumps(campps_policy)
+        return campps_policy
 
     def create_outputs(self) -> None:
         """Create CloudFormation outputs for permission sets."""
