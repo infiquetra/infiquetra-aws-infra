@@ -56,9 +56,9 @@ class OrganizationStack(Stack):
             name="Media",
             parent_id=self.root_id,
             tags=[
-                cdk.CfnTag(key="Purpose", value="Online content, branding, media"),
+                cdk.CfnTag(key="Purpose", value="Online content branding media"),
                 cdk.CfnTag(key="BusinessUnit", value="Media"),
-                cdk.CfnTag(key="LegalEntity", value="Infiquetra Media, LLC"),
+                cdk.CfnTag(key="LegalEntity", value="Infiquetra Media LLC"),
             ],
         )
 
@@ -71,7 +71,7 @@ class OrganizationStack(Stack):
             tags=[
                 cdk.CfnTag(key="Purpose", value="Software product development"),
                 cdk.CfnTag(key="BusinessUnit", value="Apps"),
-                cdk.CfnTag(key="LegalEntity", value="Infiquetra Apps, LLC"),
+                cdk.CfnTag(key="LegalEntity", value="Infiquetra Apps LLC"),
             ],
         )
 
@@ -82,9 +82,9 @@ class OrganizationStack(Stack):
             name="Consulting",
             parent_id=self.root_id,
             tags=[
-                cdk.CfnTag(key="Purpose", value="Contracting & consulting services"),
+                cdk.CfnTag(key="Purpose", value="Contracting and consulting services"),
                 cdk.CfnTag(key="BusinessUnit", value="Consulting"),
-                cdk.CfnTag(key="LegalEntity", value="Infiquetra Consulting, LLC"),
+                cdk.CfnTag(key="LegalEntity", value="Infiquetra Consulting LLC"),
             ],
         )
 
@@ -246,21 +246,21 @@ class OrganizationStack(Stack):
             self,
             "MediaOUId",
             value=self.media_ou.ref,
-            description="Media OU ID for Infiquetra Media, LLC",
+            description="Media OU ID for Infiquetra Media LLC",
         )
 
         CfnOutput(
             self,
             "AppsOUId",
             value=self.apps_ou.ref,
-            description="Apps OU ID for Infiquetra Apps, LLC",
+            description="Apps OU ID for Infiquetra Apps LLC",
         )
 
         CfnOutput(
             self,
             "ConsultingOUId",
             value=self.consulting_ou.ref,
-            description="Consulting OU ID for Infiquetra Consulting, LLC",
+            description="Consulting OU ID for Infiquetra Consulting LLC",
         )
 
         CfnOutput(
