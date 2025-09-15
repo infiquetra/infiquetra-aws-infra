@@ -58,7 +58,7 @@ jobs:
       uses: aws-actions/configure-aws-credentials@v4
       with:
         role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-        role-session-name: GitHub-Actions-Deploy
+        role-session-name: GitHubActions-${{ github.run_id }}-${{ github.run_attempt }}
         aws-region: us-east-1
         
     - name: CDK Bootstrap (if needed)

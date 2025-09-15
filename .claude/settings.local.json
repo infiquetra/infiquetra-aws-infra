@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Read(//Users/jefcox/**)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(export CDK_DEFAULT_ACCOUNT=123456789012)",
+      "Bash(ruff format:*)",
+      "Bash(ruff check:*)"
     ],
     "deny": [],
     "ask": []
