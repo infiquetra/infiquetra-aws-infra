@@ -47,6 +47,34 @@ Root (645166163764 - infiquetra)
 | ConsultingAdministrator | Full access for consulting resources | 4 hours | Consulting |
 | ReadOnlyAccess | Read-only access for contractors | 4 hours | Any |
 
+## GitHub Actions Authentication
+
+### OIDC vs Traditional Credentials
+
+This repository uses **GitHub OIDC (OpenID Connect)** for secure, passwordless authentication between GitHub Actions and AWS. This provides several security benefits over traditional credential-based authentication:
+
+**🔐 Security Benefits:**
+- **No Long-lived Credentials**: No AWS access keys stored in GitHub secrets
+- **Automatic Rotation**: Credentials are automatically rotated by AWS
+- **Audit Trail**: All actions logged via AWS CloudTrail with session tracking
+- **Least Privilege**: Role permissions scoped to specific resources
+- **Organization Restricted**: Only infiquetra organization members can trigger workflows
+- **Branch Protected**: Limited to main/develop branches and approved pull requests
+
+**🚀 When to Use OIDC Bootstrap:**
+- First-time repository setup
+- Setting up CI/CD for new AWS accounts
+- Migrating from credential-based GitHub Actions
+- Enhancing security posture
+
+### Authentication Methods by Use Case
+
+| Use Case | Authentication Method | Setup Required |
+|----------|----------------------|----------------|
+| **Local Development** | AWS SSO profiles (`infiquetra-root`) | AWS CLI + SSO setup |
+| **Manual Deployments** | AWS SSO profiles (`infiquetra-root`) | AWS CLI + SSO setup |
+| **GitHub Actions CI/CD** | OIDC role assumption | GitHub OIDC bootstrap (one-time) |
+
 ## Getting Started
 
 ### Prerequisites
@@ -54,7 +82,68 @@ Root (645166163764 - infiquetra)
 - Python 3.12+
 - Node.js 18+ (for CDK CLI)
 - AWS CLI configured with `infiquetra-root` profile
-- AWS SSO access to the management account
+- AWS SSO access to the management account (645166163764)
+- **GitHub OIDC Bootstrap**: Required for GitHub Actions CI/CD (see Initial Setup below)
+
+### Initial Setup: GitHub OIDC Bootstrap (One-Time)
+
+> **⚠️ Critical First Step**: Before using GitHub Actions, you must deploy the OIDC bootstrap to enable secure authentication.
+
+**This setup is required once per AWS account to enable GitHub Actions deployments.**
+
+#### 1. Deploy the GitHub OIDC Provider
+
+```bash
+# Navigate to bootstrap directory
+cd github-oidc-bootstrap
+
+# Configure environment
+cp .env.example .env
+# Edit .env and set:
+# CDK_DEFAULT_ACCOUNT=645166163764
+# CDK_DEFAULT_REGION=us-east-1
+
+# Install dependencies and run quality checks
+make install
+make check
+
+# Deploy the OIDC provider and IAM role
+make deploy
+```
+
+#### 2. Retrieve the Role ARN
+
+After deployment, copy the role ARN from the stack output:
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name GitHubOIDCBootstrap \
+  --profile infiquetra-root \
+  --query 'Stacks[0].Outputs[?OutputKey==`GitHubActionsRoleArn`].OutputValue' \
+  --output text
+```
+
+#### 3. Configure GitHub Repository Secret
+
+In your GitHub repository settings:
+1. Go to **Settings** → **Secrets and variables** → **Actions**
+2. Create a new repository secret:
+   - **Name**: `AWS_DEPLOY_ROLE_ARN`
+   - **Value**: `arn:aws:iam::645166163764:role/GitHubActionsDeployRole`
+
+#### 4. Verify OIDC Setup
+
+```bash
+# Verify OIDC provider exists
+aws iam list-open-id-connect-providers --profile infiquetra-root
+
+# Verify role exists
+aws iam get-role --role-name GitHubActionsDeployRole --profile infiquetra-root
+```
+
+✅ **GitHub Actions are now ready to securely deploy to AWS!**
+
+> 📖 **Detailed Documentation**: See [github-oidc-bootstrap/README.md](github-oidc-bootstrap/README.md) for comprehensive OIDC setup documentation.
 
 ### Installation
 
@@ -105,9 +194,17 @@ cdk deploy InfiquetraSSOStack --profile infiquetra-root
 │   └── audit-current-state.md         # Current AWS organization audit
 ├── .github/workflows/                 # GitHub Actions CI/CD pipelines
 │   ├── validate.yml                   # Code validation and linting
-│   ├── deploy.yml                     # Automated deployment
+│   ├── deploy.yml                     # Automated deployment (uses OIDC)
 │   ├── security-scan.yml              # Security scanning
 │   └── cost-estimate.yml              # Cost impact analysis
+├── github-oidc-bootstrap/             # GitHub OIDC provider setup (one-time)
+│   ├── app.py                         # CDK app for OIDC configuration
+│   ├── github_oidc_bootstrap/         # OIDC stack implementation
+│   │   └── github_oidc_stack.py       # OIDC provider and IAM role
+│   ├── tests/                         # Comprehensive test suite (88% coverage)
+│   ├── README.md                      # Detailed OIDC setup guide
+│   ├── Makefile                       # Development automation
+│   └── pyproject.toml                 # Modern Python configuration
 ├── infiquetra_organizations/          # CDK stack implementations
 │   ├── organization_stack.py          # AWS Organizations structure
 │   └── sso_stack.py                   # AWS SSO permission sets
@@ -147,6 +244,8 @@ The existing CAMPPS accounts are currently organized as:
 
 ## CI/CD Workflows
 
+> **Authentication**: All GitHub Actions workflows use the GitHub OIDC provider and IAM role created by the bootstrap process. No AWS access keys are stored in GitHub secrets.
+
 ### Validation Pipeline (`validate.yml`)
 - Python linting with flake8
 - Code formatting with black
@@ -156,10 +255,12 @@ The existing CAMPPS accounts are currently organized as:
 - CloudFormation template linting
 
 ### Deployment Pipeline (`deploy.yml`)
-- Automated deployment on main branch
-- Manual deployment with stack selection
-- AWS credentials via OIDC
-- Deployment summaries and notifications
+- **Automated deployment** on main branch using GitHub OIDC
+- **Manual deployment** with stack selection via workflow_dispatch
+- **Secure Authentication**: AWS credentials via OIDC role assumption
+- **Session Tracking**: Unique session names for audit trail
+- **Deployment summaries** and failure notifications
+- **Multi-region ready**: Supports matrix deployments to us-east-1 and us-west-2
 
 ### Security Scanning (`security-scan.yml`)
 - Daily automated security scans
@@ -207,6 +308,27 @@ The existing CAMPPS accounts are currently organized as:
 
 ### Common Issues
 
+**GitHub Actions Authentication Failures**
+```bash
+# Check if OIDC provider exists
+aws iam list-open-id-connect-providers --profile infiquetra-root
+
+# Verify role and trust policy
+aws iam get-role --role-name GitHubActionsDeployRole --profile infiquetra-root
+
+# Check CloudTrail for role assumption attempts
+aws logs filter-log-events \
+  --log-group-name /aws/cloudtrail/management-events \
+  --filter-pattern "{ $.eventName = AssumeRoleWithWebIdentity }" \
+  --profile infiquetra-root
+```
+
+**OIDC Trust Policy Issues**
+- Verify repository name matches exactly: `infiquetra/infiquetra-organizations`
+- Check branch restrictions in trust policy
+- Ensure GitHub Actions has `id-token: write` permissions
+- Confirm actor is part of infiquetra organization
+
 **CDK Synthesis Fails**
 ```bash
 # Check your AWS credentials
@@ -217,9 +339,17 @@ pip install -r requirements.txt
 ```
 
 **Permission Denied Errors**
-- Ensure you're using the correct AWS profile
-- Verify SSO session is active
+
+*For Local/Manual Deployments:*
+- Ensure you're using the correct AWS profile (`infiquetra-root`)
+- Verify SSO session is active: `aws sso login --profile infiquetra-root`
 - Check IAM permissions for organizations and SSO operations
+
+*For GitHub Actions:*
+- Verify OIDC bootstrap was deployed successfully
+- Check GitHub repository secret `AWS_DEPLOY_ROLE_ARN` is set correctly
+- Review GitHub Actions logs for role assumption errors
+- Ensure workflow has `id-token: write` permission
 
 **CAMPPS Account Migration**
 - Resolve the suspended `campps-cicd` account first
