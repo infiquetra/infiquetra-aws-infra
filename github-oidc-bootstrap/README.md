@@ -24,13 +24,19 @@ Before deploying this bootstrap stack, ensure you have:
 
 - [uv](https://docs.astral.sh/uv/) installed (modern Python package manager)
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) installed and configured
-- [AWS CDK](https://docs.aws.amazon.com/cdk/v2/guide/getting_started.html) installed (`npm install -g aws-cdk`)
+- [AWS CDK CLI](https://docs.aws.amazon.com/cdk/v2/guide/getting_started.html) **v2.1029.1 or later** (`npm install -g aws-cdk@latest`)
 - AWS credentials configured with administrative access
 - Python 3.11+ installed
 
+> **⚠️ CDK Version Requirement**: This project requires CDK CLI v2.1029.1+ to support cloud assembly schema v48.0.0. If you encounter version mismatch errors, update your CDK CLI:
+> ```bash
+> npm install -g aws-cdk@latest
+> cdk --version  # Should show 2.1029.1 or higher
+> ```
+
 ## Quick Start
 
-### 1. Clone and Navigate
+### 1. Navigate to Bootstrap Directory
 
 ```bash
 cd github-oidc-bootstrap
@@ -42,39 +48,82 @@ cd github-oidc-bootstrap
 # Copy environment template
 cp .env.example .env
 
-# Edit .env with your account details
-export CDK_DEFAULT_ACCOUNT=your-account-id
-export CDK_DEFAULT_REGION=us-east-1
+# Edit .env with your AWS account details:
+# CDK_DEFAULT_ACCOUNT=645166163764
+# CDK_DEFAULT_REGION=us-east-1
 ```
 
 ### 3. Install Dependencies
 
 ```bash
-# Using modern uv package manager
-make install
-
-# Or manually with uv
+# Install with uv (recommended)
 uv sync --dev
+
+# Or use make shortcut
+make install
 ```
 
-### 4. Quality Checks
+### 4. Deploy the Stack
 
 ```bash
-# Run all quality checks (tests, linting, security)
-make check
+# Deploy directly with CDK
+uv run cdk deploy --profile infiquetra-root
+
+# Optional: Synthesize first to review templates
+uv run cdk synth
 ```
 
-### 5. Deploy Stack
+### 5. Verify Deployment
 
 ```bash
-# Synthesize and validate templates
-make synth validate
-
-# Deploy with confirmation
-make deploy
+# Check stack status
+aws cloudformation describe-stacks \
+  --stack-name GitHubOIDCBootstrap \
+  --profile infiquetra-root \
+  --query 'Stacks[0].StackStatus'
 ```
 
-## Modern Development Workflow
+## Common Commands
+
+### Deployment Commands
+
+```bash
+# Deploy the stack
+uv run cdk deploy --profile infiquetra-root
+
+# Deploy with no approval prompts
+uv run cdk deploy --require-approval never --profile infiquetra-root
+
+# Synthesize CloudFormation templates
+uv run cdk synth
+
+# Show diff before deployment
+uv run cdk diff --profile infiquetra-root
+
+# Destroy the stack (when needed)
+uv run cdk destroy --profile infiquetra-root
+```
+
+### Development Commands
+
+```bash
+# Run tests
+make test
+# Or: uv run pytest tests/ -v
+
+# Lint code
+make lint
+# Or: uv run ruff check . && uv run mypy .
+
+# Format code
+make format
+# Or: uv run ruff format . && uv run ruff check --fix .
+
+# Clean up generated files
+make clean
+```
+
+## Modern Development Tooling
 
 This project uses modern Python tooling:
 
@@ -85,16 +134,22 @@ This project uses modern Python tooling:
 - **bandit**: Security vulnerability scanner
 - **cfn-lint**: CloudFormation template validation
 
-### 6. Retrieve the Role ARN
+## Retrieve the Role ARN
 
-After successful deployment, the stack will output the IAM role ARN. You can also retrieve it with:
+After successful deployment, retrieve the IAM role ARN for GitHub Actions:
 
 ```bash
+# Get the role ARN from stack outputs
 aws cloudformation describe-stacks \
   --stack-name GitHubOIDCBootstrap \
   --profile infiquetra-root \
   --query 'Stacks[0].Outputs[?OutputKey==`GitHubActionsRoleArn`].OutputValue' \
   --output text
+```
+
+**Expected output:**
+```
+arn:aws:iam::645166163764:role/GitHubActionsDeployRole
 ```
 
 ## Setting up GitHub Repository
@@ -108,7 +163,7 @@ Navigate to your GitHub repository settings and add a new repository secret:
 
 ### 2. Update Your Workflow
 
-The main deployment workflow (`.github/workflows/deploy.yml`) should be updated to use OIDC authentication instead of hardcoded credentials.
+The main deployment workflow (`.github/workflows/deploy.yml`) should be updated to use OIDC authentication. The workflow is already configured to use the `AWS_DEPLOY_ROLE_ARN` secret.
 
 ## Security Features
 
@@ -134,41 +189,105 @@ The role includes permissions for:
 
 ### Common Issues
 
-1. **Profile not found**: Ensure the `infiquetra-root` AWS profile is configured
-2. **Insufficient permissions**: The deployment profile needs administrative access
-3. **Region mismatch**: This stack deploys to `us-east-1` by default
+1. **CDK Version Mismatch**:
+   ```
+   Error: Maximum schema version supported is 45.x.x, but found 48.0.0
+   ```
+   **Solution**: Update CDK CLI:
+   ```bash
+   npm install -g aws-cdk@latest
+   cdk --version  # Should show 2.1029.1 or higher
+   ```
 
-### Verification
+2. **Profile not found**:
+   ```bash
+   aws configure list-profiles  # Check available profiles
+   aws sso login --profile infiquetra-root  # Login if using SSO
+   ```
 
-To verify the OIDC provider was created correctly:
+3. **Stack already exists**:
+   ```bash
+   # View existing stack
+   aws cloudformation describe-stacks --stack-name GitHubOIDCBootstrap --profile infiquetra-root
+   ```
 
+4. **Insufficient permissions**: The deployment profile needs administrative access to create IAM roles and OIDC providers
+
+### Verification Commands
+
+**Verify OIDC provider:**
 ```bash
 aws iam list-open-id-connect-providers --profile infiquetra-root
+# Should show: token.actions.githubusercontent.com
 ```
 
-To verify the role exists:
-
+**Verify IAM role:**
 ```bash
 aws iam get-role --role-name GitHubActionsDeployRole --profile infiquetra-root
+# Should show role with GitHub trust policy
+```
+
+**Test GitHub Actions locally (optional):**
+```bash
+# Use act to test workflows locally (requires Docker)
+act -j test-oidc --secret-file .env
 ```
 
 ## Cleanup
 
-To remove the bootstrap resources:
+To remove the bootstrap resources when no longer needed:
 
 ```bash
-cdk destroy --profile infiquetra-root
+# Destroy the stack
+uv run cdk destroy --profile infiquetra-root
+
+# Confirm when prompted
+# Are you sure you want to delete: GitHubOIDCBootstrap (y/n)? y
 ```
 
 **⚠️ Warning**: Only destroy this stack if you no longer need GitHub Actions to deploy to your AWS account.
 
 ## Next Steps
 
-After deploying this bootstrap stack:
+After successfully deploying this bootstrap stack:
 
-1. Update the main repository's deployment workflow to use OIDC
-2. Remove any hardcoded AWS credentials from GitHub secrets
-3. Test the deployment pipeline with a test branch or pull request
+1. **Copy the Role ARN**: Save the `GitHubActionsDeployRole` ARN from the stack outputs
+2. **Set GitHub Secret**: Add `AWS_DEPLOY_ROLE_ARN` secret to your repository
+3. **Test the Pipeline**: Create a test PR to verify GitHub Actions can assume the role
+4. **Clean Up**: Remove any old AWS access keys from GitHub secrets
+
+## Troubleshooting
+
+### Deployment Issues
+
+**CDK Version Errors:**
+```bash
+# Update CDK CLI if you see schema version errors
+npm install -g aws-cdk@latest
+cdk --version  # Should be 2.1029.1 or higher
+```
+
+**Profile Issues:**
+```bash
+# Verify AWS profile is configured
+aws sts get-caller-identity --profile infiquetra-root
+
+# Configure SSO if needed
+aws sso login --profile infiquetra-root
+```
+
+**Permission Issues:**
+- Ensure the `infiquetra-root` profile has administrative access
+- Check that you're deploying to the correct account (645166163764)
+
+### Quick Health Check
+
+```bash
+# Test your setup before deployment
+uv --version      # Should show uv version
+cdk --version     # Should show 2.1029.1+
+aws sts get-caller-identity --profile infiquetra-root  # Should show correct account
+```
 
 ## Support
 

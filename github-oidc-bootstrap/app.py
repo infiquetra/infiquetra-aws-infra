@@ -46,7 +46,7 @@ github_oidc_stack = GitHubOIDCStack(
 
 # Add tags for resource management
 cdk.Tags.of(app).add("Project", "Infiquetra Organizations")
-cdk.Tags.of(app).add("Environment", "Bootstrap")
+cdk.Tags.of(app).add("Environment", "OIDC Bootstrap")
 cdk.Tags.of(app).add("ManagedBy", "CDK")
 
 app.synth()
