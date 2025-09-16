@@ -73,7 +73,7 @@ This repository uses **GitHub OIDC (OpenID Connect)** for secure, passwordless a
 |----------|----------------------|----------------|
 | **Local Development** | AWS SSO profiles (`infiquetra-root`) | AWS CLI + SSO setup |
 | **Manual Deployments** | AWS SSO profiles (`infiquetra-root`) | AWS CLI + SSO setup |
-| **GitHub Actions CI/CD** | OIDC role assumption | GitHub OIDC bootstrap (one-time) |
+| **GitHub Actions CI/CD** | OIDC role assumption | GitHub OIDC bootstrap deployment |
 
 ## Getting Started
 
@@ -103,12 +103,11 @@ cp .env.example .env
 # CDK_DEFAULT_ACCOUNT=645166163764
 # CDK_DEFAULT_REGION=us-east-1
 
-# Install dependencies and run quality checks
-make install
-make check
+# Install dependencies
+uv sync --dev
 
 # Deploy the OIDC provider and IAM role
-make deploy
+uv run cdk deploy --profile infiquetra-root
 ```
 
 #### 2. Retrieve the Role ARN
@@ -144,6 +143,8 @@ aws iam get-role --role-name GitHubActionsDeployRole --profile infiquetra-root
 ✅ **GitHub Actions are now ready to securely deploy to AWS!**
 
 > 📖 **Detailed Documentation**: See [github-oidc-bootstrap/README.md](github-oidc-bootstrap/README.md) for comprehensive OIDC setup documentation.
+
+> **Note**: The bootstrap deployment has been simplified to use direct CDK commands. The Makefile approach has been replaced with transparent uv and CDK commands.
 
 ### Installation
 
