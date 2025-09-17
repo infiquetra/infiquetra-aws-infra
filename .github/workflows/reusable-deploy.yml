@@ -1,0 +1,155 @@
+name: Reusable Deploy Workflow
+
+on:
+  workflow_call:
+    inputs:
+      stack-name:
+        description: 'CDK stack name to deploy'
+        required: true
+        type: string
+      working-directory:
+        description: 'Working directory for deployment'
+        required: false
+        default: '.'
+        type: string
+      aws-region:
+        description: 'AWS region for deployment'
+        required: false
+        default: 'us-east-1'
+        type: string
+      environment:
+        description: 'Environment name'
+        required: false
+        default: 'production'
+        type: string
+      require-approval:
+        description: 'Whether to require manual approval'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      AWS_DEPLOY_ROLE_ARN:
+        description: 'AWS IAM role ARN for deployment'
+        required: true
+    outputs:
+      deployment-result:
+        description: 'Deployment execution result'
+        value: ${{ jobs.deploy.outputs.result }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    outputs:
+      result: ${{ steps.deploy-result.outputs.result }}
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: ⚡ Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: 📦 Install dependencies
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: 🟢 Install Node.js and CDK CLI
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: 🏗️ Install CDK CLI
+      run: npm install -g aws-cdk
+
+    - name: 🔐 Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+        role-session-name: GitHubActions-${{ github.run_id }}-${{ github.run_attempt }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: 🚀 Bootstrap CDK (if needed)
+      working-directory: ${{ inputs.working-directory }}
+      run: cdk bootstrap --profile default
+      continue-on-error: true
+      env:
+        CDK_DEFAULT_ACCOUNT: "645166163764"
+        CDK_DEFAULT_REGION: ${{ inputs.aws-region }}
+
+    - name: ⏳ Manual approval check
+      if: ${{ inputs.require-approval }}
+      run: |
+        echo "⏳ **Manual approval required for deployment**" >> $GITHUB_STEP_SUMMARY
+        echo "This deployment requires manual approval before proceeding." >> $GITHUB_STEP_SUMMARY
+
+    - name: 🚀 Deploy CDK stack
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "## 🚀 Deploying ${{ inputs.stack-name }}" >> $GITHUB_STEP_SUMMARY
+
+        if [[ "${{ inputs.working-directory }}" == *"github-oidc-bootstrap"* ]]; then
+          # Use uv for OIDC bootstrap deployment
+          export GITHUB_REPO="infiquetra-aws-infra"
+          uv run cdk deploy ${{ inputs.stack-name }} --require-approval never
+        else
+          # Use regular CDK for other deployments
+          cdk deploy ${{ inputs.stack-name }} --require-approval never
+        fi
+
+        echo "✅ **${{ inputs.stack-name }} deployed successfully**" >> $GITHUB_STEP_SUMMARY
+      env:
+        CDK_DEFAULT_ACCOUNT: "645166163764"
+        CDK_DEFAULT_REGION: ${{ inputs.aws-region }}
+        GITHUB_REPO: "infiquetra-aws-infra"
+
+    - name: 🔍 Verify deployment
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "## 🔍 Deployment Verification" >> $GITHUB_STEP_SUMMARY
+
+        # Check stack status
+        aws cloudformation describe-stacks \
+          --stack-name ${{ inputs.stack-name }} \
+          --region ${{ inputs.aws-region }} \
+          --query 'Stacks[0].StackStatus' \
+          --output text >> $GITHUB_STEP_SUMMARY || echo "❌ **Failed to verify stack status**" >> $GITHUB_STEP_SUMMARY
+
+    - name: 📊 Generate deployment summary
+      run: |
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 📊 Deployment Details" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Stack**: ${{ inputs.stack-name }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Region**: ${{ inputs.aws-region }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Working Directory**: ${{ inputs.working-directory }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Deployment Time**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+    - name: 📊 Set deployment result
+      id: deploy-result
+      run: echo "result=success" >> $GITHUB_OUTPUT
+
+    - name: 🚨 Handle deployment failure
+      if: failure()
+      run: |
+        echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Stack**: ${{ inputs.stack-name }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Error**: Check the deployment logs above for details" >> $GITHUB_STEP_SUMMARY
+        echo "result=failure" >> $GITHUB_OUTPUT

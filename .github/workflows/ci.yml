@@ -1,0 +1,184 @@
+name: CI Pipeline
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  CDK_DEFAULT_ACCOUNT: "645166163764"
+  CDK_DEFAULT_REGION: "us-east-1"
+  GITHUB_REPO: "infiquetra-aws-infra"
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
+
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: 📦 Cache Python dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: ⚡ Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: 🟢 Install Node.js for CDK CLI
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: 🏗️ Install CDK CLI and security tools
+      run: |
+        npm install -g aws-cdk
+        pip install semgrep checkov
+
+    - name: 🧹 Run Python linting
+      run: |
+        echo "## 🧹 Code Quality Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Flake8 critical errors
+        echo "### Critical Issues" >> $GITHUB_STEP_SUMMARY
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || echo "❌ Critical issues found" >> $GITHUB_STEP_SUMMARY
+
+        # Flake8 all issues
+        echo "### All Issues" >> $GITHUB_STEP_SUMMARY
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics >> $GITHUB_STEP_SUMMARY
+
+    - name: 🎨 Run Python formatting check
+      run: |
+        black --check . || {
+          echo "❌ **Black formatting issues found**" >> $GITHUB_STEP_SUMMARY
+          echo "Run \`black .\` to fix formatting" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        }
+        echo "✅ **Black formatting passed**" >> $GITHUB_STEP_SUMMARY
+
+    - name: 📚 Run import sorting check
+      run: |
+        isort --check-only . || {
+          echo "❌ **Import sorting issues found**" >> $GITHUB_STEP_SUMMARY
+          echo "Run \`isort .\` to fix import sorting" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        }
+        echo "✅ **Import sorting passed**" >> $GITHUB_STEP_SUMMARY
+
+    - name: 🔒 Run security scanning
+      run: |
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Bandit security scan
+        bandit -r . -f json -o bandit-report.json || echo "⚠️ Bandit found security issues" >> $GITHUB_STEP_SUMMARY
+
+        # Semgrep security scan
+        semgrep --config=auto --json --output=semgrep-report.json . || echo "⚠️ Semgrep found security issues" >> $GITHUB_STEP_SUMMARY
+
+        echo "📊 Security scan results available in artifacts" >> $GITHUB_STEP_SUMMARY
+      continue-on-error: true
+
+    - name: 🏗️ CDK Synthesis
+      run: |
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 🏗️ CDK Synthesis Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Synthesize main stacks
+        cdk synth --all || {
+          echo "❌ **CDK synthesis failed**" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        }
+
+        # Synthesize OIDC bootstrap
+        cd github-oidc-bootstrap
+        uv run cdk synth || {
+          echo "❌ **OIDC Bootstrap synthesis failed**" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        }
+        cd ..
+
+        echo "✅ **CDK synthesis successful**" >> $GITHUB_STEP_SUMMARY
+
+    - name: 🛡️ Run CloudFormation security scanning
+      run: |
+        # Run Checkov on CloudFormation templates
+        checkov -d cdk.out --framework cloudformation --output json --output-file checkov-report.json || echo "⚠️ Checkov found CloudFormation security issues" >> $GITHUB_STEP_SUMMARY
+
+        # Run Checkov on OIDC bootstrap
+        checkov -d github-oidc-bootstrap/cdk.out --framework cloudformation --output json --output-file checkov-bootstrap-report.json || echo "⚠️ Checkov found OIDC Bootstrap security issues" >> $GITHUB_STEP_SUMMARY
+      continue-on-error: true
+
+    - name: 🔍 Run CloudFormation Linting
+      run: |
+        pip install cfn-lint
+        cfn-lint cdk.out/*.template.json || {
+          echo "❌ **CloudFormation linting failed**" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        }
+        cfn-lint github-oidc-bootstrap/cdk.out/*.template.json || {
+          echo "❌ **OIDC Bootstrap CloudFormation linting failed**" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        }
+        echo "✅ **CloudFormation linting passed**" >> $GITHUB_STEP_SUMMARY
+
+    - name: 💰 Cost Estimation
+      run: |
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 💰 Cost Estimation" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Cost estimation for AWS resources:" >> $GITHUB_STEP_SUMMARY
+        echo "- **Organizations Stack**: No additional costs (AWS Organizations is free)" >> $GITHUB_STEP_SUMMARY
+        echo "- **SSO Stack**: No additional costs (AWS SSO is free for up to 5GB of logs)" >> $GITHUB_STEP_SUMMARY
+        echo "- **OIDC Bootstrap**: No additional costs (IAM and OIDC are free)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "💡 **Note**: Actual costs may apply for CloudTrail logs, CloudWatch logs, and data transfer." >> $GITHUB_STEP_SUMMARY
+
+    - name: 📤 Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ci-artifacts
+        path: |
+          cdk.out/
+          github-oidc-bootstrap/cdk.out/
+          bandit-report.json
+          semgrep-report.json
+          checkov-report.json
+          checkov-bootstrap-report.json
+        if-no-files-found: warn
+
+    - name: 📋 Final summary
+      run: |
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## ✅ CI Pipeline Complete" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch**: ${{ github.head_ref || github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "🚀 Ready for merge and deployment!" >> $GITHUB_STEP_SUMMARY

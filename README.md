@@ -1,9 +1,10 @@
-# Infiquetra Organizations Infrastructure
+# Infiquetra AWS Infrastructure
 
-AWS Organizations and SSO infrastructure as code for Infiquetra LLC business structure using AWS CDK.
+AWS infrastructure as code for Infiquetra LLC using AWS CDK with enterprise-grade CI/CD pipelines.
 
-[![Validate CDK](https://github.com/namredips/infiquetra-organizations/actions/workflows/validate.yml/badge.svg)](https://github.com/namredips/infiquetra-organizations/actions/workflows/validate.yml)
-[![Security Scan](https://github.com/namredips/infiquetra-organizations/actions/workflows/security-scan.yml/badge.svg)](https://github.com/namredips/infiquetra-organizations/actions/workflows/security-scan.yml)
+[![CI Pipeline](https://github.com/infiquetra/infiquetra-aws-infra/actions/workflows/ci.yml/badge.svg)](https://github.com/infiquetra/infiquetra-aws-infra/actions/workflows/ci.yml)
+[![CD Pipeline](https://github.com/infiquetra/infiquetra-aws-infra/actions/workflows/cd.yml/badge.svg)](https://github.com/infiquetra/infiquetra-aws-infra/actions/workflows/cd.yml)
+[![Security](https://github.com/infiquetra/infiquetra-aws-infra/actions/workflows/reusable-security.yml/badge.svg)](https://github.com/infiquetra/infiquetra-aws-infra/actions/workflows/reusable-security.yml)
 
 ## Overview
 
@@ -116,7 +117,7 @@ After deployment, copy the role ARN from the stack output:
 
 ```bash
 aws cloudformation describe-stacks \
-  --stack-name GitHubOIDCBootstrap \
+  --stack-name infiquetra-aws-infra-gha-bootstrap \
   --profile infiquetra-root \
   --query 'Stacks[0].Outputs[?OutputKey==`GitHubActionsRoleArn`].OutputValue' \
   --output text
@@ -128,7 +129,7 @@ In your GitHub repository settings:
 1. Go to **Settings** → **Secrets and variables** → **Actions**
 2. Create a new repository secret:
    - **Name**: `AWS_DEPLOY_ROLE_ARN`
-   - **Value**: `arn:aws:iam::645166163764:role/GitHubActionsDeployRole`
+   - **Value**: `arn:aws:iam::645166163764:role/infiquetra-aws-infra-gha-role`
 
 #### 4. Verify OIDC Setup
 
@@ -137,7 +138,7 @@ In your GitHub repository settings:
 aws iam list-open-id-connect-providers --profile infiquetra-root
 
 # Verify role exists
-aws iam get-role --role-name GitHubActionsDeployRole --profile infiquetra-root
+aws iam get-role --role-name infiquetra-aws-infra-gha-role --profile infiquetra-root
 ```
 
 ✅ **GitHub Actions are now ready to securely deploy to AWS!**
@@ -150,8 +151,8 @@ aws iam get-role --role-name GitHubActionsDeployRole --profile infiquetra-root
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/namredips/infiquetra-organizations.git
-cd infiquetra-organizations
+git clone https://github.com/namredips/infiquetra-aws-infra.git
+cd infiquetra-aws-infra
 ```
 
 2. Set up the Python environment:
@@ -194,10 +195,14 @@ cdk deploy InfiquetraSSOStack --profile infiquetra-root
 │   ├── plans/                         # Implementation plans and documentation
 │   └── audit-current-state.md         # Current AWS organization audit
 ├── .github/workflows/                 # GitHub Actions CI/CD pipelines
-│   ├── validate.yml                   # Code validation and linting
-│   ├── deploy.yml                     # Automated deployment (uses OIDC)
-│   ├── security-scan.yml              # Security scanning
-│   └── cost-estimate.yml              # Cost impact analysis
+│   ├── ci.yml                         # Main CI pipeline (PRs)
+│   ├── cd.yml                         # Main CD pipeline (deployments)
+│   ├── deploy.yml                     # Legacy deployment workflow
+│   ├── validate.yml                   # Code validation (PRs only)
+│   ├── security-scan.yml              # Security scanning (PRs only)
+│   ├── reusable-test.yml              # Reusable testing workflow
+│   ├── reusable-deploy.yml            # Reusable deployment workflow
+│   └── reusable-security.yml          # Reusable security workflow
 ├── github-oidc-bootstrap/             # GitHub OIDC provider setup (one-time)
 │   ├── app.py                         # CDK app for OIDC configuration
 │   ├── github_oidc_bootstrap/         # OIDC stack implementation
@@ -243,53 +248,200 @@ The existing CAMPPS accounts are currently organized as:
 - Enforces administrator restrictions
 - Dismisses stale reviews automatically
 
-## CI/CD Workflows
+## CI/CD Pipeline Architecture
 
-> **Authentication**: All GitHub Actions workflows use the GitHub OIDC provider and IAM role created by the bootstrap process. No AWS access keys are stored in GitHub secrets.
+> **🔐 Authentication**: All workflows use GitHub OIDC provider for secure, passwordless AWS authentication. No AWS access keys stored in GitHub secrets.
 
-### Validation Pipeline (`validate.yml`)
-- Python linting with flake8
-- Code formatting with black
-- Import sorting with isort
-- Security scanning with bandit
-- CDK synthesis validation
-- CloudFormation template linting
+### Pipeline Flow
 
-### Deployment Pipeline (`deploy.yml`)
-- **Automated deployment** on main branch using GitHub OIDC
-- **Manual deployment** with stack selection via workflow_dispatch
-- **Secure Authentication**: AWS credentials via OIDC role assumption
-- **Session Tracking**: Unique session names for audit trail
-- **Deployment summaries** and failure notifications
-- **Multi-region ready**: Supports matrix deployments to us-east-1 and us-west-2
+```mermaid
+graph LR
+  PR[Pull Request] --> CI[CI Pipeline]
+  Push[Push to Main] --> CD[CD Pipeline]
 
-### Security Scanning (`security-scan.yml`)
-- Daily automated security scans
-- Multiple security tools (Bandit, Semgrep, Checkov)
-- CloudFormation security best practices
-- Artifact upload for detailed reports
+  CI --> Lint[🧹 Linting]
+  CI --> Test[🧪 Testing]
+  CI --> SecScan[🔒 Security Scan]
+  CI --> Synth[🏗️ CDK Synth]
+  CI --> Cost[💰 Cost Analysis]
 
-### Cost Estimation (`cost-estimate.yml`)
-- Cost impact analysis on PRs
-- Infrastructure change summaries
-- Cost monitoring recommendations
-- Automated PR comments with estimates
+  CD --> Deploy[🚀 Deploy]
+  Deploy --> Bootstrap[CDK Bootstrap]
+  Deploy --> OrgStack[Organization Stack]
+  Deploy --> SSOStack[SSO Stack]
+  Deploy --> Tag[🏷️ Git Tag]
+```
+
+### CI Pipeline (`ci.yml`) - Runs on Pull Requests
+
+**🎯 Purpose**: Validate code quality, security, and infrastructure before merge
+
+**📋 Stages**:
+1. **Code Quality**
+   - Python linting (flake8)
+   - Code formatting (black)
+   - Import sorting (isort)
+   - Type checking (mypy)
+
+2. **Security Scanning**
+   - Python security analysis (bandit)
+   - Multi-language patterns (semgrep)
+   - CloudFormation security (checkov)
+   - Dependency vulnerabilities (safety)
+
+3. **Infrastructure Validation**
+   - CDK synthesis validation
+   - CloudFormation linting (cfn-lint)
+   - Cost estimation
+   - Template security scanning
+
+4. **Artifacts**
+   - Security reports (JSON)
+   - CDK artifacts
+   - Test results
+
+### CD Pipeline (`cd.yml`) - Runs on Main Branch
+
+**🎯 Purpose**: Deploy infrastructure changes to AWS with proper tracking
+
+**📋 Stages**:
+1. **Environment Setup**
+   - Python 3.13 + uv package manager
+   - AWS CDK CLI installation
+   - OIDC authentication
+
+2. **Deployment Options**
+   - **Bootstrap**: GitHub OIDC provider setup
+   - **Organization**: AWS Organizations structure
+   - **SSO**: Permission sets and assignments
+   - **All**: Complete infrastructure deployment
+
+3. **Post-Deployment**
+   - Deployment verification
+   - Git tagging with timestamp
+   - Summary generation
+   - Failure notifications
+
+### Reusable Workflows
+
+**🔧 Modular Design**: Common functionality extracted into reusable workflows
+
+- **`reusable-test.yml`**: Unit testing and CDK synthesis validation
+- **`reusable-deploy.yml`**: Parameterized deployment for any stack
+- **`reusable-security.yml`**: Comprehensive security scanning suite
+
+**💡 Benefits**:
+- Consistent execution across projects
+- Reduced duplication
+- Centralized maintenance
+- Easy customization via inputs
+
+### Legacy Workflows (Transitioning)
+
+- **`validate.yml`**: Code validation (PRs only) - being replaced by `ci.yml`
+- **`security-scan.yml`**: Security scanning (PRs only) - being replaced by `ci.yml`
+- **`deploy.yml`**: Enhanced with new features, used alongside `cd.yml`
+
+### Workflow Triggers
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| **CI Pipeline** | Pull Requests to `main` | Code validation and security |
+| **CD Pipeline** | Push to `main` | Automated deployment |
+| **Manual Deploy** | `workflow_dispatch` | Manual stack deployment |
+| **Legacy Workflows** | Pull Requests only | Transitional validation |
 
 ## Development Workflow
 
-1. Create a feature branch from `main`
-2. Make your changes to the CDK stacks
-3. Run local validation:
+### 🚀 Standard Development Flow
+
+1. **Branch Creation**
    ```bash
-   source .venv/bin/activate
-   black .
-   flake8 .
-   cdk synth
+   git checkout main
+   git pull origin main
+   git checkout -b feature/your-feature-name
    ```
-4. Create a pull request
-5. Review cost estimates and security scans
-6. Merge after approval and passing checks
-7. Automatic deployment to AWS
+
+2. **Local Development**
+   ```bash
+   # Activate environment
+   uv sync
+   source .venv/bin/activate
+
+   # Make your changes to CDK stacks
+   # ...
+
+   # Run local validation
+   black .                    # Format code
+   flake8 .                  # Lint code
+   isort .                   # Sort imports
+   cdk synth --all           # Validate synthesis
+   ```
+
+3. **Create Pull Request**
+   ```bash
+   git add .
+   git commit -m "feat: add new feature"
+   git push origin feature/your-feature-name
+   ```
+
+4. **CI Pipeline Execution**
+   - 🧹 **Code Quality**: Linting, formatting, type checking
+   - 🔒 **Security Scans**: Bandit, Semgrep, Checkov, Safety
+   - 🏗️ **Infrastructure**: CDK synthesis, CloudFormation validation
+   - 💰 **Cost Analysis**: Infrastructure cost estimation
+
+5. **Review Process**
+   - Review CI pipeline results
+   - Address any security findings
+   - Review cost estimates
+   - Get team approval
+
+6. **Merge to Main**
+   - All checks pass ✅
+   - Approved by reviewers ✅
+   - Merge pull request
+
+7. **Automated Deployment**
+   - 🚀 **CD Pipeline** triggers automatically
+   - 🔐 **OIDC Authentication** to AWS
+   - 📊 **Deployment Summary** generated
+   - 🏷️ **Git Tag** created for tracking
+
+### 🛠️ Local Testing Options
+
+**Quick Validation**:
+```bash
+# Format and validate
+black . && flake8 . && isort . && cdk synth --all
+```
+
+**Security Scanning**:
+```bash
+# Install security tools
+pip install bandit semgrep checkov safety
+
+# Run security scans
+bandit -r .
+semgrep --config=auto .
+safety check
+```
+
+**OIDC Bootstrap Testing**:
+```bash
+cd github-oidc-bootstrap
+uv run cdk synth
+cd ..
+```
+
+### 🎯 Branch Protection Rules
+
+- ✅ **Require pull request reviews** (1 reviewer minimum)
+- ✅ **Require status checks** (CI pipeline must pass)
+- ✅ **Require up-to-date branches** before merge
+- ✅ **Require conversation resolution** before merge
+- ✅ **Restrict pushes** to main branch
+- ✅ **Dismiss stale reviews** when new commits pushed
 
 ## Monitoring and Compliance
 
@@ -315,7 +467,7 @@ The existing CAMPPS accounts are currently organized as:
 aws iam list-open-id-connect-providers --profile infiquetra-root
 
 # Verify role and trust policy
-aws iam get-role --role-name GitHubActionsDeployRole --profile infiquetra-root
+aws iam get-role --role-name infiquetra-aws-infra-gha-role --profile infiquetra-root
 
 # Check CloudTrail for role assumption attempts
 aws logs filter-log-events \
@@ -325,7 +477,7 @@ aws logs filter-log-events \
 ```
 
 **OIDC Trust Policy Issues**
-- Verify repository name matches exactly: `infiquetra/infiquetra-organizations`
+- Verify repository name matches exactly: `infiquetra/infiquetra-aws-infra`
 - Check branch restrictions in trust policy
 - Ensure GitHub Actions has `id-token: write` permissions
 - Confirm actor is part of infiquetra organization

@@ -40,7 +40,7 @@ class GitHubOIDCStack(Stack):
         # Repository configuration with environment variable fallbacks
         self.github_owner = github_owner or os.environ.get("GITHUB_OWNER", "infiquetra")
         self.repo_name = repo_name or os.environ.get(
-            "GITHUB_REPO", "infiquetra-organizations"
+            "GITHUB_REPO", "infiquetra-aws-infra"
         )
         self.repo_full_name = f"{self.github_owner}/{self.repo_name}"
 
@@ -106,8 +106,8 @@ class GitHubOIDCStack(Stack):
         return iam.Role(
             self,
             "GitHubActionsDeployRole",
-            role_name="GitHubActionsDeployRole",
-            description="Role for GitHub Actions to deploy CDK stacks from infiquetra-organizations",
+            role_name="infiquetra-aws-infra-gha-role",
+            description="Role for GitHub Actions to deploy CDK stacks from infiquetra-aws-infra",
             assumed_by=iam.FederatedPrincipal(
                 oidc_provider.open_id_connect_provider_arn,
                 {
@@ -392,7 +392,7 @@ class GitHubOIDCStack(Stack):
         return iam.Policy(
             self,
             "CDKDeploymentPolicy",
-            policy_name="GitHubActionsCDKDeploymentPolicy",
+            policy_name="infiquetra-aws-infra-gha-deployment-policy",
             statements=policy_statements,
         )
 

@@ -1,0 +1,142 @@
+name: CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: 'Stack to deploy (bootstrap, organization, sso, or all)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - bootstrap
+        - organization
+        - sso
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+
+env:
+  CDK_DEFAULT_ACCOUNT: "645166163764"
+  CDK_DEFAULT_REGION: "us-east-1"
+  GITHUB_REPO: "infiquetra-aws-infra"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: 📦 Cache Python dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: ⚡ Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: 🟢 Install Node.js for CDK CLI
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: 🏗️ Install CDK CLI
+      run: npm install -g aws-cdk
+
+    - name: 🔐 Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+        role-session-name: GitHubActions-${{ github.run_id }}-${{ github.run_attempt }}
+        aws-region: us-east-1
+
+    - name: 🚀 CDK Bootstrap (if needed)
+      run: cdk bootstrap --profile default
+      continue-on-error: true
+
+    - name: 🏗️ Deploy OIDC Bootstrap Stack
+      if: ${{ github.event.inputs.stack == 'bootstrap' || github.event.inputs.stack == 'all' || github.event.inputs.stack == '' }}
+      run: |
+        echo "## 🏗️ Deploying OIDC Bootstrap Stack" >> $GITHUB_STEP_SUMMARY
+        cd github-oidc-bootstrap
+        uv run cdk deploy infiquetra-aws-infra-gha-bootstrap --require-approval never
+        echo "✅ **OIDC Bootstrap Stack deployed successfully**" >> $GITHUB_STEP_SUMMARY
+
+    - name: 🏢 Deploy Organization Stack
+      if: ${{ github.event.inputs.stack == 'organization' || github.event.inputs.stack == 'all' }}
+      run: |
+        echo "## 🏢 Deploying Organization Stack" >> $GITHUB_STEP_SUMMARY
+        cdk deploy InfiquetraOrganizationStack --require-approval never
+        echo "✅ **Organization Stack deployed successfully**" >> $GITHUB_STEP_SUMMARY
+
+    - name: 👥 Deploy SSO Stack
+      if: ${{ github.event.inputs.stack == 'sso' || github.event.inputs.stack == 'all' }}
+      run: |
+        echo "## 👥 Deploying SSO Stack" >> $GITHUB_STEP_SUMMARY
+        cdk deploy InfiquetraSSOStack --require-approval never
+        echo "✅ **SSO Stack deployed successfully**" >> $GITHUB_STEP_SUMMARY
+
+    - name: 🏷️ Create deployment tag
+      if: success()
+      run: |
+        TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
+        TAG_NAME="deploy-${TIMESTAMP}-${{ github.sha }}"
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag -a "$TAG_NAME" -m "Deployment on ${TIMESTAMP} - ${{ github.event.inputs.stack || 'all' }} stack(s)"
+        git push origin "$TAG_NAME"
+        echo "🏷️ **Created deployment tag**: \`$TAG_NAME\`" >> $GITHUB_STEP_SUMMARY
+
+    - name: 📊 Generate deployment summary
+      run: |
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 📊 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Stack(s) deployed**: ${{ github.event.inputs.stack || 'all' }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment**: ${{ github.event.inputs.environment || 'production' }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Account**: 645166163764" >> $GITHUB_STEP_SUMMARY
+        echo "**Region**: us-east-1" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Deployment time**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+    - name: 🚨 Notify on failure
+      if: failure()
+      run: |
+        echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "The deployment failed. Please check the logs above for details." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Failed step**: Check the job logs for the specific failure point" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Stack**: ${{ github.event.inputs.stack || 'all' }}" >> $GITHUB_STEP_SUMMARY

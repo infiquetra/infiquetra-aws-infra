@@ -58,8 +58,8 @@ class TestGitHubOIDCStack:
         template.has_resource_properties(
             "AWS::IAM::Role",
             {
-                "RoleName": "GitHubActionsDeployRole",
-                "Description": "Role for GitHub Actions to deploy CDK stacks from infiquetra-organizations",
+                "RoleName": "infiquetra-aws-infra-gha-role",
+                "Description": "Role for GitHub Actions to deploy CDK stacks from infiquetra-aws-infra",
                 "MaxSessionDuration": 43200,  # 12 hours in seconds
             },
         )
@@ -71,11 +71,11 @@ class TestGitHubOIDCStack:
         github_role = None
         for _role_name, role_resource in roles.items():
             role_name_prop = role_resource["Properties"].get("RoleName")
-            if role_name_prop == "GitHubActionsDeployRole":
+            if role_name_prop == "infiquetra-aws-infra-gha-role":
                 github_role = role_resource
                 break
 
-        assert github_role is not None, "GitHubActionsDeployRole not found"
+        assert github_role is not None, "infiquetra-aws-infra-gha-role not found"
         assume_role_policy = github_role["Properties"]["AssumeRolePolicyDocument"]
 
         # Verify the trust policy structure
@@ -99,14 +99,14 @@ class TestGitHubOIDCStack:
         )
         assert (
             string_equals["token.actions.githubusercontent.com:repository"]
-            == "infiquetra/infiquetra-organizations"
+            == "infiquetra/infiquetra-aws-infra"
         )
 
         string_like = conditions["StringLike"]
         expected_subs = [
-            "repo:infiquetra/infiquetra-organizations:ref:refs/heads/main",
-            "repo:infiquetra/infiquetra-organizations:ref:refs/heads/develop",
-            "repo:infiquetra/infiquetra-organizations:pull_request:refs/heads/main",
+            "repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/main",
+            "repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/develop",
+            "repo:infiquetra/infiquetra-aws-infra:pull_request:refs/heads/main",
         ]
         assert string_like["token.actions.githubusercontent.com:sub"] == expected_subs
 
@@ -123,7 +123,7 @@ class TestGitHubOIDCStack:
         template.has_resource_properties(
             "AWS::IAM::Policy",
             {
-                "PolicyName": "GitHubActionsCDKDeploymentPolicy",
+                "PolicyName": "infiquetra-aws-infra-gha-deployment-policy",
             },
         )
 
@@ -161,13 +161,13 @@ class TestGitHubOIDCStack:
         # Check that role name follows convention
         template.has_resource_properties(
             "AWS::IAM::Role",
-            {"RoleName": "GitHubActionsDeployRole"},
+            {"RoleName": "infiquetra-aws-infra-gha-role"},
         )
 
         # Check that policy name follows convention
         template.has_resource_properties(
             "AWS::IAM::Policy",
-            {"PolicyName": "GitHubActionsCDKDeploymentPolicy"},
+            {"PolicyName": "infiquetra-aws-infra-gha-deployment-policy"},
         )
 
     def test_no_overly_permissive_policies(self, template: Template) -> None:

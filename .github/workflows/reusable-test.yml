@@ -1,0 +1,86 @@
+name: Reusable Test Workflow
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: 'Python version to use'
+        required: false
+        default: '3.13'
+        type: string
+      node-version:
+        description: 'Node.js version to use'
+        required: false
+        default: '18'
+        type: string
+      working-directory:
+        description: 'Working directory for tests'
+        required: false
+        default: '.'
+        type: string
+    outputs:
+      test-result:
+        description: 'Test execution result'
+        value: ${{ jobs.test.outputs.result }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.test-result.outputs.result }}
+
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: 📦 Cache Python dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: 🟢 Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: 📦 Install dependencies
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+        npm install -g aws-cdk
+
+    - name: 🧪 Run unit tests
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if [ -d tests ]; then
+          python -m pytest tests/ -v --tb=short --maxfail=5
+        else
+          echo "No tests directory found, skipping unit tests"
+        fi
+
+    - name: 🏗️ Test CDK synthesis
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        export CDK_DEFAULT_ACCOUNT="645166163764"
+        export CDK_DEFAULT_REGION="us-east-1"
+        export GITHUB_REPO="infiquetra-aws-infra"
+
+        if [ -f app.py ]; then
+          cdk synth --all
+        else
+          echo "No CDK app found, skipping synthesis test"
+        fi
+
+    - name: 📊 Set test result
+      id: test-result
+      run: echo "result=success" >> $GITHUB_OUTPUT

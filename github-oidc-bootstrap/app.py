@@ -3,7 +3,7 @@
 GitHub OIDC Bootstrap CDK App
 
 This CDK application creates the necessary GitHub OIDC provider and IAM role
-for the infiquetra/infiquetra-organizations repository to deploy CDK stacks
+for the infiquetra/infiquetra-aws-infra repository to deploy CDK stacks
 in the primary Infiquetra AWS account (645166163764).
 """
 
@@ -39,9 +39,9 @@ env = cdk.Environment(
 # Create the GitHub OIDC stack
 github_oidc_stack = GitHubOIDCStack(
     app,
-    "GitHubOIDCBootstrap",
+    "infiquetra-aws-infra-gha-bootstrap",
     env=env,
-    description="GitHub OIDC provider and roles for infiquetra-organizations repository",
+    description="GitHub OIDC provider and roles for infiquetra-aws-infra repository",
 )
 
 # Add tags for resource management

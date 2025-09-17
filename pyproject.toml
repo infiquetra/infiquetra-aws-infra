@@ -1,7 +1,7 @@
 [project]
-name = "infiquetra-organizations"
+name = "infiquetra-aws-infra"
 version = "0.1.0"
-description = "AWS Organizations and SSO infrastructure management using CDK"
+description = "AWS infrastructure as code for Infiquetra LLC using CDK"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -88,7 +88,7 @@ extend-exclude = '''
 profile = "black"
 multi_line_output = 3
 line_length = 88
-known_first_party = ["infiquetra_organizations"]
+known_first_party = ["infiquetra_aws_infra"]
 
 [tool.mypy]
 python_version = "3.13"

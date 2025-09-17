@@ -1,17 +1,17 @@
 # GitHub OIDC Bootstrap for Infiquetra Organizations
 
-This enterprise-grade CDK application creates the necessary GitHub OIDC provider and IAM role for the `infiquetra/infiquetra-organizations` repository to securely deploy CDK stacks using GitHub Actions with least-privilege access.
+This enterprise-grade CDK application creates the necessary GitHub OIDC provider and IAM role for the `infiquetra/infiquetra-aws-infra` repository to securely deploy CDK stacks using GitHub Actions with least-privilege access.
 
 ## What This Creates
 
 1. **GitHub OIDC Identity Provider**: Allows GitHub Actions to authenticate with AWS using OpenID Connect
-2. **IAM Role**: `GitHubActionsDeployRole` with scoped permissions for CDK deployments
+2. **IAM Role**: `infiquetra-aws-infra-gha-role` with scoped permissions for CDK deployments
 3. **Trust Policy**: Restricts access to specific repository, branches, and organization members
 4. **Comprehensive Security**: Least-privilege permissions with resource-specific scoping
 
 ## Security Features
 
-- **Repository Restriction**: Only the `infiquetra/infiquetra-organizations` repository can assume this role
+- **Repository Restriction**: Only the `infiquetra/infiquetra-aws-infra` repository can assume this role
 - **Branch & PR Restriction**: Limited to `main`, `develop` branches and main-branch pull requests
 - **Organization Restriction**: Only infiquetra organization members can trigger workflows
 - **Session Duration**: Maximum 12-hour session duration
@@ -78,7 +78,7 @@ uv run cdk synth
 ```bash
 # Check stack status
 aws cloudformation describe-stacks \
-  --stack-name GitHubOIDCBootstrap \
+  --stack-name infiquetra-aws-infra-gha-bootstrap \
   --profile infiquetra-root \
   --query 'Stacks[0].StackStatus'
 ```
@@ -141,7 +141,7 @@ After successful deployment, retrieve the IAM role ARN for GitHub Actions:
 ```bash
 # Get the role ARN from stack outputs
 aws cloudformation describe-stacks \
-  --stack-name GitHubOIDCBootstrap \
+  --stack-name infiquetra-aws-infra-gha-bootstrap \
   --profile infiquetra-root \
   --query 'Stacks[0].Outputs[?OutputKey==`GitHubActionsRoleArn`].OutputValue' \
   --output text
@@ -149,7 +149,7 @@ aws cloudformation describe-stacks \
 
 **Expected output:**
 ```
-arn:aws:iam::645166163764:role/GitHubActionsDeployRole
+arn:aws:iam::645166163764:role/infiquetra-aws-infra-gha-role
 ```
 
 ## Setting up GitHub Repository
@@ -159,7 +159,7 @@ arn:aws:iam::645166163764:role/GitHubActionsDeployRole
 Navigate to your GitHub repository settings and add a new repository secret:
 
 - **Name**: `AWS_DEPLOY_ROLE_ARN`
-- **Value**: The role ARN from the stack output (format: `arn:aws:iam::645166163764:role/GitHubActionsDeployRole`)
+- **Value**: The role ARN from the stack output (format: `arn:aws:iam::645166163764:role/infiquetra-aws-infra-gha-role`)
 
 ### 2. Update Your Workflow
 
@@ -167,7 +167,7 @@ The main deployment workflow (`.github/workflows/deploy.yml`) should be updated 
 
 ## Security Features
 
-- **Repository Restriction**: Only the `infiquetra/infiquetra-organizations` repository can assume this role
+- **Repository Restriction**: Only the `infiquetra/infiquetra-aws-infra` repository can assume this role
 - **Branch Restriction**: Only `main`, `develop` branches and pull requests can use the role
 - **Session Duration**: Maximum 12-hour session duration
 - **Least Privilege**: Permissions scoped to CDK deployment requirements
@@ -208,7 +208,7 @@ The role includes permissions for:
 3. **Stack already exists**:
    ```bash
    # View existing stack
-   aws cloudformation describe-stacks --stack-name GitHubOIDCBootstrap --profile infiquetra-root
+   aws cloudformation describe-stacks --stack-name infiquetra-aws-infra-gha-bootstrap --profile infiquetra-root
    ```
 
 4. **Insufficient permissions**: The deployment profile needs administrative access to create IAM roles and OIDC providers
@@ -223,7 +223,7 @@ aws iam list-open-id-connect-providers --profile infiquetra-root
 
 **Verify IAM role:**
 ```bash
-aws iam get-role --role-name GitHubActionsDeployRole --profile infiquetra-root
+aws iam get-role --role-name infiquetra-aws-infra-gha-role --profile infiquetra-root
 # Should show role with GitHub trust policy
 ```
 
@@ -242,7 +242,7 @@ To remove the bootstrap resources when no longer needed:
 uv run cdk destroy --profile infiquetra-root
 
 # Confirm when prompted
-# Are you sure you want to delete: GitHubOIDCBootstrap (y/n)? y
+# Are you sure you want to delete: infiquetra-aws-infra-gha-bootstrap (y/n)? y
 ```
 
 **⚠️ Warning**: Only destroy this stack if you no longer need GitHub Actions to deploy to your AWS account.
@@ -251,7 +251,7 @@ uv run cdk destroy --profile infiquetra-root
 
 After successfully deploying this bootstrap stack:
 
-1. **Copy the Role ARN**: Save the `GitHubActionsDeployRole` ARN from the stack outputs
+1. **Copy the Role ARN**: Save the `infiquetra-aws-infra-gha-role` ARN from the stack outputs
 2. **Set GitHub Secret**: Add `AWS_DEPLOY_ROLE_ARN` secret to your repository
 3. **Test the Pipeline**: Create a test PR to verify GitHub Actions can assume the role
 4. **Clean Up**: Remove any old AWS access keys from GitHub secrets
