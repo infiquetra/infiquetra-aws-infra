@@ -92,7 +92,7 @@ class GitHubOIDCStack(Stack):
             # As of 2025, AWS no longer requires thumbprints for GitHub OIDC
             # Using placeholder value as CDK still requires at least one thumbprint
             thumbprints=[
-                "0000000000000000000000000000000000000000",
+                "1111111111111111111111111111111111111111",
             ],
         )
 

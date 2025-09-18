@@ -22,7 +22,11 @@
       "Bash(aws iam list-open-id-connect-providers:*)",
       "Bash(aws iam get-open-id-connect-provider:*)",
       "WebFetch(domain:docs.github.com)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(aws iam delete-open-id-connect-provider:*)",
+      "Bash(aws cloudformation delete-stack:*)",
+      "Bash(aws cloudformation describe-stacks:*)",
+      "Bash(aws cloudformation continue-update-rollback:*)"
     ],
     "deny": [],
     "ask": []
