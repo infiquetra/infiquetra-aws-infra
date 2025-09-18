@@ -81,7 +81,7 @@ jobs:
         echo "Actor: ${{ github.actor }}"
 
     - name: 🔐 Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v5
       with:
         role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
         role-session-name: GitHubActions-${{ github.run_id }}-${{ github.run_attempt }}

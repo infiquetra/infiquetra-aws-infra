@@ -18,9 +18,7 @@ from aws_cdk import (
     CfnOutput,
     Stack,
 )
-from aws_cdk import (
-    aws_iam as iam,
-)
+from aws_cdk import aws_iam as iam
 from constructs import Construct
 
 
@@ -113,10 +111,10 @@ class GitHubOIDCStack(Stack):
                 {
                     "StringEquals": {
                         "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-                        "token.actions.githubusercontent.com:repository": repo_full_name,
                     },
                     "StringLike": {
-                        "token.actions.githubusercontent.com:sub": f"repo:{repo_full_name}:*",
+                        #                        "token.actions.githubusercontent.com:sub": f"repo:{repo_full_name}:*",
+                        "token.actions.githubusercontent.com:sub": "repo:infiquetra:*",
                     },
                 },
                 "sts:AssumeRoleWithWebIdentity",
