@@ -61,12 +61,6 @@ jobs:
         role-session-name: GitHubActions-${{ github.run_id }}-${{ github.run_attempt }}
         aws-region: us-east-1
         
-    - name: CDK Bootstrap (if needed)
-      run: cdk bootstrap --profile default
-      env:
-        CDK_DEFAULT_ACCOUNT: "645166163764"
-        CDK_DEFAULT_REGION: "us-east-1"
-        
     - name: Deploy Organization Stack
       if: ${{ github.event.inputs.stack == 'organization' || github.event.inputs.stack == 'all' }}
       run: cdk deploy InfiquetraOrganizationStack --require-approval never

@@ -82,14 +82,6 @@ jobs:
         role-session-name: GitHubActions-${{ github.run_id }}-${{ github.run_attempt }}
         aws-region: ${{ inputs.aws-region }}
 
-    - name: 🚀 Bootstrap CDK (if needed)
-      working-directory: ${{ inputs.working-directory }}
-      run: cdk bootstrap --profile default
-      continue-on-error: true
-      env:
-        CDK_DEFAULT_ACCOUNT: "645166163764"
-        CDK_DEFAULT_REGION: ${{ inputs.aws-region }}
-
     - name: ⏳ Manual approval check
       if: ${{ inputs.require-approval }}
       run: |

@@ -35,7 +35,7 @@ jobs:
 
     permissions:
       id-token: write
-      contents: read
+      contents: write
 
     steps:
     - name: 📥 Checkout code
@@ -85,10 +85,6 @@ jobs:
         role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
         role-session-name: GitHubActions-${{ github.run_id }}-${{ github.run_attempt }}
         aws-region: us-east-1
-
-    - name: 🚀 CDK Bootstrap (if needed)
-      run: cdk bootstrap --profile default
-      continue-on-error: true
 
     - name: 🏢 Deploy Organization Stack
       if: ${{ github.event.inputs.stack == 'organization' || github.event.inputs.stack == 'all' }}
