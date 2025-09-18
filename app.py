@@ -4,8 +4,8 @@ import os
 import aws_cdk as cdk
 from dotenv import load_dotenv
 
-from infiquetra_organizations.organization_stack import OrganizationStack
-from infiquetra_organizations.sso_stack import SSOStack
+from infiquetra_aws_infra.organization_stack import OrganizationStack
+from infiquetra_aws_infra.sso_stack import SSOStack
 
 # Load environment variables
 load_dotenv()

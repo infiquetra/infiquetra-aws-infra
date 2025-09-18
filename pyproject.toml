@@ -25,6 +25,7 @@ dev = [
     "ipython>=9.4.0",
     "isort>=6.0.1",
     "mypy>=1.17.0",
+    "pbr>=6.1.1",
     "pdoc3>=0.11.6",
     "pre-commit>=4.2.0",
     "pytest>=8.4.1",
@@ -36,8 +37,8 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 target-version = "py313"
@@ -105,6 +106,9 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 show_error_codes = true
+exclude = [
+    "github-oidc-bootstrap/app.py"
+]
 
 [[tool.mypy.overrides]]
 module = [

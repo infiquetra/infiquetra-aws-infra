@@ -11,7 +11,14 @@
       "Bash(unset GH_TOKEN)",
       "Bash(GH_HOST=github.com gh run list --repo infiquetra/infiquetra-aws-infra --limit 10)",
       "Bash(GH_HOST=github.com gh run view 17751891913 --repo infiquetra/infiquetra-aws-infra --log-failed)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(pre-commit run:*)",
+      "Bash(mypy:*)",
+      "Bash(GH_HOST=github.com gh run view 17785372602 --repo infiquetra/infiquetra-aws-infra --log-failed)",
+      "Bash(GH_HOST=github.com gh run view 17785372600 --repo infiquetra/infiquetra-aws-infra --log-failed)",
+      "Bash(aws iam list-roles:*)",
+      "Bash(unset GH_ENTERPRISE_TOKEN)",
+      "Bash(aws iam get-role:*)"
     ],
     "deny": [],
     "ask": []

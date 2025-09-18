@@ -542,7 +542,7 @@ wheels = [
 ]
 
 [[package]]
-name = "infiquetra-organizations"
+name = "infiquetra-aws-infra"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -566,6 +566,7 @@ dev = [
     { name = "ipython" },
     { name = "isort" },
     { name = "mypy" },
+    { name = "pbr" },
     { name = "pdoc3" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -598,6 +599,7 @@ dev = [
     { name = "ipython", specifier = ">=9.4.0" },
     { name = "isort", specifier = ">=6.0.1" },
     { name = "mypy", specifier = ">=1.17.0" },
+    { name = "pbr", specifier = ">=6.1.1" },
     { name = "pdoc3", specifier = ">=0.11.6" },
     { name = "pre-commit", specifier = ">=4.2.0" },
     { name = "pytest", specifier = ">=8.4.1" },

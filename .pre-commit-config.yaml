@@ -11,6 +11,7 @@ repos:
     rev: v1.8.0
     hooks:
       - id: mypy
+        exclude: ^github-oidc-bootstrap/
         additional_dependencies:
           - boto3-stubs[essential]>=1.26.0
           - types-requests>=2.28.0
@@ -21,5 +22,6 @@ repos:
       - id: bandit
         args: [--configfile, .bandit, --format, json]
         exclude: ^tests/
+        additional_dependencies: ["pbr"]
 
 
