@@ -75,7 +75,7 @@ jobs:
 
     - name: 🔍 Debug Role ARN
       run: |
-        echo "Role ARN to assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}"
+        echo "Role ARN to assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}"
         echo "Repository: ${{ github.repository }}"
         echo "Ref: ${{ github.ref }}"
         echo "Actor: ${{ github.actor }}"
@@ -83,7 +83,7 @@ jobs:
     - name: 🔐 Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::645166163764:role/infiquetra-aws-infra-gha-role
+        role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
         role-session-name: GitHubActions-${{ github.run_id }}-${{ github.run_attempt }}
         aws-region: us-east-1
 
