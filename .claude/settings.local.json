@@ -18,7 +18,11 @@
       "Bash(GH_HOST=github.com gh run view 17785372600 --repo infiquetra/infiquetra-aws-infra --log-failed)",
       "Bash(aws iam list-roles:*)",
       "Bash(unset GH_ENTERPRISE_TOKEN)",
-      "Bash(aws iam get-role:*)"
+      "Bash(aws iam get-role:*)",
+      "Bash(aws iam list-open-id-connect-providers:*)",
+      "Bash(aws iam get-open-id-connect-provider:*)",
+      "WebFetch(domain:docs.github.com)",
+      "WebSearch"
     ],
     "deny": [],
     "ask": []

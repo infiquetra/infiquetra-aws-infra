@@ -89,10 +89,10 @@ class GitHubOIDCStack(Stack):
             "GitHubOIDCProvider",
             url="https://token.actions.githubusercontent.com",
             client_ids=["sts.amazonaws.com"],
-            # GitHub's OIDC thumbprint (this is a well-known value)
+            # As of 2025, AWS no longer requires thumbprints for GitHub OIDC
+            # Using placeholder value as CDK still requires at least one thumbprint
             thumbprints=[
-                "6938fd4d98bab03faadb97b34396831e3780aea1",
-                "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
+                "0000000000000000000000000000000000000000",
             ],
         )
 
@@ -116,15 +116,7 @@ class GitHubOIDCStack(Stack):
                         "token.actions.githubusercontent.com:repository": repo_full_name,
                     },
                     "StringLike": {
-                        "token.actions.githubusercontent.com:sub": [
-                            f"repo:{repo_full_name}:ref:refs/heads/main",
-                            f"repo:{repo_full_name}:ref:refs/heads/develop",
-                            f"repo:{repo_full_name}:pull_request:refs/heads/main",
-                        ],
-                        "token.actions.githubusercontent.com:actor": [
-                            "infiquetra/*",
-                            "github-actions[bot]",
-                        ],
+                        "token.actions.githubusercontent.com:sub": f"repo:{repo_full_name}:*",
                     },
                 },
                 "sts:AssumeRoleWithWebIdentity",
