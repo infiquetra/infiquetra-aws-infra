@@ -100,16 +100,7 @@ jobs:
       working-directory: ${{ inputs.working-directory }}
       run: |
         echo "## 🚀 Deploying ${{ inputs.stack-name }}" >> $GITHUB_STEP_SUMMARY
-
-        if [[ "${{ inputs.working-directory }}" == *"github-oidc-bootstrap"* ]]; then
-          # Use uv for OIDC bootstrap deployment
-          export GITHUB_REPO="infiquetra-aws-infra"
-          uv run cdk deploy ${{ inputs.stack-name }} --require-approval never
-        else
-          # Use regular CDK for other deployments
-          cdk deploy ${{ inputs.stack-name }} --require-approval never
-        fi
-
+        cdk deploy ${{ inputs.stack-name }} --require-approval never
         echo "✅ **${{ inputs.stack-name }} deployed successfully**" >> $GITHUB_STEP_SUMMARY
       env:
         CDK_DEFAULT_ACCOUNT: "645166163764"

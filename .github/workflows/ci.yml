@@ -115,14 +115,6 @@ jobs:
           exit 1
         }
 
-        # Synthesize OIDC bootstrap
-        cd github-oidc-bootstrap
-        uv run cdk synth || {
-          echo "❌ **OIDC Bootstrap synthesis failed**" >> $GITHUB_STEP_SUMMARY
-          exit 1
-        }
-        cd ..
-
         echo "✅ **CDK synthesis successful**" >> $GITHUB_STEP_SUMMARY
 
     - name: 🛡️ Run CloudFormation security scanning
@@ -130,8 +122,6 @@ jobs:
         # Run Checkov on CloudFormation templates
         checkov -d cdk.out --framework cloudformation --output json --output-file checkov-report.json || echo "⚠️ Checkov found CloudFormation security issues" >> $GITHUB_STEP_SUMMARY
 
-        # Run Checkov on OIDC bootstrap
-        checkov -d github-oidc-bootstrap/cdk.out --framework cloudformation --output json --output-file checkov-bootstrap-report.json || echo "⚠️ Checkov found OIDC Bootstrap security issues" >> $GITHUB_STEP_SUMMARY
       continue-on-error: true
 
     - name: 🔍 Run CloudFormation Linting
@@ -139,10 +129,6 @@ jobs:
         pip install cfn-lint
         cfn-lint cdk.out/*.template.json || {
           echo "❌ **CloudFormation linting failed**" >> $GITHUB_STEP_SUMMARY
-          exit 1
-        }
-        cfn-lint github-oidc-bootstrap/cdk.out/*.template.json || {
-          echo "❌ **OIDC Bootstrap CloudFormation linting failed**" >> $GITHUB_STEP_SUMMARY
           exit 1
         }
         echo "✅ **CloudFormation linting passed**" >> $GITHUB_STEP_SUMMARY
@@ -155,7 +141,6 @@ jobs:
         echo "Cost estimation for AWS resources:" >> $GITHUB_STEP_SUMMARY
         echo "- **Organizations Stack**: No additional costs (AWS Organizations is free)" >> $GITHUB_STEP_SUMMARY
         echo "- **SSO Stack**: No additional costs (AWS SSO is free for up to 5GB of logs)" >> $GITHUB_STEP_SUMMARY
-        echo "- **OIDC Bootstrap**: No additional costs (IAM and OIDC are free)" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "💡 **Note**: Actual costs may apply for CloudTrail logs, CloudWatch logs, and data transfer." >> $GITHUB_STEP_SUMMARY
 
@@ -165,11 +150,9 @@ jobs:
         name: ci-artifacts
         path: |
           cdk.out/
-          github-oidc-bootstrap/cdk.out/
           bandit-report.json
           semgrep-report.json
           checkov-report.json
-          checkov-bootstrap-report.json
         if-no-files-found: warn
 
     - name: 📋 Final summary

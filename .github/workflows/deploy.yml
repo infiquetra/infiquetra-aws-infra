@@ -4,13 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       stack:
-        description: 'Stack to deploy (bootstrap, organization, sso, or all)'
+        description: 'Stack to deploy (organization, sso, or all)'
         required: true
         default: 'all'
         type: choice
         options:
         - all
-        - bootstrap
         - organization
         - sso
 
@@ -68,16 +67,6 @@ jobs:
         CDK_DEFAULT_ACCOUNT: "645166163764"
         CDK_DEFAULT_REGION: "us-east-1"
         
-    - name: Deploy OIDC Bootstrap Stack
-      if: ${{ github.event.inputs.stack == 'bootstrap' || github.event.inputs.stack == 'all' || github.event.inputs.stack == '' }}
-      run: |
-        cd github-oidc-bootstrap
-        export GITHUB_REPO=infiquetra-aws-infra
-        uv run cdk deploy infiquetra-aws-infra-gha-bootstrap --require-approval never
-      env:
-        CDK_DEFAULT_ACCOUNT: "645166163764"
-        CDK_DEFAULT_REGION: "us-east-1"
-
     - name: Deploy Organization Stack
       if: ${{ github.event.inputs.stack == 'organization' || github.event.inputs.stack == 'all' }}
       run: cdk deploy InfiquetraOrganizationStack --require-approval never
