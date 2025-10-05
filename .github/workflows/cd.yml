@@ -74,7 +74,7 @@ jobs:
 
     - name: 🔍 Debug Role ARN
       run: |
-        echo "Role ARN to assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}"
+        echo "Role ARN to assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}"
         echo "Repository: ${{ github.repository }}"
         echo "Ref: ${{ github.ref }}"
         echo "Actor: ${{ github.actor }}"
@@ -82,7 +82,7 @@ jobs:
     - name: 🔐 Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v5
       with:
-        role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
         role-session-name: GitHubActions-${{ github.run_id }}-${{ github.run_attempt }}
         aws-region: us-east-1
 
@@ -108,7 +108,7 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git tag -a "$TAG_NAME" -m "Deployment on ${TIMESTAMP} - ${{ github.event.inputs.stack || 'all' }} stack(s)"
-        git push origin "$TAG_NAME"
+        git push https://x-access-token:${{ github.token }}@github.com/${{ github.repository }} "$TAG_NAME"
         echo "🏷️ **Created deployment tag**: \`$TAG_NAME\`" >> $GITHUB_STEP_SUMMARY
 
     - name: 📊 Generate deployment summary
