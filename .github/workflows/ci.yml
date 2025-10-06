@@ -43,9 +43,7 @@ jobs:
 
     - name: 📦 Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install -r requirements-dev.txt
+        uv sync --dev
 
     - name: 🟢 Install Node.js for CDK CLI
       uses: actions/setup-node@v4
@@ -63,7 +61,7 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
 
         # Ruff linting (includes import sorting)
-        ruff check . || {
+        uv run ruff check . || {
           echo "❌ **Ruff linting issues found**" >> $GITHUB_STEP_SUMMARY
           echo "Run \`ruff check --fix .\` to fix issues" >> $GITHUB_STEP_SUMMARY
           exit 1
@@ -72,7 +70,7 @@ jobs:
 
     - name: 🎨 Run ruff formatting check
       run: |
-        ruff format --check . || {
+        uv run ruff format --check . || {
           echo "❌ **Ruff formatting issues found**" >> $GITHUB_STEP_SUMMARY
           echo "Run \`ruff format .\` to fix formatting" >> $GITHUB_STEP_SUMMARY
           exit 1
@@ -81,7 +79,7 @@ jobs:
 
     - name: 🔍 Run mypy type checking
       run: |
-        mypy . || {
+        uv run mypy . || {
           echo "❌ **Type checking issues found**" >> $GITHUB_STEP_SUMMARY
           echo "Run \`mypy .\` to see type errors" >> $GITHUB_STEP_SUMMARY
           exit 1
@@ -95,7 +93,7 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
 
         # Bandit security scan
-        bandit -r . -f json -o bandit-report.json || echo "⚠️ Bandit found security issues" >> $GITHUB_STEP_SUMMARY
+        uv run bandit -r . -f json -o bandit-report.json || echo "⚠️ Bandit found security issues" >> $GITHUB_STEP_SUMMARY
 
         # Semgrep security scan
         semgrep --config=auto --json --output=semgrep-report.json . || echo "⚠️ Semgrep found security issues" >> $GITHUB_STEP_SUMMARY
@@ -110,7 +108,7 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
 
         # Synthesize main stacks
-        cdk synth --all || {
+        uv run cdk synth --all || {
           echo "❌ **CDK synthesis failed**" >> $GITHUB_STEP_SUMMARY
           exit 1
         }
