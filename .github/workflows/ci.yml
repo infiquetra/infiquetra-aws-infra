@@ -57,36 +57,36 @@ jobs:
         npm install -g aws-cdk
         pip install semgrep checkov
 
-    - name: 🧹 Run Python linting
+    - name: 🧹 Run ruff linting
       run: |
         echo "## 🧹 Code Quality Results" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
 
-        # Flake8 critical errors
-        echo "### Critical Issues" >> $GITHUB_STEP_SUMMARY
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || echo "❌ Critical issues found" >> $GITHUB_STEP_SUMMARY
-
-        # Flake8 all issues
-        echo "### All Issues" >> $GITHUB_STEP_SUMMARY
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics >> $GITHUB_STEP_SUMMARY
-
-    - name: 🎨 Run Python formatting check
-      run: |
-        black --check . || {
-          echo "❌ **Black formatting issues found**" >> $GITHUB_STEP_SUMMARY
-          echo "Run \`black .\` to fix formatting" >> $GITHUB_STEP_SUMMARY
+        # Ruff linting (includes import sorting)
+        ruff check . || {
+          echo "❌ **Ruff linting issues found**" >> $GITHUB_STEP_SUMMARY
+          echo "Run \`ruff check --fix .\` to fix issues" >> $GITHUB_STEP_SUMMARY
           exit 1
         }
-        echo "✅ **Black formatting passed**" >> $GITHUB_STEP_SUMMARY
+        echo "✅ **Ruff linting passed**" >> $GITHUB_STEP_SUMMARY
 
-    - name: 📚 Run import sorting check
+    - name: 🎨 Run ruff formatting check
       run: |
-        isort --check-only . || {
-          echo "❌ **Import sorting issues found**" >> $GITHUB_STEP_SUMMARY
-          echo "Run \`isort .\` to fix import sorting" >> $GITHUB_STEP_SUMMARY
+        ruff format --check . || {
+          echo "❌ **Ruff formatting issues found**" >> $GITHUB_STEP_SUMMARY
+          echo "Run \`ruff format .\` to fix formatting" >> $GITHUB_STEP_SUMMARY
           exit 1
         }
-        echo "✅ **Import sorting passed**" >> $GITHUB_STEP_SUMMARY
+        echo "✅ **Ruff formatting passed**" >> $GITHUB_STEP_SUMMARY
+
+    - name: 🔍 Run mypy type checking
+      run: |
+        mypy . || {
+          echo "❌ **Type checking issues found**" >> $GITHUB_STEP_SUMMARY
+          echo "Run \`mypy .\` to see type errors" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        }
+        echo "✅ **Type checking passed**" >> $GITHUB_STEP_SUMMARY
 
     - name: 🔒 Run security scanning
       run: |

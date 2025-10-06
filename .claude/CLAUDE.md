@@ -94,16 +94,14 @@ cdk destroy <StackName> --profile infiquetra-root
 ### Code Quality and Testing
 
 ```bash
-# Format code
-black .
-ruff format .
-
-# Lint code
-flake8 .
+# Lint code (includes import sorting)
 ruff check .
 
-# Sort imports
-isort .
+# Fix linting issues automatically
+ruff check --fix .
+
+# Format code
+ruff format .
 
 # Type checking
 mypy .
@@ -111,7 +109,7 @@ mypy .
 # Security scanning
 bandit -r .
 
-# Run all pre-commit hooks
+# Run all pre-commit hooks (recommended before committing)
 pre-commit run --all-files
 ```
 
@@ -158,7 +156,7 @@ aws cloudformation describe-stacks \
 **Trigger**: Pull requests to `main`
 
 **Stages**:
-1. Code quality: black, flake8, isort
+1. Code quality: ruff (linting + formatting), mypy (type checking)
 2. Security scanning: bandit, semgrep
 3. CDK synthesis validation
 4. CloudFormation linting (cfn-lint)
@@ -200,7 +198,7 @@ git checkout -b feature/your-feature-name
 # ... edit files ...
 
 # 4. Local validation
-black . && flake8 . && isort . && cdk synth --all
+ruff check . && ruff format . && mypy . && cdk synth --all
 
 # 5. Commit and push
 git add .
@@ -234,7 +232,7 @@ gh pr create --title "Title" --body "Description"
 
 4. **Local validation**
    ```bash
-   black . && flake8 . && isort . && cdk synth --all
+   ruff check . && ruff format . && mypy . && cdk synth --all
    ```
 
 5. **Commit and push**
@@ -316,9 +314,7 @@ Migration requires resolving the suspended account first.
 
 ### Code Quality Standards
 
-- **Formatter**: black (line length: 88)
-- **Linter**: flake8 + ruff
-- **Import Sorting**: isort (black profile)
+- **Linter & Formatter**: ruff (line length: 88, includes import sorting)
 - **Type Checking**: mypy (strict mode, excludes github-oidc-bootstrap/app.py)
 - **Security**: bandit (excludes tests/)
 
