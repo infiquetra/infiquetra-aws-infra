@@ -138,6 +138,13 @@ aws cloudformation describe-stacks \
 
 ## CI/CD Architecture
 
+### Overview
+
+The CI/CD pipeline is modular and reusable, built with:
+- **Composite Actions** (`.github/actions/`): Reusable setup steps
+- **Reusable Workflows** (`.github/workflows/reusable-*.yml`): Modular pipeline components
+- **Main Workflows**: Pull request validation and deployment orchestration
+
 ### GitHub Actions Authentication
 
 **CRITICAL**: This repository uses GitHub OIDC for AWS authentication. Never use AWS access keys.
@@ -151,34 +158,107 @@ aws cloudformation describe-stacks \
   - Pull requests targeting `main`
   - Organization members only
 
-### CI Pipeline (`.github/workflows/ci.yml`)
+### Composite Actions
 
-**Trigger**: Pull requests to `main`
+**`setup-python-uv`** - Install Python 3.13 and uv package manager
+- Caches pip dependencies
+- Installs uv from astral.sh
+- Runs `uv sync --dev` to install all dependencies
+- Outputs: python-version, uv-version, cache-hit
 
-**Stages**:
-1. Code quality: ruff (linting + formatting), mypy (type checking)
-2. Security scanning: bandit, semgrep
-3. CDK synthesis validation
-4. CloudFormation linting (cfn-lint)
-5. Infrastructure security scanning (checkov)
-6. Cost estimation
+**`setup-node-cdk`** - Install Node.js and AWS CDK CLI
+- Installs Node.js (default: 18)
+- Installs AWS CDK CLI globally
+- Outputs: node-version, cdk-version
 
-**No AWS authentication required** - synthesis only
+**`setup-aws-credentials`** - Configure AWS credentials via OIDC
+- Uses aws-actions/configure-aws-credentials@v5
+- Requires `id-token: write` permission
+- Outputs: aws-account-id, aws-region
 
-### CD Pipeline (`.github/workflows/cd.yml`)
+### Reusable Workflows
 
-**Trigger**: Push to `main` or manual workflow dispatch
+**`reusable-code-quality.yml`** - Code quality checks
+- Runs ruff linting (includes import sorting)
+- Runs ruff formatting check
+- Runs mypy type checking
+- Outputs: quality-status (pass/fail)
 
-**Stages**:
-1. OIDC authentication to AWS
-2. Deploy organization stack (optional)
-3. Deploy SSO stack (optional)
-4. Create deployment tag
-5. Generate deployment summary
+**`reusable-security-scan.yml`** - Security scanning
+- Runs bandit (Python security scan)
+- Runs semgrep (pattern-based security scan)
+- Runs checkov on CloudFormation templates (if cdk.out exists)
+- Uploads security reports as artifacts
+- Outputs: security-findings-count
 
-**Required Permissions**:
-- `id-token: write` (for OIDC)
-- `contents: write` (for tagging)
+**`reusable-cdk-synthesis.yml`** - CDK synthesis and validation
+- Synthesizes all CDK stacks
+- Runs cfn-lint on generated templates
+- Runs checkov on CloudFormation templates
+- Generates cost estimation
+- Uploads cdk.out as artifact
+- Outputs: synthesis-status, template-count
+
+**`reusable-aws-deployment.yml`** - AWS deployment
+- Supports multi-environment deployment (production, nonprod, staging)
+- Configurable stack deployment (all, organization, sso)
+- Creates git tags for production deployments
+- Generates detailed deployment summary
+- Outputs: deployment-status, deployment-tag
+
+### Main Workflows
+
+**`pull-request-validation.yml`** (replaces ci.yml)
+- **Trigger**: Pull requests to `main`, workflow_dispatch
+- **Jobs**:
+  - code-quality: Parallel
+  - security-scan: Parallel with code-quality
+  - cdk-synthesis: After code-quality
+  - validation-summary: Final summary with all results
+- **No AWS authentication required** - synthesis only
+
+**`deploy-infrastructure.yml`** (replaces cd.yml and deploy.yml)
+- **Trigger**: Push to `main`, workflow_dispatch
+- **Jobs**:
+  - deploy: Uses reusable-aws-deployment.yml
+  - post-deployment: Summary and status
+- **Inputs** (workflow_dispatch):
+  - environment: production (default), nonprod, staging
+  - stack: all (default), organization, sso
+- **Required Permissions**:
+  - `id-token: write` (for OIDC)
+  - `contents: write` (for tagging)
+
+### Testing CI/CD Locally with act
+
+Install act:
+```bash
+# macOS
+brew install act
+
+# Linux
+curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+```
+
+Test workflows locally:
+```bash
+# Test pull request validation
+act pull_request -W .github/workflows/pull-request-validation.yml
+
+# Test specific job
+act -j code-quality -W .github/workflows/pull-request-validation.yml
+
+# Test deployment workflow (dry run)
+act workflow_dispatch -W .github/workflows/deploy-infrastructure.yml --dry-run
+
+# View available workflows
+act -l
+```
+
+Configuration file `.actrc` provides:
+- Container architecture settings
+- Environment variables (CDK_DEFAULT_ACCOUNT, etc.)
+- Secret placeholders for testing
 
 ## Development Workflow
 

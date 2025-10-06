@@ -1,0 +1,24 @@
+# act configuration file for local GitHub Actions testing
+# https://github.com/nektos/act
+
+# Use the catthehacker Ubuntu images for better compatibility
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+
+# Use linux/amd64 architecture
+--container-architecture linux/amd64
+
+# GitHub token (set via environment variable or provide here)
+# You can set this via: export GITHUB_TOKEN=your_token
+-s GITHUB_TOKEN
+
+# AWS deployment role ARN for testing deployment workflows
+# Note: This won't actually deploy without valid OIDC setup
+-s AWS_DEPLOY_ROLE_ARN=arn:aws:iam::645166163764:role/infiquetra-aws-infra-gha-role
+
+# Environment variables for CDK
+--env CDK_DEFAULT_ACCOUNT=645166163764
+--env CDK_DEFAULT_REGION=us-east-1
+--env GITHUB_REPO=infiquetra-aws-infra
+
+# Verbose output for debugging (uncomment if needed)
+# -v

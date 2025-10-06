@@ -1,0 +1,167 @@
+name: CDK Synthesis and Validation
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: 'Python version to use'
+        required: false
+        type: string
+        default: '3.13'
+      node-version:
+        description: 'Node.js version to use'
+        required: false
+        type: string
+        default: '18'
+      working-directory:
+        description: 'Working directory for synthesis'
+        required: false
+        type: string
+        default: '.'
+      cdk-account:
+        description: 'AWS account ID for CDK context'
+        required: true
+        type: string
+      cdk-region:
+        description: 'AWS region for CDK context'
+        required: true
+        type: string
+    outputs:
+      synthesis-status:
+        description: 'CDK synthesis status (pass/fail)'
+        value: ${{ jobs.cdk-synthesis.outputs.status }}
+      template-count:
+        description: 'Number of CloudFormation templates generated'
+        value: ${{ jobs.cdk-synthesis.outputs.template-count }}
+
+jobs:
+  cdk-synthesis:
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.final-status.outputs.status }}
+      template-count: ${{ steps.count-templates.outputs.count }}
+
+    env:
+      CDK_DEFAULT_ACCOUNT: ${{ inputs.cdk-account }}
+      CDK_DEFAULT_REGION: ${{ inputs.cdk-region }}
+      GITHUB_REPO: infiquetra-aws-infra
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python with uv
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: 🟢 Setup Node.js and CDK CLI
+        uses: ./.github/actions/setup-node-cdk
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: 🏗️ CDK Synthesis
+        id: cdk-synth
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "## 🏗️ CDK Synthesis Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if uv run cdk synth --all; then
+            echo "✅ **CDK synthesis successful**" >> $GITHUB_STEP_SUMMARY
+            echo "status=pass" >> $GITHUB_OUTPUT
+          else
+            echo "❌ **CDK synthesis failed**" >> $GITHUB_STEP_SUMMARY
+            echo "status=fail" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: 📊 Count templates
+        id: count-templates
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          TEMPLATE_COUNT=$(find cdk.out -name "*.template.json" -type f | wc -l | tr -d ' ')
+          echo "count=$TEMPLATE_COUNT" >> $GITHUB_OUTPUT
+          echo "📄 **Templates generated**: $TEMPLATE_COUNT" >> $GITHUB_STEP_SUMMARY
+
+      - name: 🔍 Run CloudFormation linting
+        id: cfn-lint
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          pip install cfn-lint
+
+          if cfn-lint cdk.out/*.template.json; then
+            echo "✅ **CloudFormation linting passed**" >> $GITHUB_STEP_SUMMARY
+            echo "status=pass" >> $GITHUB_OUTPUT
+          else
+            echo "❌ **CloudFormation linting failed**" >> $GITHUB_STEP_SUMMARY
+            echo "status=fail" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: 🛡️ Run Checkov on CloudFormation templates
+        id: checkov
+        working-directory: ${{ inputs.working-directory }}
+        continue-on-error: true
+        run: |
+          pip install checkov
+          checkov -d cdk.out --framework cloudformation --output json --output-file checkov-cfn-report.json || true
+
+          if [ -f checkov-cfn-report.json ]; then
+            FAILED=$(jq '.summary.failed' checkov-cfn-report.json 2>/dev/null || echo "0")
+            PASSED=$(jq '.summary.passed' checkov-cfn-report.json 2>/dev/null || echo "0")
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🛡️ CloudFormation Security Checks" >> $GITHUB_STEP_SUMMARY
+            echo "- **Passed**: $PASSED" >> $GITHUB_STEP_SUMMARY
+            echo "- **Failed**: $FAILED" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$FAILED" -gt 0 ]; then
+              echo "⚠️ Review checkov report for details" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+      - name: 💰 Cost Estimation
+        id: cost-estimate
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 💰 Cost Estimation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### AWS Organizations Stack" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cost**: Free (AWS Organizations is free)" >> $GITHUB_STEP_SUMMARY
+          echo "- No additional charges for organization structure" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### SSO Stack" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cost**: Free (up to 5GB of logs)" >> $GITHUB_STEP_SUMMARY
+          echo "- AWS Identity Center is included at no additional cost" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 💡 Additional Costs May Apply For:" >> $GITHUB_STEP_SUMMARY
+          echo "- CloudTrail logs (standard pricing)" >> $GITHUB_STEP_SUMMARY
+          echo "- CloudWatch logs (based on ingestion and retention)" >> $GITHUB_STEP_SUMMARY
+          echo "- Data transfer (if applicable)" >> $GITHUB_STEP_SUMMARY
+
+      - name: 📤 Upload CDK artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cdk-artifacts
+          path: |
+            ${{ inputs.working-directory }}/cdk.out/
+            ${{ inputs.working-directory }}/checkov-cfn-report.json
+          if-no-files-found: warn
+
+      - name: 📊 Set final status
+        id: final-status
+        if: always()
+        run: |
+          if [[ "${{ steps.cdk-synth.outputs.status }}" == "pass" ]] && \
+             [[ "${{ steps.cfn-lint.outputs.status }}" == "pass" ]]; then
+            echo "status=pass" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ CDK synthesis and validation successful!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "status=fail" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ❌ CDK synthesis or validation failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi

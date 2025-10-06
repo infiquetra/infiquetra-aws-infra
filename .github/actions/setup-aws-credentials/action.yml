@@ -1,0 +1,43 @@
+name: 'Setup AWS Credentials via OIDC'
+description: 'Configure AWS credentials using GitHub OIDC (no access keys required)'
+author: 'Infiquetra LLC'
+
+inputs:
+  aws-role-arn:
+    description: 'AWS IAM role ARN to assume via OIDC'
+    required: true
+  aws-region:
+    description: 'AWS region to use'
+    required: false
+    default: 'us-east-1'
+  session-name-prefix:
+    description: 'Prefix for the role session name'
+    required: false
+    default: 'GitHubActions'
+
+outputs:
+  aws-account-id:
+    description: 'AWS account ID that was authenticated'
+    value: ${{ steps.get-account-id.outputs.account-id }}
+  aws-region:
+    description: 'AWS region that was configured'
+    value: ${{ inputs.aws-region }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 🔐 Configure AWS credentials via OIDC
+      uses: aws-actions/configure-aws-credentials@v5
+      with:
+        role-to-assume: ${{ inputs.aws-role-arn }}
+        role-session-name: ${{ inputs.session-name-prefix }}-${{ github.run_id }}-${{ github.run_attempt }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: 🔍 Get AWS account ID
+      id: get-account-id
+      shell: bash
+      run: |
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        echo "account-id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
+        echo "✅ Authenticated to AWS account: $ACCOUNT_ID"
+        echo "📍 Region: ${{ inputs.aws-region }}"
