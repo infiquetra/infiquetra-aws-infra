@@ -37,7 +37,8 @@
       "Bash(uv venv:*)",
       "Bash(docker:*)",
       "Bash(act pull_request:*)",
-      "Bash(open:*)"
+      "Bash(open:*)",
+      "Bash(isort:*)"
     ],
     "deny": [],
     "ask": []
