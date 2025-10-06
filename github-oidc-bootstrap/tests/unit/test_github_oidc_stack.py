@@ -147,9 +147,9 @@ class TestGitHubOIDCStack:
 
         # Check that some statements have resource restrictions
         scoped_statements = [s for s in statements if s.get("Resource") != ["*"]]
-        assert len(scoped_statements) > 0, (
-            "Some IAM statements should have scoped resources"
-        )
+        assert (
+            len(scoped_statements) > 0
+        ), "Some IAM statements should have scoped resources"
 
     def test_cloudformation_outputs(self, template: Template) -> None:
         """Test that required CloudFormation outputs are created."""
@@ -196,9 +196,9 @@ class TestGitHubOIDCStack:
                     "cloudtrail:*",
                 ]
                 for action in actions:
-                    assert action not in dangerous_wildcards, (
-                        f"Found dangerous wildcard action: {action}"
-                    )
+                    assert (
+                        action not in dangerous_wildcards
+                    ), f"Found dangerous wildcard action: {action}"
 
     def test_session_duration_limit(self, template: Template) -> None:
         """Test that IAM role has appropriate session duration limit."""
