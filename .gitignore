@@ -36,4 +36,4 @@ cdk.context.json
 *.log
 
 # AWS
-.aws/
+.aws/.secrets

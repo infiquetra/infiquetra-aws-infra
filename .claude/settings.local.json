@@ -26,7 +26,19 @@
       "Bash(aws iam delete-open-id-connect-provider:*)",
       "Bash(aws cloudformation delete-stack:*)",
       "Bash(aws cloudformation describe-stacks:*)",
-      "Bash(aws cloudformation continue-update-rollback:*)"
+      "Bash(aws cloudformation continue-update-rollback:*)",
+      "Bash(GH_HOST=github.com gh run list --repo infiquetra/infiquetra-aws-infra --limit 5)",
+      "Bash(GH_HOST=github.com gh run view 17840088375 --repo infiquetra/infiquetra-aws-infra --log-failed)",
+      "Bash(GH_HOST=github.com gh run list --repo infiquetra/infiquetra-aws-infra --limit 3)",
+      "Bash(GH_HOST=github.com gh run list --repo infiquetra/infiquetra-aws-infra --limit 2)",
+      "WebFetch(domain:docs.claude.com)",
+      "Bash(aws sts get-caller-identity:*)",
+      "Bash(source:*)",
+      "Bash(uv venv:*)",
+      "Bash(docker:*)",
+      "Bash(act pull_request:*)",
+      "Bash(open:*)",
+      "Bash(isort:*)"
     ],
     "deny": [],
     "ask": []

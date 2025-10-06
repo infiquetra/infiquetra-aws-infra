@@ -25,6 +25,10 @@ from constructs import Construct
 class GitHubOIDCStack(Stack):
     """Stack for GitHub OIDC provider and deployment role."""
 
+    github_owner: str
+    repo_name: str
+    repo_full_name: str
+
     def __init__(
         self,
         scope: Construct,
@@ -36,10 +40,10 @@ class GitHubOIDCStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         # Repository configuration with environment variable fallbacks
-        self.github_owner = github_owner or os.environ.get("GITHUB_OWNER", "infiquetra")
+        self.github_owner = github_owner or os.environ.get("GITHUB_OWNER", "infiquetra")  # type: ignore[assignment]
         self.repo_name = repo_name or os.environ.get(
             "GITHUB_REPO", "infiquetra-aws-infra"
-        )
+        )  # type: ignore[assignment]
         self.repo_full_name = f"{self.github_owner}/{self.repo_name}"
 
         # Validate configuration
