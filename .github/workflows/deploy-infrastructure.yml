@@ -1,10 +1,8 @@
 name: Deploy Infrastructure
 
 on:
-  # Auto-deploy on push to main is intentionally disabled while the
-  # OrganizationStack SCP issue is being resolved. Re-enable by adding:
-  #   push:
-  #     branches: [ main ]
+  push:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       environment:
