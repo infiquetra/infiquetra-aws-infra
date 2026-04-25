@@ -1,0 +1,148 @@
+name: Security Scanning
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: 'Python version to use'
+        required: false
+        type: string
+        default: '3.13'
+      working-directory:
+        description: 'Working directory for scans'
+        required: false
+        type: string
+        default: '.'
+      upload-sarif:
+        description: 'Upload SARIF results to GitHub Security'
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      security-findings-count:
+        description: 'Total number of security findings'
+        value: ${{ jobs.security-scan.outputs.findings-count }}
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    outputs:
+      findings-count: ${{ steps.count-findings.outputs.total }}
+
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python with uv
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: 🔧 Install security tools
+        run: |
+          pip install semgrep checkov
+          echo "✅ Installed security scanning tools"
+
+      - name: 🔒 Run bandit security scan
+        id: bandit
+        working-directory: ${{ inputs.working-directory }}
+        continue-on-error: true
+        run: |
+          echo "## 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          uv run bandit -r . -f json -o bandit-report.json || true
+
+          if [ -f bandit-report.json ]; then
+            BANDIT_ISSUES=$(jq '.results | length' bandit-report.json 2>/dev/null || echo "0")
+            echo "bandit-issues=$BANDIT_ISSUES" >> $GITHUB_OUTPUT
+
+            if [ "$BANDIT_ISSUES" -gt 0 ]; then
+              echo "⚠️ **Bandit**: Found $BANDIT_ISSUES potential security issue(s)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ **Bandit**: No security issues found" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "bandit-issues=0" >> $GITHUB_OUTPUT
+            echo "✅ **Bandit**: Completed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: 🔍 Run semgrep security scan
+        id: semgrep
+        working-directory: ${{ inputs.working-directory }}
+        continue-on-error: true
+        run: |
+          semgrep --config=auto --json --output=semgrep-report.json . || true
+
+          if [ -f semgrep-report.json ]; then
+            SEMGREP_ISSUES=$(jq '.results | length' semgrep-report.json 2>/dev/null || echo "0")
+            echo "semgrep-issues=$SEMGREP_ISSUES" >> $GITHUB_OUTPUT
+
+            if [ "$SEMGREP_ISSUES" -gt 0 ]; then
+              echo "⚠️ **Semgrep**: Found $SEMGREP_ISSUES potential security issue(s)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ **Semgrep**: No security issues found" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "semgrep-issues=0" >> $GITHUB_OUTPUT
+            echo "✅ **Semgrep**: Completed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: 🛡️ Run checkov on CloudFormation templates
+        id: checkov
+        working-directory: ${{ inputs.working-directory }}
+        continue-on-error: true
+        run: |
+          if [ -d "cdk.out" ]; then
+            checkov -d cdk.out --framework cloudformation --output json --output-file checkov-report.json || true
+
+            if [ -f checkov-report.json ]; then
+              CHECKOV_FAILED=$(jq '.summary.failed' checkov-report.json 2>/dev/null || echo "0")
+              echo "checkov-issues=$CHECKOV_FAILED" >> $GITHUB_OUTPUT
+
+              if [ "$CHECKOV_FAILED" -gt 0 ]; then
+                echo "⚠️ **Checkov**: Found $CHECKOV_FAILED CloudFormation security issue(s)" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "✅ **Checkov**: No CloudFormation security issues found" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              echo "checkov-issues=0" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "checkov-issues=0" >> $GITHUB_OUTPUT
+            echo "ℹ️ **Checkov**: Skipped (no cdk.out directory found)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: 📊 Count total findings
+        id: count-findings
+        run: |
+          BANDIT="${{ steps.bandit.outputs.bandit-issues || '0' }}"
+          SEMGREP="${{ steps.semgrep.outputs.semgrep-issues || '0' }}"
+          CHECKOV="${{ steps.checkov.outputs.checkov-issues || '0' }}"
+
+          TOTAL=$((BANDIT + SEMGREP + CHECKOV))
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total findings**: $TOTAL" >> $GITHUB_STEP_SUMMARY
+          echo "- Bandit: $BANDIT" >> $GITHUB_STEP_SUMMARY
+          echo "- Semgrep: $SEMGREP" >> $GITHUB_STEP_SUMMARY
+          echo "- Checkov: $CHECKOV" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📄 Detailed reports available in artifacts" >> $GITHUB_STEP_SUMMARY
+
+      - name: 📤 Upload security reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            ${{ inputs.working-directory }}/bandit-report.json
+            ${{ inputs.working-directory }}/semgrep-report.json
+            ${{ inputs.working-directory }}/checkov-report.json
+          if-no-files-found: warn

@@ -1,0 +1,96 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - nonprod
+          - staging
+      stack:
+        description: 'Stack to deploy'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - organization
+          - sso
+
+env:
+  CDK_DEFAULT_ACCOUNT: "645166163764"
+  CDK_DEFAULT_REGION: "us-east-1"
+  GITHUB_REPO: "infiquetra-aws-infra"
+
+jobs:
+  deploy:
+    name: 🚀 Deploy to AWS
+    # Only deploy from main branch
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/reusable-aws-deployment.yml
+    with:
+      environment: ${{ inputs.environment || 'production' }}
+      stack: ${{ inputs.stack || 'all' }}
+      # Map environment to AWS account
+      # Production: 645166163764 (current account)
+      # NonProd/Staging: TBD (placeholder for future accounts)
+      aws-account: ${{ (inputs.environment == 'production' || inputs.environment == '') && '645166163764' || 'TBD-NONPROD-ACCOUNT' }}
+      aws-region: 'us-east-1'
+      # Require approval for production, auto-approve for nonprod/staging
+      require-approval: ${{ (inputs.environment == 'production' || inputs.environment == '') && false || false }}
+      python-version: '3.13'
+      node-version: '18'
+    secrets:
+      aws-role-arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+
+  post-deployment:
+    name: 📊 Post-Deployment
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: always()
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: 📊 Deployment results
+        run: |
+          echo "# 🎯 Deployment Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          STATUS="${{ needs.deploy.outputs.deployment-status }}"
+          TAG="${{ needs.deploy.outputs.deployment-tag }}"
+
+          if [[ "$STATUS" == "success" ]]; then
+            echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Environment**: ${{ inputs.environment || 'production' }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Stack**: ${{ inputs.stack || 'all' }}" >> $GITHUB_STEP_SUMMARY
+
+            if [[ "$TAG" != "" ]]; then
+              echo "**Tag**: \`$TAG\`" >> $GITHUB_STEP_SUMMARY
+            fi
+          elif [[ "$STATUS" == "failure" ]]; then
+            echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the deployment logs for details." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "## ℹ️ Deployment Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "No deployment was performed." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Time**: $(date -u)" >> $GITHUB_STEP_SUMMARY

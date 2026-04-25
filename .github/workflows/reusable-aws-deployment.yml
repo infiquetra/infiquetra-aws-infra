@@ -1,0 +1,198 @@
+name: AWS CDK Deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Deployment environment (production, nonprod, staging)'
+        required: true
+        type: string
+      stack:
+        description: 'Stack to deploy (all, organization, sso)'
+        required: true
+        type: string
+      aws-account:
+        description: 'AWS account ID to deploy to'
+        required: true
+        type: string
+      aws-region:
+        description: 'AWS region to deploy to'
+        required: false
+        type: string
+        default: 'us-east-1'
+      require-approval:
+        description: 'Require manual approval before deployment'
+        required: false
+        type: boolean
+        default: true
+      python-version:
+        description: 'Python version to use'
+        required: false
+        type: string
+        default: '3.13'
+      node-version:
+        description: 'Node.js version to use'
+        required: false
+        type: string
+        default: '18'
+    secrets:
+      aws-role-arn:
+        description: 'AWS IAM role ARN for OIDC authentication'
+        required: true
+    outputs:
+      deployment-status:
+        description: 'Deployment status (success/failure)'
+        value: ${{ jobs.deploy.outputs.status }}
+      deployment-tag:
+        description: 'Git tag created for deployment'
+        value: ${{ jobs.deploy.outputs.tag }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.final-status.outputs.status }}
+      tag: ${{ steps.create-tag.outputs.tag }}
+
+    permissions:
+      id-token: write
+      contents: write
+
+    env:
+      CDK_DEFAULT_ACCOUNT: ${{ inputs.aws-account }}
+      CDK_DEFAULT_REGION: ${{ inputs.aws-region }}
+      GITHUB_REPO: infiquetra-aws-infra
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for tagging
+
+      - name: 🐍 Setup Python with uv
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: 🟢 Setup Node.js and CDK CLI
+        uses: ./.github/actions/setup-node-cdk
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: 🔐 Configure AWS credentials
+        uses: ./.github/actions/setup-aws-credentials
+        with:
+          aws-role-arn: ${{ secrets.aws-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: 🏢 Deploy Organization Stack
+        id: deploy-org
+        if: ${{ inputs.stack == 'organization' || inputs.stack == 'all' }}
+        run: |
+          echo "## 🏢 Deploying Organization Stack" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Account**: ${{ inputs.aws-account }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Region**: ${{ inputs.aws-region }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          APPROVAL_FLAG="--require-approval never"
+          if [[ "${{ inputs.require-approval }}" == "true" ]]; then
+            APPROVAL_FLAG=""
+          fi
+
+          if cdk deploy InfiquetraOrganizationStack $APPROVAL_FLAG; then
+            echo "✅ **Organization Stack deployed successfully**" >> $GITHUB_STEP_SUMMARY
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ **Organization Stack deployment failed**" >> $GITHUB_STEP_SUMMARY
+            echo "status=failure" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: 👥 Deploy SSO Stack
+        id: deploy-sso
+        if: ${{ inputs.stack == 'sso' || inputs.stack == 'all' }}
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 👥 Deploying SSO Stack" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Account**: ${{ inputs.aws-account }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Region**: ${{ inputs.aws-region }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          APPROVAL_FLAG="--require-approval never"
+          if [[ "${{ inputs.require-approval }}" == "true" ]]; then
+            APPROVAL_FLAG=""
+          fi
+
+          if cdk deploy InfiquetraSSOStack $APPROVAL_FLAG; then
+            echo "✅ **SSO Stack deployed successfully**" >> $GITHUB_STEP_SUMMARY
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ **SSO Stack deployment failed**" >> $GITHUB_STEP_SUMMARY
+            echo "status=failure" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: 🏷️ Create deployment tag
+        id: create-tag
+        if: success() && inputs.environment == 'production'
+        run: |
+          TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          TAG_NAME="deploy-${TIMESTAMP}-${SHORT_SHA}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG_NAME" -m "Deployment to ${{ inputs.environment }} on ${TIMESTAMP} - ${{ inputs.stack }} stack(s)"
+          git push https://x-access-token:${{ github.token }}@github.com/${{ github.repository }} "$TAG_NAME"
+
+          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🏷️ **Created deployment tag**: \`$TAG_NAME\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: 📊 Generate deployment summary
+        id: summary
+        if: always()
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📊 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Stack(s)** | ${{ inputs.stack }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Account** | ${{ inputs.aws-account }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Region** | ${{ inputs.aws-region }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered by** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployment time** | $(date -u) |" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ steps.create-tag.outputs.tag }}" != "" ]]; then
+            echo "| **Tag** | \`${{ steps.create-tag.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: 📊 Set final status
+        id: final-status
+        if: always()
+        run: |
+          ORG_STATUS="${{ steps.deploy-org.outputs.status || 'skipped' }}"
+          SSO_STATUS="${{ steps.deploy-sso.outputs.status || 'skipped' }}"
+
+          if [[ "$ORG_STATUS" == "failure" ]] || [[ "$SSO_STATUS" == "failure" ]]; then
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ❌ Deployment failed" >> $GITHUB_STEP_SUMMARY
+            echo "Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          elif [[ "$ORG_STATUS" == "success" ]] || [[ "$SSO_STATUS" == "success" ]]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ Deployment completed successfully!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "status=skipped" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ℹ️ No stacks were deployed" >> $GITHUB_STEP_SUMMARY
+          fi

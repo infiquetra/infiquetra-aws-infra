@@ -1,0 +1,97 @@
+name: Code Quality Checks
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: 'Python version to use'
+        required: false
+        type: string
+        default: '3.13'
+      working-directory:
+        description: 'Working directory for checks'
+        required: false
+        type: string
+        default: '.'
+    outputs:
+      quality-status:
+        description: 'Overall quality check status (pass/fail)'
+        value: ${{ jobs.code-quality.outputs.status }}
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.final-status.outputs.status }}
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python with uv
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: 🧹 Run ruff linting
+        id: ruff-lint
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "## 🧹 Code Quality Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Ruff linting (includes import sorting)
+          if uv run ruff check .; then
+            echo "✅ **Ruff linting passed**" >> $GITHUB_STEP_SUMMARY
+            echo "status=pass" >> $GITHUB_OUTPUT
+          else
+            echo "❌ **Ruff linting issues found**" >> $GITHUB_STEP_SUMMARY
+            echo "Run \`ruff check --fix .\` to fix issues" >> $GITHUB_STEP_SUMMARY
+            echo "status=fail" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: 🎨 Run ruff formatting check
+        id: ruff-format
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if uv run ruff format --check .; then
+            echo "✅ **Ruff formatting passed**" >> $GITHUB_STEP_SUMMARY
+            echo "status=pass" >> $GITHUB_OUTPUT
+          else
+            echo "❌ **Ruff formatting issues found**" >> $GITHUB_STEP_SUMMARY
+            echo "Run \`ruff format .\` to fix formatting" >> $GITHUB_STEP_SUMMARY
+            echo "status=fail" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: 🔍 Run mypy type checking
+        id: mypy
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if uv run mypy .; then
+            echo "✅ **Type checking passed**" >> $GITHUB_STEP_SUMMARY
+            echo "status=pass" >> $GITHUB_OUTPUT
+          else
+            echo "❌ **Type checking issues found**" >> $GITHUB_STEP_SUMMARY
+            echo "Run \`mypy .\` to see type errors" >> $GITHUB_STEP_SUMMARY
+            echo "status=fail" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: 📊 Set final status
+        id: final-status
+        if: always()
+        run: |
+          if [[ "${{ steps.ruff-lint.outputs.status }}" == "pass" ]] && \
+             [[ "${{ steps.ruff-format.outputs.status }}" == "pass" ]] && \
+             [[ "${{ steps.mypy.outputs.status }}" == "pass" ]]; then
+            echo "status=pass" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ All code quality checks passed!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "status=fail" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ❌ Some code quality checks failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi

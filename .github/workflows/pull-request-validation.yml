@@ -1,0 +1,109 @@
+name: Pull Request Validation
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  CDK_DEFAULT_ACCOUNT: "645166163764"
+  CDK_DEFAULT_REGION: "us-east-1"
+  GITHUB_REPO: "infiquetra-aws-infra"
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  code-quality:
+    name: 🧹 Code Quality
+    uses: ./.github/workflows/reusable-code-quality.yml
+    with:
+      python-version: '3.13'
+    permissions:
+      contents: read
+
+  security-scan:
+    name: 🔒 Security Scanning
+    uses: ./.github/workflows/reusable-security-scan.yml
+    with:
+      python-version: '3.13'
+      upload-sarif: false
+    permissions:
+      contents: read
+      security-events: write
+
+  cdk-synthesis:
+    name: 🏗️ CDK Synthesis
+    needs: [code-quality]
+    uses: ./.github/workflows/reusable-cdk-synthesis.yml
+    with:
+      python-version: '3.13'
+      node-version: '18'
+      cdk-account: '645166163764'
+      cdk-region: 'us-east-1'
+    permissions:
+      contents: read
+
+  validation-summary:
+    name: 📋 Validation Summary
+    runs-on: ubuntu-latest
+    needs: [code-quality, security-scan, cdk-synthesis]
+    if: always()
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: 📊 Generate validation summary
+        run: |
+          echo "# 🎯 Pull Request Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Code Quality
+          if [[ "${{ needs.code-quality.outputs.quality-status }}" == "pass" ]]; then
+            echo "✅ **Code Quality**: All checks passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Code Quality**: Some checks failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Security Scan
+          FINDINGS="${{ needs.security-scan.outputs.security-findings-count }}"
+          if [[ "$FINDINGS" == "0" ]]; then
+            echo "✅ **Security Scan**: No issues found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **Security Scan**: $FINDINGS finding(s) detected (review artifacts)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # CDK Synthesis
+          if [[ "${{ needs.cdk-synthesis.outputs.synthesis-status }}" == "pass" ]]; then
+            TEMPLATES="${{ needs.cdk-synthesis.outputs.template-count }}"
+            echo "✅ **CDK Synthesis**: Successful ($TEMPLATES template(s) generated)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **CDK Synthesis**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📝 Details" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch**: ${{ github.head_ref || github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Overall status
+          if [[ "${{ needs.code-quality.result }}" == "success" ]] && \
+             [[ "${{ needs.cdk-synthesis.result }}" == "success" ]]; then
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🚀 Ready for merge and deployment!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ⚠️ Please address the issues above before merging" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
