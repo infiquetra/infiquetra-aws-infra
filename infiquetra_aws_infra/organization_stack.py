@@ -127,14 +127,16 @@ class OrganizationStack(Stack):
     def create_service_control_policies(self) -> None:
         """Create Service Control Policies for governance and security."""
 
-        # Base security policy for all business units
+        # Base security policy for all business units.
+        # SCPs implicitly apply to every principal in the target accounts and
+        # MUST NOT include a Principal field — AWS Organizations rejects the
+        # policy document otherwise.
         base_security_policy = {
             "Version": "2012-10-17",
             "Statement": [
                 {
                     "Sid": "DenyRootUserActions",
                     "Effect": "Deny",
-                    "Principal": {"AWS": "*"},
                     "Action": "*",
                     "Resource": "*",
                     "Condition": {"StringEquals": {"aws:PrincipalType": "Root"}},
@@ -142,7 +144,6 @@ class OrganizationStack(Stack):
                 {
                     "Sid": "DenyDeleteLoggingResources",
                     "Effect": "Deny",
-                    "Principal": {"AWS": "*"},
                     "Action": [
                         "logs:DeleteLogGroup",
                         "logs:DeleteLogStream",
@@ -154,7 +155,6 @@ class OrganizationStack(Stack):
                 {
                     "Sid": "RequireMFAForSensitiveActions",
                     "Effect": "Deny",
-                    "Principal": {"AWS": "*"},
                     "Action": [
                         "iam:DeleteUser",
                         "iam:DeleteRole",
@@ -189,14 +189,14 @@ class OrganizationStack(Stack):
             ],
         )
 
-        # Cost control policy for development environments
+        # Cost control policy for development environments.
+        # As above, no Principal field is allowed in SCP statements.
         dev_cost_control_policy = {
             "Version": "2012-10-17",
             "Statement": [
                 {
                     "Sid": "DenyExpensiveInstanceTypes",
                     "Effect": "Deny",
-                    "Principal": {"AWS": "*"},
                     "Action": "ec2:RunInstances",
                     "Resource": "arn:aws:ec2:*:*:instance/*",
                     "Condition": {
