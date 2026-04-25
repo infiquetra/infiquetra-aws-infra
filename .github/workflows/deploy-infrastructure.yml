@@ -29,12 +29,18 @@ env:
   CDK_DEFAULT_REGION: "us-east-1"
   GITHUB_REPO: "infiquetra-aws-infra"
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     name: 🚀 Deploy to AWS
     # Only deploy from main branch
     if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/reusable-aws-deployment.yml
+    permissions:
+      id-token: write
+      contents: write
     with:
       environment: ${{ inputs.environment || 'production' }}
       stack: ${{ inputs.stack || 'all' }}
