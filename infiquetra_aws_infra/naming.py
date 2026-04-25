@@ -27,7 +27,7 @@ def resource_name(service: str, env: str, name: str, max_len: int = 64) -> str:
     ]:
         if not component:
             raise ValueError(f"{component_name} component cannot be empty")
-        if not all(c.isalnum() or c == '-' for c in component):
+        if not all((c >= 'a' and c <= 'z') or (c >= '0' and c <= '9') or c == '-' for c in component):
             raise ValueError(
                 f"{component_name} component contains illegal characters "
                 f"(only a-z, 0-9, - allowed)"
