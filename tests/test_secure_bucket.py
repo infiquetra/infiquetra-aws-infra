@@ -1,5 +1,7 @@
 """Tests for SecureBucket CDK construct."""
 
+from typing import Any
+
 from aws_cdk import App, Stack
 from aws_cdk.assertions import Template
 from aws_cdk.aws_s3 import Bucket
@@ -13,7 +15,7 @@ def _make_stack_and_template(
     """Create a minimal stack with SecureBucket and return (stack, template)."""
     app = App()
     stack = Stack(app, "TestStack")
-    kwargs: dict = {}
+    kwargs: dict[str, Any] = {}
     if bucket_name is not None:
         kwargs["bucket_name"] = bucket_name
     SecureBucket(stack, "TestBucket", **kwargs)
@@ -78,6 +80,10 @@ def test_secure_bucket_retains_bucket_on_delete() -> None:
     assert bucket_resource.get("DeletionPolicy") == "Retain", (
         f"Expected DeletionPolicy=Retain, "
         f"got {bucket_resource.get('DeletionPolicy')}"
+    )
+    assert bucket_resource.get("UpdateReplacePolicy") == "Retain", (
+        f"Expected UpdateReplacePolicy=Retain, "
+        f"got {bucket_resource.get('UpdateReplacePolicy')}"
     )
 
 

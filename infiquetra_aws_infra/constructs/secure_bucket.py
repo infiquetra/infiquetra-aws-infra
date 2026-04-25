@@ -1,5 +1,7 @@
 """SecureBucket CDK construct with secure defaults."""
 
+from typing import Any
+
 from aws_cdk import RemovalPolicy
 from aws_cdk.aws_s3 import BlockPublicAccess, Bucket, BucketEncryption
 from constructs import Construct
@@ -24,9 +26,9 @@ class SecureBucket(Construct):
     ) -> None:
         super().__init__(scope, construct_id)
 
-        # No naming helper exists in this repo; bucket_name
-        # is passed verbatim to the underlying Bucket.
-        bucket_kwargs: dict = {
+        # Verified: no resource_name/naming helper exists in this repo
+        # (git grep confirms). bucket_name is passed verbatim to Bucket.
+        bucket_kwargs: dict[str, Any] = {
             "encryption": BucketEncryption.S3_MANAGED,
             "versioned": True,
             "block_public_access": BlockPublicAccess.BLOCK_ALL,
