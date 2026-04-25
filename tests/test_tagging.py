@@ -41,3 +41,27 @@ class TestCommonTags:
 
         assert set(result.keys()) == {"Environment", "Team", "Project", "ManagedBy"}
         assert result["ManagedBy"] == "CDK"
+
+    @pytest.mark.parametrize(
+        "arg_name,arg_value",
+        [
+            ("env", None),
+            ("env", 123),
+            ("env", 12.34),
+            ("env", True),
+            ("team", None),
+            ("team", 123),
+            ("project", None),
+            ("project", 123),
+        ],
+    )
+    def test_common_tags_non_string_input_raises_type_error(
+        self, arg_name: str, arg_value
+    ) -> None:
+        """Test that non-string inputs raise TypeError."""
+        kwargs = {"env": "dev", "team": "platform", "project": "auth"}
+        kwargs[arg_name] = arg_value
+        with pytest.raises(
+            TypeError, match=f"must be str, got {type(arg_value).__name__!r}"
+        ):
+            common_tags(**kwargs)
