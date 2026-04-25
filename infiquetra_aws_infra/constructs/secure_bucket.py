@@ -12,7 +12,7 @@ class SecureBucket(Construct):
         construct_id: str,
         *,
         bucket_name: str | None = None
-    ):
+    ) -> None:
         """
         Initialize a SecureBucket construct.
 
@@ -27,15 +27,14 @@ class SecureBucket(Construct):
         processed_bucket_name = None
         if bucket_name is not None:
             try:
-                # Try to import the naming helper
-                from infiquetra_aws_infra.naming import resource_name
-                processed_bucket_name = resource_name(bucket_name)
-            except ImportError:
+                # Try to import the naming module
+                import infiquetra_aws_infra.naming as naming_module
+                # Try to get the resource_name function
+                resource_name_func = naming_module.resource_name
+                processed_bucket_name = resource_name_func(bucket_name)
+            except (ImportError, AttributeError):
                 # If the naming module doesn't exist or resource_name is not available,
                 # use the bucket name verbatim
-                processed_bucket_name = bucket_name
-            except AttributeError:
-                # If resource_name doesn't exist in the naming module, use verbatim
                 processed_bucket_name = bucket_name
 
         # Create the underlying bucket with secure defaults

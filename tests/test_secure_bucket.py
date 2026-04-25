@@ -61,6 +61,10 @@ def test_secure_bucket_defaults():
     # UpdateReplacePolicy is typically also Retain when DeletionPolicy is Retain
     assert bucket_resource.get("UpdateReplacePolicy") == "Retain"
 
+    # Should not have BucketName specified (let CDK auto-generate)
+    bucket_props = bucket_resource.get("Properties", {})
+    assert "BucketName" not in bucket_props
+
 
 def test_secure_bucket_exposes_underlying_bucket():
     """Test that SecureBucket exposes the underlying Bucket instance."""
