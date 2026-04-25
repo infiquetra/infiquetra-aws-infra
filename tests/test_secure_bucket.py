@@ -87,9 +87,12 @@ class TestSecureBucket:
         test_stack = cdk.Stack(app, "TestExposeBucket")
         construct = SecureBucket(test_stack, "TestExposeBucketConstruct")
 
-        # Verify .bucket returns the underlying S3 Bucket
-        assert construct.bucket is not None
-        assert isinstance(construct.bucket, s3.Bucket)
+        # Verify .bucket returns the same underlying S3 Bucket instance
+        underlying_bucket = construct.bucket
+        assert underlying_bucket is not None
+        assert isinstance(underlying_bucket, s3.Bucket)
+        # Identity check: should be the exact same instance stored internally
+        assert construct.bucket is underlying_bucket
 
     def test_secure_bucket_uses_explicit_bucket_name_verbatim(
         self, app: App

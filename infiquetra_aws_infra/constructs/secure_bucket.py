@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-from typing import Any
-
 import aws_cdk as cdk
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
@@ -24,9 +22,8 @@ class SecureBucket(Construct):
         construct_id: str,
         *,
         bucket_name: str | None = None,
-        **kwargs: Any,
     ) -> None:
-        super().__init__(scope, construct_id, **kwargs)
+        super().__init__(scope, construct_id)
 
         # Apply secure defaults to the underlying S3 bucket
         self._bucket = s3.Bucket(
