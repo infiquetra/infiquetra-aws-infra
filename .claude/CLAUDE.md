@@ -10,6 +10,46 @@ AWS CDK infrastructure as code for Infiquetra LLC's multi-business organizationa
 **AWS Region**: us-east-1
 **AWS Profile**: infiquetra-root
 
+## 📓 Knowledge base — AUTO-MAINTAIN
+
+Living documentation at [`docs/learnings/`](../docs/learnings/):
+
+| File | Purpose |
+|------|---------|
+| [LEARNINGS.md](../docs/learnings/LEARNINGS.md) | Empirical findings + mechanisms + fixes + validations |
+| [DECISIONS.md](../docs/learnings/DECISIONS.md) | Architecture decisions (ADR-style) with rationale + revisit conditions |
+| [QUEUED.md](../docs/learnings/QUEUED.md) | Future-work items by priority with "worth it when" triggers |
+| [ARCHIVE.md](../docs/learnings/ARCHIVE.md) | Shipped + rejected + superseded items |
+
+**Maintenance rules (Claude: follow these without being asked):**
+
+1. **After a deploy, CDK refactor, or AWS API failure** that produces a surprising
+   result, a confirmed bug, or a non-obvious mechanism worth remembering
+   → add a dated entry to `LEARNINGS.md`. Include the evidence (workflow run ID,
+   commit, AWS error code) and the mechanism, not just the observation.
+
+2. **After committing an architectural or pipeline-design decision** (pick A over B,
+   flip a flag, change a permission scope, add/remove a workflow stage)
+   → add an entry to `DECISIONS.md` with rationale + tradeoff + "revisit when"
+   condition. Include the commit hash or PR number.
+
+3. **Whenever a promising idea surfaces but we don't build it right now**
+   → add to `QUEUED.md` with priority (P1/P2/P3/Maybe), concrete "worth it when"
+   trigger, and rough effort estimate. Don't skip — these items are easy to lose.
+
+4. **When a QUEUED item ships** → move its entry to `ARCHIVE.md` with the commit
+   hash + SHIPPED date. Remove from QUEUED.md.
+
+5. **When a QUEUED item is rejected** → move to `ARCHIVE.md` as REJECTED with the
+   reason + under what conditions we'd revisit. Remove from QUEUED.md.
+
+6. **When a prior LEARNING or DECISION is invalidated** → update the original
+   entry with the correction AND move the pre-correction version to `ARCHIVE.md`
+   as SUPERSEDED. Never silently overwrite history.
+
+**Don't wait to be asked.** When any trigger fires in a session, update the files
+as part of the same commit that ships the change.
+
 ## Core Architecture
 
 ### Stack Structure
