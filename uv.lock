@@ -425,6 +425,20 @@ wheels = [
 ]
 
 [[package]]
+name = "diagrams"
+version = "0.25.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "graphviz" },
+    { name = "jinja2" },
+    { name = "pre-commit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/49/91/af38c647ba20a7b74c23ebb0b56e000f5f8fe80fefb21251e1d0445ac5b5/diagrams-0.25.1.tar.gz", hash = "sha256:87480ba0b2d26987a69f7d553aa0cb1cebf1406adc03fef7031bdfff026bfc51", size = 33317533, upload-time = "2025-11-22T02:27:20.084Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/76/60/83bb3b6c9ed994e2e6829c01261b64fdcbc0b7e239434be5c417a5e05bb2/diagrams-0.25.1-py3-none-any.whl", hash = "sha256:90698eaa74c027dfffd8306ba7f08ee543959205024050a6357f34eae9961345", size = 34537406, upload-time = "2025-11-22T02:27:15.88Z" },
+]
+
+[[package]]
 name = "distlib"
 version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -475,6 +489,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9b/af/fbfe3c4b5a657d79e5c47a2827a362f9e1b763336a52f926126aa6dc7123/flake8-7.3.0.tar.gz", hash = "sha256:fe044858146b9fc69b551a4b490d69cf960fcb78ad1edcb84e7fbb1b4a8e3872", size = 48326, upload-time = "2025-06-20T19:31:35.838Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9f/56/13ab06b4f93ca7cac71078fbe37fcea175d3216f31f85c3168a6bbd0bb9a/flake8-7.3.0-py2.py3-none-any.whl", hash = "sha256:b9696257b9ce8beb888cdbe31cf885c90d31928fe202be0889a7cdafad32f01e", size = 57922, upload-time = "2025-06-20T19:31:34.425Z" },
+]
+
+[[package]]
+name = "graphviz"
+version = "0.20.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/83/5a40d19b8347f017e417710907f824915fba411a9befd092e52746b63e9f/graphviz-0.20.3.zip", hash = "sha256:09d6bc81e6a9fa392e7ba52135a9d49f1ed62526f96499325930e87ca1b5925d", size = 256455, upload-time = "2024-03-21T07:50:45.772Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/be/d59db2d1d52697c6adc9eacaf50e8965b6345cc143f671e1ed068818d5cf/graphviz-0.20.3-py3-none-any.whl", hash = "sha256:81f848f2904515d8cd359cc611faba817598d2feaac4027b266aa3eda7b3dde5", size = 47126, upload-time = "2024-03-21T07:50:43.091Z" },
 ]
 
 [[package]]
@@ -561,6 +584,7 @@ dev = [
     { name = "boto3-stubs", extra = ["essential"] },
     { name = "cfn-lint" },
     { name = "codeguru-profiler-agent" },
+    { name = "diagrams" },
     { name = "flake8" },
     { name = "ipdb" },
     { name = "ipython" },
@@ -594,6 +618,7 @@ dev = [
     { name = "boto3-stubs", extras = ["essential"], specifier = ">=1.39.13" },
     { name = "cfn-lint", specifier = ">=1.38.0" },
     { name = "codeguru-profiler-agent", specifier = ">=1.2.5" },
+    { name = "diagrams", specifier = ">=0.25.1" },
     { name = "flake8", specifier = ">=7.3.0" },
     { name = "ipdb", specifier = ">=0.13.13" },
     { name = "ipython", specifier = ">=9.4.0" },
