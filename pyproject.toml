@@ -20,6 +20,7 @@ dev = [
     "boto3-stubs[essential]>=1.39.13",
     "cfn-lint>=1.38.0",
     "codeguru-profiler-agent>=1.2.5",
+    "diagrams>=0.25.1",
     "flake8>=7.3.0",
     "ipdb>=0.13.13",
     "ipython>=9.4.0",
