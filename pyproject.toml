@@ -115,6 +115,7 @@ exclude = [
 module = [
     "aws_cdk.*",
     "constructs.*",
+    "diagrams.*",
 ]
 ignore_missing_imports = true
 
