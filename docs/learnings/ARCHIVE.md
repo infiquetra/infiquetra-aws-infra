@@ -6,6 +6,19 @@ See [README.md](README.md) for entry format.
 
 ---
 
+## 2026-04-27
+
+### Decommissioned orphaned WorkSpaces Simple AD directory + its VPC — SHIPPED 2026-04-27
+
+Surfaced during the comprehensive cost-doc work: a Simple AD directory (`d-90677865c8`, name `corp.amazonworkspaces.com`) had been running unused since 2020-05-25, billing ~$36/mo (~$432/yr, ~$2,500 lifetime). Confirmed orphan: zero WorkSpaces, zero registered WorkSpaces directories, zero EC2 instances in its VPC. Deleted the directory via `aws ds delete-directory`, waited for the ~5-min teardown, then cleaned up the auto-orphaned VPC infrastructure in dependency order (1 SG, 2 subnets, 1 IGW, 1 non-main route table, the VPC itself).
+
+Full mechanism + lessons captured in [`LEARNINGS.md`](LEARNINGS.md).
+
+**Commits:** No code change — out-of-band CLI cleanup. Documented in LEARNINGS + this entry.
+**Validation:** `aws ds describe-directories` returns empty. `aws ec2 describe-vpcs --vpc-ids vpc-088fae61835b3a517` returns `InvalidVpcID.NotFound`. Expected next-month Cost Explorer drop: ~$36 → $0 on the Directory Service line. Steady-state monthly run rate should fall from ~$42 → ~$6.
+
+---
+
 ## 2026-04-25
 
 ### Modular CI/CD pipeline refactor — SHIPPED 2026-04-25

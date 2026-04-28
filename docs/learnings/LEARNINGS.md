@@ -6,6 +6,27 @@ See [README.md](README.md) for entry format.
 
 ---
 
+## 2026-04-27
+
+### Amazon WorkSpaces leaves an orphaned Simple AD directory behind when WorkSpaces are deleted, and that directory bills $36/mo indefinitely
+
+**Evidence:** Cost Explorer 90-day breakdown showed `AWS Directory Service` consuming $31–37/mo, dominating recurring spend (~80% of the steady-state $42/mo). `aws ds describe-directories --region us-east-1 --profile infiquetra-root` returned a single Simple AD instance: `d-90677865c8`, name `corp.amazonworkspaces.com`, type `SimpleAD`, size `Small`, `LaunchTime: 2020-05-25`, `SsoEnabled: false`. Cross-checked usage: `aws workspaces describe-workspaces` returned empty, `aws workspaces describe-workspace-directories` returned empty, `aws ec2 describe-instances --filters Name=vpc-id,Values=vpc-088fae61835b3a517` returned empty. The directory had been running unused for ~6 years, accumulating roughly $2,500 of waste.
+
+**Mechanism:** Amazon WorkSpaces requires a directory for user authentication and provisions a Simple AD instance ($0.05/hr = $36/mo Small) when set up via the console wizard if no existing directory is selected. Deleting the WorkSpaces themselves does NOT cascade to the directory — they are independent AWS resources owned by separate services. The directory continues to bill at the hourly Simple AD rate regardless of whether anything is using it. The directory's name (`corp.amazonworkspaces.com`) is a permanent fingerprint of the WorkSpaces-driven creation path. The directory also creates and owns a VPC, 2 subnets in different AZs, an Internet Gateway, route tables, and security groups (`d-XXXXX_controllers`, `d-XXXXX_workspacesMembers`) — all of which become orphaned alongside it.
+
+**Impact:** ~$432/year of pure waste. More importantly, hidden under a service name (Directory Service) that's easy to confuse with Route 53 DNS — neither is what most operators expect when they see "Directory Service" in their cost breakdown.
+
+**Fix shipped:** Deleted the directory via `aws ds delete-directory --directory-id d-90677865c8`. Wait for delete (~5–10 min). The 2 ENIs the directory owned auto-cleaned. The `_controllers` SG auto-deleted; the `_workspacesMembers` SG and the rest of the VPC infrastructure (1 SG, 2 subnets, 1 IGW, 1 non-main route table, the VPC itself) had to be manually torn down in dependency order. Total cleanup time: ~15 minutes once the directory finished deleting.
+
+**Validation:** `aws ds describe-directories` now returns `DirectoryDescriptions: []`. `aws ec2 describe-vpcs --vpc-ids vpc-088fae61835b3a517` returns `InvalidVpcID.NotFound`. Next month's Cost Explorer should show the Directory Service line item drop to $0. April 2026 partial-month already includes ~$31 of spend that won't recur.
+
+**Generalizable principle:** Three lessons:
+1. **AWS service names are not always self-explanatory.** "Directory Service" sounds infrastructural; it's actually managed AD. "Route 53" is DNS. They're different bills with different owners.
+2. **AWS service deletion rarely cascades.** WorkSpaces → Directory, RDS → snapshots, EC2 → EBS volumes, EC2 → EIPs — in each case the "child" resource keeps billing after the "parent" is gone. When deprovisioning anything, walk the resource graph manually with the relevant `describe-*` calls and clean up downstream artifacts.
+3. **Ancient launch times are a tell.** Anything created during the early-experimentation phase of an AWS account (typically the first year) and still running with `SsoEnabled: false` / no recent updates is a high-value audit target. A 2-line cost-anomaly grep ("services with consistent monthly charge despite zero apparent usage") would catch this class of waste systematically.
+
+---
+
 ## 2026-04-25
 
 ### `SERVICE_CONTROL_POLICY` must be enabled per organization root before SCPs can be created
