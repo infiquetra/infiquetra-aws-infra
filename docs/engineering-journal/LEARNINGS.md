@@ -28,6 +28,28 @@
 
 ---
 
+## 2026-05-02
+
+### `aws organizations list-policies-for-target` returns direct attachments only — never inherited SCPs
+
+**Context.** During the CAMPPS account migration verification (see [ARCHIVE](ARCHIVE.md) entry 2026-05-02), the plan called for `list-policies-for-target --target-id <account-id>` to confirm that the moved accounts had picked up the inherited `BaseSecurityPolicy` (and `NonProductionCostControl` for dev). The post-move call returned only `FullAWSAccess` for both accounts, despite the OU chain clearly having the custom SCPs attached at higher levels.
+
+**Evidence.** Post-move call for `477152411873` (campps-dev, now in `Apps/CAMPPS/NonProd` `ou-f3un-yb8hu7vq`) returned exactly one policy: `p-FullAWSAccess` (AWS-managed). The same call against the parent `ou-f3un-yb8hu7vq` (NonProd) returned `FullAWSAccess` + `NonProductionCostControl` (`p-caqfo4ef`). The grandparent `ou-f3un-srsbk9oh` (Apps) returned `FullAWSAccess` + `BaseSecurityPolicy` (`p-oop3272h`).
+
+**Mechanism.** `list-policies-for-target` is a direct-attachment query, not an effective-policy query. The AWS Organizations API does not expose a single call that returns the resolved/inherited policy set for a given target. The console hides this distinction by walking the parent chain and merging results client-side. SCPs themselves do inherit normally — they are absolutely in effect on the account — but you cannot prove inheritance via this one call.
+
+**Impact.** Zero — the SCPs are working correctly; the issue was only with my verification mental model. Could have caused a false alarm or led to spurious "re-attach" attempts during a post-incident inspection.
+
+**Fix.** Verification approach updated: walk the parent chain manually with `list-parents` + `list-policies-for-target` at each level. Alternative: use `aws iam simulate-principal-policy` against an account principal to test whether a specific action is allowed/denied — but this requires a principal in the target account, which the mgmt account doesn't always have ready access to.
+
+**What surprised.** The console showing "Inherited from Apps" badges next to inherited policies suggests the API has the data — but the only programmatic way to get that view is to walk the chain yourself. There is no `get-effective-policy` or similar.
+
+**Generalizable rule.** When an AWS API returns "less than expected" for a hierarchical resource (Organizations OUs, IAM resource policies, S3 bucket policies with conditions), check whether the call is direct-only or inheritance-aware. The default for AWS list-* APIs is direct-only; effective/resolved views usually require multiple calls plus client-side merge. Don't write a verification step that depends on inheritance being visible at a single point.
+
+**Refs.** [ARCHIVE.md](ARCHIVE.md) 2026-05-02 (CAMPPS account migration) — surfaced during that work. CDK SCP attachment points: `infiquetra_aws_infra/organization_stack.py:180-185` (BaseSecurity → all 4 root OUs) and `:228` (NonProdCostControl → NonProd only).
+
+---
+
 ## 2026-04-27
 
 ### Amazon WorkSpaces leaves an orphaned Simple AD directory behind when WorkSpaces are deleted, and that directory bills $36/mo indefinitely

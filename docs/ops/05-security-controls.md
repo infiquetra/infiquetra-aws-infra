@@ -6,14 +6,14 @@ What's actually blocking what — SCPs, MFA, root protection, OIDC trust scoping
 
 Two customer-managed SCPs exist, both deployed by `OrganizationStack`.
 
-| SCP | Policy ID | Attached to OUs | Effective scope |
+| SCP | Policy ID | Attached to OUs | Inherited by accounts |
 |---|---|---|---|
-| `BaseSecurityPolicy` | `p-oop3272h` | `Core`, `Media`, `Apps`, `Consulting` | The 4 CDK-managed top-level OUs (all currently empty) |
-| `NonProductionCostControl` | `p-caqfo4ef` | `Apps>CAMPPS>NonProd` (`ou-f3un-yb8hu7vq`) | The CDK-managed NonProd OU (currently empty) |
+| `BaseSecurityPolicy` | `p-oop3272h` | `Core`, `Media`, `Apps`, `Consulting` | `campps-prod`, `campps-dev` (via `Apps`) |
+| `NonProductionCostControl` | `p-caqfo4ef` | `Apps>CAMPPS>NonProd` (`ou-f3un-yb8hu7vq`) | `campps-dev` (via `NonProd`) |
 
-`⚠ The gap:` The legacy `CAMPPS` OU and its sub-tree (`workloads/PRODUCTION`, `workloads/SDLC`, `CICD`) — which is where `campps-prod` and `campps-dev` actually live — has **no SCP attached**. The security policy effectively does nothing for the active workloads today.
+As of the 2026-05-02 CAMPPS account migration (see [ARCHIVE](../engineering-journal/ARCHIVE.md)), both workload accounts are in the CDK-managed OU tree and inherit the appropriate SCPs. The previous gap — where the live workload accounts had no SCP coverage — is closed.
 
-This is a known consequence of the additive-deploy decision documented in [`../engineering-journal/DECISIONS.md`](../engineering-journal/DECISIONS.md). The fix is the P1 [QUEUED](../engineering-journal/QUEUED.md) item — migrate accounts into the new structure. Until then, **the SCPs documented below do not apply to your real workloads**.
+> **Verifying inheritance**: `aws organizations list-policies-for-target --target-id <account-id>` only shows direct attachments (which is just `FullAWSAccess` for both accounts). To see inherited SCPs, walk the parent chain. See [LEARNINGS](../engineering-journal/LEARNINGS.md) 2026-05-02.
 
 ## SCP details
 
@@ -67,7 +67,7 @@ What each statement does **once attached to an OU containing real accounts**:
 | `DenyDeleteLoggingResources` | Prevents deletion of CloudTrail trails and CloudWatch log groups — preserves audit trails even from compromised admin sessions. |
 | `RequireMFAForSensitiveActions` | Blocks IAM user/role/policy deletion and **all** Organizations writes from sessions without MFA. The `BoolIfExists` form ensures it applies whether the claim is missing or false. |
 
-> **Important about SCPs**: They never apply to the management account (`645166163764`). So even when the legacy CAMPPS gets migrated into the CDK-managed tree, the mgmt account stays SCP-free. AWS treats the mgmt account as the safety hatch.
+> **Important about SCPs**: They never apply to the management account (`645166163764`). The 2026-05-02 CAMPPS migration moved the workload accounts under SCP coverage, but the mgmt account stays SCP-free regardless. AWS treats the mgmt account as the safety hatch.
 
 ### NonProductionCostControl (`p-caqfo4ef`)
 
@@ -93,12 +93,10 @@ Source: `infiquetra_aws_infra/organization_stack.py` lines 195–220.
 }
 ```
 
-Restricts non-prod accounts to small burstable EC2 instance types. Useful guardrail against accidental `r5.24xlarge` launches in dev. Once a non-prod account is in the new `Apps>CAMPPS>NonProd` OU, this kicks in automatically.
+Restricts non-prod accounts to small burstable EC2 instance types. Useful guardrail against accidental `r5.24xlarge` launches in dev. Active for `campps-dev` since the 2026-05-02 migration.
 
 ## What's NOT covered by SCPs (today)
 
-- **Anything in `campps-prod`** — no SCP at any ancestor OU
-- **Anything in `campps-dev`** — same
 - **Anything in `infiquetra` (mgmt)** — SCPs never apply to mgmt accounts, by design
 
 So the practical security posture today rests on:
@@ -113,7 +111,7 @@ So the practical security posture today rests on:
 | Layer | Enforcement |
 |---|---|
 | **Identity Center sign-in** | MFA registered for `jefcox` (FIDO/TOTP). Required at portal sign-in based on the IAM IC `Authentication` settings. |
-| **SCP-level MFA enforcement** | The `RequireMFAForSensitiveActions` statement in `BaseSecurityPolicy` would block IAM/Organizations writes without MFA — but only on accounts in OUs where it's attached, which today is none of the workload accounts. |
+| **SCP-level MFA enforcement** | The `RequireMFAForSensitiveActions` statement in `BaseSecurityPolicy` blocks IAM/Organizations writes without MFA. Active on both `campps-prod` and `campps-dev` since the 2026-05-02 migration. Uses `BoolIfExists`, so service principals are unaffected. |
 | **mgmt account root user** | Not in scope of SCPs. Verify root MFA is enabled in the AWS Console: IAM → Account → MFA. |
 
 ## Root user protection
@@ -166,16 +164,15 @@ None of these are addressed by the current CDK. They're on the future roadmap:
 |---|---|
 | OIDC for CI/CD (no static AWS keys) | ✅ Working |
 | MFA at IdP for human logins | ✅ Verify enabled |
-| SCPs deployed | ⚠️ Yes, but attached to empty OUs only |
+| SCPs deployed and inherited by workload accounts | ✅ As of 2026-05-02 migration |
 | Root user lockdown | ⚠️ Verify in console |
 | CloudTrail | ⚠️ Presumed default org trail; verify via API |
 | OIDC trust scope | ⚠️ Org-wide, could be tighter |
 | Backup / DR | ❌ Not configured |
 | Centralized secrets | ❌ Not configured |
-| Per-account guardrails on real workloads | ❌ Pending account migration into new OU tree |
 
-**Top three to address first** (in priority order):
+**Top items to address next** (in priority order):
 
-1. **Migrate workload accounts into the new OU tree** so SCPs actually apply (P1, [QUEUED](../engineering-journal/QUEUED.md))
-2. **Tighten OIDC trust to the specific repo + branch** (one-line change in bootstrap stack)
-3. **Verify CloudTrail org trail and root MFA on all three accounts** (manual, console-only verification)
+1. **Tighten OIDC trust to the specific repo + branch** (one-line change in bootstrap stack)
+2. **Verify CloudTrail org trail and root MFA on all three accounts** (manual, console-only verification)
+3. **Enable AWS Backup org policies** at the root for centralized backup posture

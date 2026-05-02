@@ -78,13 +78,12 @@ uv run cdk synth --all --profile infiquetra-root
 
 - Manual permission set edits in the console
 - Manual SCP attachment via console
-- The legacy CAMPPS OU and its children (intentional drift, see [01-aws-organization.md](../ops/01-aws-organization.md))
+- Out-of-band `move-account` or OU edits (rare; see [01-aws-organization.md](../ops/01-aws-organization.md) for what CDK does NOT manage)
 
 **Fix**: Decide whether to:
 
 1. **Reconcile via CDK** — update the CDK code to match the live state (or vice versa). Then deploy.
-2. **Accept the drift** — the legacy CAMPPS tree is intentional. Make sure new CDK changes don't try to clobber it.
-3. **Investigate the change** — `aws cloudtrail lookup-events --lookup-attributes AttributeKey=ResourceName,AttributeValue=...`
+2. **Investigate the change** — `aws cloudtrail lookup-events --lookup-attributes AttributeKey=ResourceName,AttributeValue=...`
 
 ## CloudFormation
 

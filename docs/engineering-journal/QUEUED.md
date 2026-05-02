@@ -23,17 +23,6 @@
 
 ---
 
-## P1
-
-### Migrate `campps-prod` and `campps-dev` accounts into new `Apps>CAMPPS>{Production,NonProd}` OUs
-
-**Status:** not-started
-**Why:** As of 2026-04-25 the CDK creates a new `Apps>CAMPPS>Production` and `Apps>CAMPPS>NonProd` OU pair, but the actual accounts (`431643435299 campps-prod`, `477152411873 campps-dev`) still live under the pre-existing top-level `CAMPPS` OU (`ou-f3un-s13dqexp`) in `workloads/PRODUCTION` and `workloads/SDLC` respectively. Two CAMPPS OUs coexist; one is empty CDK scaffolding, the other has the live accounts.
-**Effort:** S (per-account `aws organizations move-account` calls + verification)
-**Worth it when:** SSO permission-set rollout from `SSOStack` is ready to attach to the new OUs. Without that, moving accounts gives no immediate benefit. Also worth it when the live OU tree's complexity (`workloads/PRODUCTION`/`workloads/SDLC` + empty `CICD`) becomes confusing in the console.
-**Related items:** Cleanup of empty `CICD` OU (`ou-f3un-ewwb2txi`) and the old top-level `CAMPPS` OU itself once empty.
-**Notes:** Phase 1: move `campps-prod` from `workloads/PRODUCTION` to `Apps>CAMPPS>Production`. Phase 2: move `campps-dev` from `workloads/SDLC` to `Apps>CAMPPS>NonProd`. Phase 3: `delete-organizational-unit` for the empty `workloads/PRODUCTION`, `workloads/SDLC`, `workloads`, `CICD`, and `CAMPPS` OUs (in dependency order). All operations support dry-run via `--dry-run`-equivalent describe calls.
-
 ## P2
 
 ### Migrate user off legacy `AdministratorAccess` permission set onto CDK-managed `CoreAdministrator`

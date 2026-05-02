@@ -83,7 +83,7 @@ with Diagram(
 
 
 # ---------------------------------------------------------------------------
-# 2. AWS Organizations — full OU tree (current state with dual CAMPPS)
+# 2. AWS Organizations — full OU tree
 # ---------------------------------------------------------------------------
 with Diagram(
     "AWS Organizations — Current OU Structure",
@@ -97,29 +97,18 @@ with Diagram(
     root = Organizations("Root\nr-f3un")
     mgmt_acct = OrganizationsAccount("infiquetra\n645166163764\n(mgmt)")
 
-    # Root-level OUs
-    with Cluster("CDK-managed OUs (empty)"):
+    with Cluster("CDK-managed OUs"):
         core_ou = OrganizationsOrganizationalUnit("Core\nSCP: BaseSecurity")
         media_ou = OrganizationsOrganizationalUnit("Media\nSCP: BaseSecurity")
         consulting_ou = OrganizationsOrganizationalUnit("Consulting\nSCP: BaseSecurity")
         with Cluster("Apps OU"):
             apps_ou = OrganizationsOrganizationalUnit("Apps\nSCP: BaseSecurity")
-            with Cluster("CAMPPS (new, empty)"):
-                new_campps = OrganizationsOrganizationalUnit("CAMPPS")
-                new_prod = OrganizationsOrganizationalUnit("Production")
-                new_nonprod = OrganizationsOrganizationalUnit(
-                    "NonProd\nSCP: NonProdCostControl"
+            with Cluster("CAMPPS"):
+                campps_ou = OrganizationsOrganizationalUnit("CAMPPS")
+                prod_ou = OrganizationsOrganizationalUnit("Production")
+                nonprod_ou = OrganizationsOrganizationalUnit(
+                    "NonProd\n+SCP: NonProdCostControl"
                 )
-
-    with Cluster("Legacy OUs (pre-CDK, no SCP coverage)"):
-        legacy_campps = OrganizationsOrganizationalUnit("CAMPPS\n(legacy)")
-        with Cluster("workloads"):
-            workloads_ou = OrganizationsOrganizationalUnit("workloads")
-            prod_ou = OrganizationsOrganizationalUnit("PRODUCTION")
-            sdlc_ou = OrganizationsOrganizationalUnit("SDLC")
-        with Cluster("CICD (empty)"):
-            cicd_ou = OrganizationsOrganizationalUnit("CICD")
-            cicd_prod = OrganizationsOrganizationalUnit("PRODUCTION\n(empty)")
 
     prod_acct = OrganizationsAccount("campps-prod\n431643435299")
     dev_acct = OrganizationsAccount("campps-dev\n477152411873")
@@ -129,20 +118,13 @@ with Diagram(
     root >> media_ou
     root >> consulting_ou
     root >> apps_ou
-    root >> legacy_campps
 
-    apps_ou >> new_campps
-    new_campps >> new_prod
-    new_campps >> new_nonprod
+    apps_ou >> campps_ou
+    campps_ou >> prod_ou
+    campps_ou >> nonprod_ou
 
-    legacy_campps >> workloads_ou
-    workloads_ou >> prod_ou
-    workloads_ou >> sdlc_ou
     prod_ou >> prod_acct
-    sdlc_ou >> dev_acct
-
-    legacy_campps >> cicd_ou
-    cicd_ou >> cicd_prod
+    nonprod_ou >> dev_acct
 
 
 # ---------------------------------------------------------------------------
