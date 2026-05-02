@@ -107,7 +107,7 @@ jobs:
       contents: write   # for git tag push
 ```
 
-The reusable workflow declares the same permissions on its job too, but those declarations are aspirational — the **caller's token caps** what the callee can do. See [LEARNINGS](../learnings/LEARNINGS.md) entry on reusable workflow permissions.
+The reusable workflow declares the same permissions on its job too, but those declarations are aspirational — the **caller's token caps** what the callee can do. See [LEARNINGS](../engineering-journal/LEARNINGS.md) entry on reusable workflow permissions.
 
 ## Workflow inputs (manual deploy)
 
@@ -180,7 +180,7 @@ gh workflow run "Deploy Infrastructure" \
   -f environment=production -f stack=all
 ```
 
-The full stabilization saga from PR #3 to PR #8 is documented in [`../learnings/ARCHIVE.md`](../learnings/ARCHIVE.md) — useful priors when debugging similar future issues.
+The full stabilization saga from PR #3 to PR #8 is documented in [`../engineering-journal/ARCHIVE.md`](../engineering-journal/ARCHIVE.md) — useful priors when debugging similar future issues.
 
 ## Local pipeline testing with `act`
 

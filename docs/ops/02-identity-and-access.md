@@ -61,7 +61,7 @@ Two layers exist: **legacy** sets created when SSO was first turned on (2021), a
 - **Billing** sets get `PT12H` — long session for periodic financial reporting work
 - **Audit** sets get `PT8H` — work-day for read-only forensics
 
-The legacy `AdministratorAccess` was bumped to PT12H (out-of-band) for debugging convenience. The CDK-managed admin sets are still PT4H — see `Maybe` item in [QUEUED](../learnings/QUEUED.md) about bumping `CoreAdministrator` to match.
+The legacy `AdministratorAccess` was bumped to PT12H (out-of-band) for debugging convenience. The CDK-managed admin sets are still PT4H — see `Maybe` item in [QUEUED](../engineering-journal/QUEUED.md) about bumping `CoreAdministrator` to match.
 
 ## Who has what access right now
 

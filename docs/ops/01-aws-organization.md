@@ -13,7 +13,7 @@ The complete picture of what's in AWS Organizations: accounts, OUs, the dual-CAM
 | OUs | 13 (5 CDK-managed, 8 legacy) |
 | Customer-managed SCPs | 2 (BaseSecurityPolicy, NonProductionCostControl) |
 | Region for global services | `us-east-1` |
-| Enabled policy types at root | `SERVICE_CONTROL_POLICY` (enabled 2026-04-25, see [LEARNINGS](../learnings/LEARNINGS.md)) |
+| Enabled policy types at root | `SERVICE_CONTROL_POLICY` (enabled 2026-04-25, see [LEARNINGS](../engineering-journal/LEARNINGS.md)) |
 
 ## Visual: full OU tree
 
@@ -83,7 +83,7 @@ These exist in AWS but live outside the CDK stack — changes to them won't show
 | `campps-prod` and `campps-dev` accounts | Account creation requires `organizations:CreateAccount` and is typically not in IaC — even if it were, importing existing accounts into CDK is risky |
 | `infiquetra` mgmt account | Mgmt accounts in AWS Organizations cannot be moved into OUs and are not modeled in CDK |
 | Organization itself (`r-f3un`) | Created when AWS Organizations was first turned on for this account |
-| `SERVICE_CONTROL_POLICY` enablement at the root | Imperative one-time AWS-side step; no CFN equivalent. See [LEARNINGS](../learnings/LEARNINGS.md). |
+| `SERVICE_CONTROL_POLICY` enablement at the root | Imperative one-time AWS-side step; no CFN equivalent. See [LEARNINGS](../engineering-journal/LEARNINGS.md). |
 
 ## The dual-CAMPPS situation explained
 
@@ -97,9 +97,9 @@ Two OUs both named "CAMPPS" coexist at different positions in the tree:
 | Created by | Manual / pre-CDK | CDK (`OrganizationStack`) |
 | SCPs attached | None | `NonProductionCostControl` (on the inner `NonProd` only) |
 
-**Why this is OK**: AWS Organizations allows duplicate OU names at different parents. The two OUs are distinct resources. There is no conflict, no API error, just a naming collision in the tree. The state is intentional — see [DECISIONS](../learnings/DECISIONS.md) for the rationale on additive deploy.
+**Why this is OK**: AWS Organizations allows duplicate OU names at different parents. The two OUs are distinct resources. There is no conflict, no API error, just a naming collision in the tree. The state is intentional — see [DECISIONS](../engineering-journal/DECISIONS.md) for the rationale on additive deploy.
 
-**How it ends**: A future migration (P1 in [QUEUED](../learnings/QUEUED.md)) moves `campps-prod` and `campps-dev` from `CAMPPS/workloads/{PRODUCTION,SDLC}` into `Apps/CAMPPS/{Production,NonProd}`. Then the legacy `CAMPPS` OU and its children get deleted (`DeleteOrganizationalUnit` only works on empty OUs, in dependency order).
+**How it ends**: A future migration (P1 in [QUEUED](../engineering-journal/QUEUED.md)) moves `campps-prod` and `campps-dev` from `CAMPPS/workloads/{PRODUCTION,SDLC}` into `Apps/CAMPPS/{Production,NonProd}`. Then the legacy `CAMPPS` OU and its children get deleted (`DeleteOrganizationalUnit` only works on empty OUs, in dependency order).
 
 ## Deploying changes
 

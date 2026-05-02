@@ -13,7 +13,7 @@ Two customer-managed SCPs exist, both deployed by `OrganizationStack`.
 
 `⚠ The gap:` The legacy `CAMPPS` OU and its sub-tree (`workloads/PRODUCTION`, `workloads/SDLC`, `CICD`) — which is where `campps-prod` and `campps-dev` actually live — has **no SCP attached**. The security policy effectively does nothing for the active workloads today.
 
-This is a known consequence of the additive-deploy decision documented in [`../learnings/DECISIONS.md`](../learnings/DECISIONS.md). The fix is the P1 [QUEUED](../learnings/QUEUED.md) item — migrate accounts into the new structure. Until then, **the SCPs documented below do not apply to your real workloads**.
+This is a known consequence of the additive-deploy decision documented in [`../engineering-journal/DECISIONS.md`](../engineering-journal/DECISIONS.md). The fix is the P1 [QUEUED](../engineering-journal/QUEUED.md) item — migrate accounts into the new structure. Until then, **the SCPs documented below do not apply to your real workloads**.
 
 ## SCP details
 
@@ -176,6 +176,6 @@ None of these are addressed by the current CDK. They're on the future roadmap:
 
 **Top three to address first** (in priority order):
 
-1. **Migrate workload accounts into the new OU tree** so SCPs actually apply (P1, [QUEUED](../learnings/QUEUED.md))
+1. **Migrate workload accounts into the new OU tree** so SCPs actually apply (P1, [QUEUED](../engineering-journal/QUEUED.md))
 2. **Tighten OIDC trust to the specific repo + branch** (one-line change in bootstrap stack)
 3. **Verify CloudTrail org trail and root MFA on all three accounts** (manual, console-only verification)

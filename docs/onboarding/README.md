@@ -22,7 +22,7 @@ infiquetra-aws-infra/
 ├── docs/
 │   ├── ops/                      ← Comprehensive current-state docs (for the operator)
 │   ├── onboarding/               ← You are here
-│   └── learnings/                ← Knowledge base (LEARNINGS, DECISIONS, QUEUED, ARCHIVE)
+│   └── engineering-journal/      ← Engineering journal (LEARNINGS, DECISIONS, QUEUED, ARCHIVE, audits/, narratives/)
 ├── app.py                        ← CDK app entry point
 └── pyproject.toml                ← Python dependencies (managed by uv)
 ```
@@ -73,4 +73,4 @@ Once the PR's validation pipeline passes and a reviewer approves, merge to `main
 - **All deploys go through the CI/CD pipeline.** Local `cdk deploy` is allowed for debugging, but the source of truth is what `main` deploys.
 - **The `main` branch auto-deploys to production.** Be deliberate about merges. Use the PR flow.
 - **There are two separate CDK apps in this repo.** The main one at the root deploys org structure + SSO. The one at `github-oidc-bootstrap/` is a one-time-only app for setting up the GHA role and is not part of the regular CI/CD flow.
-- **Knowledge captured in `docs/learnings/`.** When you discover something non-obvious, add an entry per the rules in `.claude/CLAUDE.md`.
+- **Knowledge captured in `docs/engineering-journal/`.** When you discover something non-obvious, add an entry per the rules in `.claude/CLAUDE.md`.

@@ -1,8 +1,28 @@
 # ARCHIVE
 
-Shipped + rejected + superseded items. Most recent first.
-
-See [README.md](README.md) for entry format.
+> **The graveyard of QUEUED, LEARNINGS, and DECISIONS items.** When something from `QUEUED.md` ships, it moves here as **SHIPPED**. When something is consciously rejected, it moves here as **REJECTED** with the reason + revisit conditions. When a `LEARNINGS.md` or `DECISIONS.md` entry is invalidated by new evidence, the pre-correction version moves here as **SUPERSEDED**.
+>
+> **Never silently delete.** History is the point — future Claude (or human) reading "did we ever consider X?" or "why did we change our mind on Y?" gets the answer.
+>
+> **Append new entries to the top.** Most-recent first. Three entry variants:
+>
+> ```markdown
+> ### Item name — SHIPPED YYYY-MM-DD
+> narrative of what was built
+> **Commits:** SHA / PR #N
+> **Validation:** proof it works in production
+>
+> ### Item name — REJECTED YYYY-MM-DD
+> **Reason:** why we decided it's not worth doing
+> **Revisit when:** conditions that would flip the decision
+>
+> ### Item name — SUPERSEDED YYYY-MM-DD (by entry X)
+> **Old claim:** what the original entry said
+> **New evidence:** what contradicts it
+> **Current state:** link to updated entry in LEARNINGS.md
+> ```
+>
+> Prune entries older than 12 months only if they're no longer instructive.
 
 ---
 

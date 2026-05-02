@@ -14,7 +14,7 @@ You are **not lost**. You're at the end of a foundation phase. Specifically:
 | GitHub OIDC federation | ✅ |
 | End-to-end CI/CD pipeline (modular, reusable) | ✅ |
 | Successful auto-deploy on push to main | ✅ |
-| Knowledge-base mechanism (`docs/learnings/`) | ✅ |
+| Engineering journal mechanism (`docs/engineering-journal/`) | ✅ |
 | Comprehensive documentation (this) | ✅ (you're reading it) |
 
 **The infra plumbing is done.** Continuing to polish it has diminishing returns.
@@ -58,7 +58,7 @@ Open AWS Console → Directory Service. Find what's running. If unused, delete i
 
 ### Option 3 — Pick one P1/P2 item from QUEUED and ship it
 
-[`../learnings/QUEUED.md`](../learnings/QUEUED.md) has prioritized backlog. The P1 (CAMPPS migration) is the most consequential. Ship it in a single PR, archive the entry. Rinse, repeat.
+[`../engineering-journal/QUEUED.md`](../engineering-journal/QUEUED.md) has prioritized backlog. The P1 (CAMPPS migration) is the most consequential. Ship it in a single PR, archive the entry. Rinse, repeat.
 
 ## What you should NOT do next
 
@@ -72,19 +72,19 @@ Open AWS Console → Directory Service. Find what's running. If unused, delete i
 
 Backlog of all known work items, with priorities and "worth it when" triggers:
 
-→ [`../learnings/QUEUED.md`](../learnings/QUEUED.md)
+→ [`../engineering-journal/QUEUED.md`](../engineering-journal/QUEUED.md)
 
 History of what's been shipped:
 
-→ [`../learnings/ARCHIVE.md`](../learnings/ARCHIVE.md)
+→ [`../engineering-journal/ARCHIVE.md`](../engineering-journal/ARCHIVE.md)
 
 Why we made specific architectural choices:
 
-→ [`../learnings/DECISIONS.md`](../learnings/DECISIONS.md)
+→ [`../engineering-journal/DECISIONS.md`](../engineering-journal/DECISIONS.md)
 
 Empirical findings from past debugging:
 
-→ [`../learnings/LEARNINGS.md`](../learnings/LEARNINGS.md)
+→ [`../engineering-journal/LEARNINGS.md`](../engineering-journal/LEARNINGS.md)
 
 ## A suggested cadence going forward
 

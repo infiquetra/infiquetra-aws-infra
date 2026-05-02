@@ -1,6 +1,6 @@
 # 04 — Troubleshooting
 
-Common problems and their fixes. If something here matches your symptom, the fix is usually fast. If nothing matches, check [`../learnings/LEARNINGS.md`](../learnings/LEARNINGS.md) — past gnarly issues are recorded there with full mechanism + fix.
+Common problems and their fixes. If something here matches your symptom, the fix is usually fast. If nothing matches, check [`../engineering-journal/LEARNINGS.md`](../engineering-journal/LEARNINGS.md) — past gnarly issues are recorded there with full mechanism + fix.
 
 ## AWS CLI / SSO
 
@@ -60,7 +60,7 @@ uv run cdk synth --all
 uv run cdk deploy InfiquetraOrganizationStack
 ```
 
-If you see this in CI, the workflow file is missing the `uv run` prefix — see [LEARNINGS](../learnings/LEARNINGS.md) for the full story.
+If you see this in CI, the workflow file is missing the `uv run` prefix — see [LEARNINGS](../engineering-journal/LEARNINGS.md) for the full story.
 
 ### `cdk synth` fails with `No credentials in environment`
 
@@ -133,7 +133,7 @@ If that doesn't work, you may need to use `--resources-to-skip` to bypass specif
 
 ### Workflow fails immediately with `startup_failure`
 
-**Cause**: Most likely a permissions mismatch between caller and reusable workflow. See [LEARNINGS](../learnings/LEARNINGS.md) for the full story.
+**Cause**: Most likely a permissions mismatch between caller and reusable workflow. See [LEARNINGS](../engineering-journal/LEARNINGS.md) for the full story.
 
 **Fix**: Check that the caller workflow declares ≥ permissions the callee needs. For deploy workflows: top-level `permissions: contents: read` + per-job `permissions: { id-token: write, contents: write }`.
 
@@ -196,7 +196,7 @@ If a check is consistently failing on something legitimate (false positive in ba
 
 ## When you're really stuck
 
-1. **Search [`../learnings/LEARNINGS.md`](../learnings/LEARNINGS.md)** — past issues are recorded with full mechanism + fix.
+1. **Search [`../engineering-journal/LEARNINGS.md`](../engineering-journal/LEARNINGS.md)** — past issues are recorded with full mechanism + fix.
 2. **Check the workflow run logs**: `gh run view <RUN_ID> --log-failed`
 3. **Check CFN events directly**: `aws cloudformation describe-stack-events --stack-name <Name>`
 4. **Re-pull live AWS state** and reconcile manually (see "Recovery / drift detection" sections in `../ops/`).
@@ -210,4 +210,4 @@ When asking the admin (or your future self via a `LEARNINGS.md` entry):
 - Include the **first error message** verbatim
 - Include the **workflow run ID** if it's a CI failure
 - Include the output of `aws sts get-caller-identity --profile <profile>` so you/they know which account+role you're in
-- Reference any related items in `docs/learnings/QUEUED.md` or `DECISIONS.md`
+- Reference any related items in `docs/engineering-journal/QUEUED.md` or `DECISIONS.md`
