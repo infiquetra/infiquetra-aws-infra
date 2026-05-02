@@ -1,8 +1,25 @@
 # QUEUED
 
-Future work by priority with concrete "worth it when" triggers.
-
-See [README.md](README.md) for entry format.
+> **Future-work items by priority with explicit "worth it when" triggers.** When a promising idea surfaces but we don't build it right now, it goes here. Don't skip the entry just because it feels minor — these are easy to lose.
+>
+> Organized under priority headings (`## P0` must-ship-before-X, `## P1` urgent, `## P2` important, `## P3` nice-to-have, `## Maybe`). Add a `## P0` section only when an entry needs it.
+>
+> Format:
+>
+> ```markdown
+> ### Short title
+>
+> **Status:** ready / in-progress / blocked / not-started
+> **Why:** compelling reason + use case
+> **Effort:** S / M / L / XL (or hours / half-day / day / week)
+> **Worth it when:** specific trigger — metric hits X, after Y ships, etc.
+> **Related items:** dependencies, adjacent work (optional)
+> **Notes:** phase breakdown, gotchas, blockers (optional)
+> ```
+>
+> When the work is done → move the entry to `ARCHIVE.md` as SHIPPED with date + commit/PR.
+> When the work is consciously rejected → move to `ARCHIVE.md` as REJECTED with reason + revisit conditions.
+> Always preserve the entry in `ARCHIVE.md`; never silently delete from QUEUED.
 
 ---
 
@@ -50,10 +67,10 @@ See [README.md](README.md) for entry format.
 
 ## Maybe
 
-### Add a `tests/` lint that guards `docs/learnings/*.md` from accidental deletion
+### Add a `tests/` lint that guards `docs/engineering-journal/*.md` from accidental deletion
 
 **Status:** not-started
-**Why:** Mirrors home-lab's `tests/unit/test_no_legacy_artifacts.py` pattern. Prevents an inattentive cleanup commit from removing the learnings files. Cost-of-loss: months of accumulated context.
+**Why:** Mirrors home-lab's `tests/unit/test_no_legacy_artifacts.py` pattern. Prevents an inattentive cleanup commit from removing the engineering-journal files. Cost-of-loss: months of accumulated context.
 **Effort:** M (this repo doesn't currently have a `tests/` directory; would need to set up pytest + a single test file + wire into CI's code-quality reusable workflow)
 **Worth it when:** The four files are non-trivially populated (currently each has 4–5 entries; cost of loss is moderate but not severe). Defer until the files contain at least 20+ entries each, or until a near-miss happens.
 **Related items:** None.

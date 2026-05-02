@@ -148,4 +148,4 @@ Both accounts have `AdministratorAccess` (legacy) assigned to `jefcox` — see [
 | Browser opens then closes immediately | Old SSO cache; CLI thinks it's still logged in | `rm -rf ~/.aws/sso/cache && aws sso login --profile infiquetra-root` |
 | `An error occurred (AccessDenied)` calling Org APIs | You're authenticated to the wrong account | Check `aws sts get-caller-identity --profile X`; org APIs only work on mgmt account |
 | Workflow fails at `Configure AWS credentials` step | OIDC trust policy mismatch | Check repo path matches `repo:infiquetra/*` and you're on a branch the trust policy allows |
-| Workflow fails immediately with `startup_failure` | Caller workflow lacks `id-token: write` permission | See [LEARNINGS](../learnings/LEARNINGS.md) entry on reusable workflow permissions |
+| Workflow fails immediately with `startup_failure` | Caller workflow lacks `id-token: write` permission | See [LEARNINGS](../engineering-journal/LEARNINGS.md) entry on reusable workflow permissions |

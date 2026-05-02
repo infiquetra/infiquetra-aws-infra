@@ -67,7 +67,7 @@ Most workflow changes go in `.github/workflows/`. The pattern is:
 - Reusable workflows (`reusable-*.yml`) — actual work
 - Composite actions (`.github/actions/*/action.yml`) — shared setup steps
 
-When editing reusable workflows, remember the caller-permissions rule (see [LEARNINGS](../learnings/LEARNINGS.md)).
+When editing reusable workflows, remember the caller-permissions rule (see [LEARNINGS](../engineering-journal/LEARNINGS.md)).
 
 ### Pattern D — Modify the GitHub OIDC role
 

@@ -30,7 +30,7 @@ flowchart LR
 | 04 | [CI/CD Pipeline](04-ci-cd-pipeline.md) | Composite actions + reusable workflows, the deploy chain, branch protection, what runs where |
 | 05 | [Security Controls](05-security-controls.md) | Service Control Policies (with the gap that legacy CAMPPS isn't covered), MFA enforcement, what's actually blocked |
 | 06 | [Cost](06-cost.md) | Last 30/90 days actual spend, per-service pricing model, projections as workloads grow |
-| 07 | [What's Next](07-whats-next.md) | The minimum forward path: stop "getting set up", start building. Cross-references [`../learnings/QUEUED.md`](../learnings/QUEUED.md). |
+| 07 | [What's Next](07-whats-next.md) | The minimum forward path: stop "getting set up", start building. Cross-references [`../engineering-journal/QUEUED.md`](../engineering-journal/QUEUED.md). |
 
 ## At a glance
 
@@ -59,5 +59,5 @@ uv run python docs/ops/diagrams/generate.py
 - **Two CAMPPS OUs exist** — one legacy (with the actual accounts), one CDK-created (empty scaffolding). They will reconcile via account migration, not via CDK destroy/recreate. See [01-aws-organization.md](01-aws-organization.md).
 - **SCPs only cover the empty CDK-managed OUs.** The legacy CAMPPS tree where the real workloads live has zero SCP coverage. This is a known gap. See [05-security-controls.md](05-security-controls.md).
 - **You currently log in via the legacy `AdministratorAccess` permission set** (PT12H), not the CDK-managed `CoreAdministrator` (PT4H). Migration is a P2 backlog item. See [02-identity-and-access.md](02-identity-and-access.md).
-- **The CI/CD pipeline is fully working** as of 2026-04-25 — see the [`../learnings/ARCHIVE.md`](../learnings/ARCHIVE.md) for the multi-PR stabilization story.
+- **The CI/CD pipeline is fully working** as of 2026-04-25 — see the [`../engineering-journal/ARCHIVE.md`](../engineering-journal/ARCHIVE.md) for the multi-PR stabilization story.
 - **Most of your monthly spend is Amazon Registrar (domain registration) + AWS Directory Service.** Neither is created by this repo's CDK — both predate this repo. See [06-cost.md](06-cost.md).

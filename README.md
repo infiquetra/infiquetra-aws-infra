@@ -13,7 +13,7 @@ Comprehensive docs live in [`docs/`](docs/):
 |---|---|---|
 | [`docs/ops/`](docs/ops/) | Operator (you) | The complete current-state snapshot — accounts, OUs, permission sets, login flows, CI/CD pipeline, security controls, costs, and what to focus on next. With architecture diagrams. |
 | [`docs/onboarding/`](docs/onboarding/) | New contributors | Getting AWS access, local dev setup, the change/PR/deploy flow, troubleshooting. |
-| [`docs/learnings/`](docs/learnings/) | Future-you and Claude Code | Living knowledge base — `LEARNINGS.md` (empirical findings), `DECISIONS.md` (ADRs), `QUEUED.md` (backlog), `ARCHIVE.md` (shipped). Auto-maintained per `.claude/CLAUDE.md` rules. |
+| [`docs/engineering-journal/`](docs/engineering-journal/) | Future-you and Claude Code | Living engineering journal — `LEARNINGS.md` (empirical findings), `DECISIONS.md` (ADRs), `QUEUED.md` (backlog), `ARCHIVE.md` (shipped), plus `audits/` and `narratives/`. Auto-maintained per `.claude/CLAUDE.md` rules. |
 
 **Start here**: [`docs/ops/README.md`](docs/ops/README.md) — the "you are here" map of the comprehensive operator docs.
 
