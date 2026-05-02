@@ -230,19 +230,14 @@ cdk deploy InfiquetraSSOStack --profile infiquetra-root
 ├── requirements-dev.txt               # Development dependencies
 ```
 
-## Migration from Current State
+## CAMPPS Account Placement
 
-### Current CAMPPS Structure
-The existing CAMPPS accounts are currently organized as:
-- `campps-cicd` (424272146308) - **SUSPENDED** - needs resolution
-- `campps-prod` (431643435299) - In CAMPPS/workloads/PRODUCTION
-- `campps-dev` (477152411873) - In CAMPPS/workloads/SDLC
+The CAMPPS workload accounts live in the CDK-managed `Apps>CAMPPS` tree:
 
-### Migration Plan
-1. **Resolve Suspended Account**: Address the suspended `campps-cicd` account
-2. **Deploy New Structure**: Create the new business unit OUs
-3. **Move Accounts**: Migrate CAMPPS accounts to the new Apps/CAMPPS OU structure
-4. **Clean Up**: Remove old OU structure after successful migration
+- `campps-prod` (431643435299) — `Apps/CAMPPS/Production`
+- `campps-dev` (477152411873) — `Apps/CAMPPS/NonProd`
+
+The legacy top-level `CAMPPS/workloads/*` and `CICD/*` subtree was deleted on 2026-05-02 once both accounts were moved into the new tree. The previously-suspended `campps-cicd` account (424272146308) was already removed from the org before that. See [`docs/engineering-journal/ARCHIVE.md`](docs/engineering-journal/ARCHIVE.md) (2026-05-02 entry) for the migration narrative.
 
 ## Security Features
 

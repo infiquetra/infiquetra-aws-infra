@@ -26,6 +26,23 @@
 
 ---
 
+## 2026-05-02
+
+### CAMPPS account migration into CDK-managed OU tree — SHIPPED 2026-05-02
+
+Moved `campps-dev` (`477152411873`) from legacy `CAMPPS/workloads/SDLC` (`ou-f3un-egwd0huq`) into CDK-managed `Apps/CAMPPS/NonProd` (`ou-f3un-yb8hu7vq`), then `campps-prod` (`431643435299`) from legacy `CAMPPS/workloads/PRODUCTION` (`ou-f3un-ad24hdlv`) into CDK-managed `Apps/CAMPPS/Production` (`ou-f3un-cec60ji6`). Dev moved first as canary. After both moves, deleted 6 empty legacy OUs leaf-first: `workloads/PRODUCTION` (`ou-f3un-ad24hdlv`), `workloads/SDLC` (`ou-f3un-egwd0huq`), `workloads` (`ou-f3un-bhg44nrb`), `CICD/PRODUCTION` (`ou-f3un-cfcpbryc`), `CICD` (`ou-f3un-ewwb2txi`), and the legacy `CAMPPS` root (`ou-f3un-s13dqexp`).
+
+The dual-CAMPPS situation is over. Root now has exactly 4 OUs (Core, Media, Consulting, Apps), all CDK-managed. `cdk diff --all` shows zero drift.
+
+Both accounts now inherit `BaseSecurityPolicy` from the `Apps` OU; `campps-dev` additionally inherits `NonProductionCostControl` from `NonProd`. This is the SCP enforcement that was pending account migration per `docs/ops/05-security-controls.md`.
+
+Surfaced a `list-policies-for-target` quirk during verification — recorded in [LEARNINGS.md](LEARNINGS.md).
+
+**Commits:** No CDK code change — pure AWS API work via `aws organizations move-account` and `delete-organizational-unit`. Doc + journal updates landed in the same PR as the diagram regeneration.
+**Validation:** `aws organizations list-organizational-units-for-parent --parent-id r-f3un` returns only Core/Media/Consulting/Apps. `aws organizations list-parents --child-id 431643435299` returns `ou-f3un-cec60ji6`. `aws organizations list-parents --child-id 477152411873` returns `ou-f3un-yb8hu7vq`. `uv run cdk diff --all --profile infiquetra-root` reports `Number of stacks with differences: 0`.
+
+---
+
 ## 2026-04-27
 
 ### Decommissioned orphaned WorkSpaces Simple AD directory + its VPC — SHIPPED 2026-04-27

@@ -1,6 +1,6 @@
 # 01 — AWS Organization
 
-The complete picture of what's in AWS Organizations: accounts, OUs, the dual-CAMPPS situation, and what CDK is responsible for vs. what was pre-existing.
+The complete picture of what's in AWS Organizations: accounts, OUs, SCP coverage, and what CDK is responsible for vs. what is intentionally outside CDK's scope.
 
 ## Top-level facts
 
@@ -10,7 +10,7 @@ The complete picture of what's in AWS Organizations: accounts, OUs, the dual-CAM
 | Organization owner / mgmt account | `645166163764` (infiquetra) |
 | Owner email | `jeff@infiquetra.com` |
 | Active accounts | 3 |
-| OUs | 13 (5 CDK-managed, 8 legacy) |
+| OUs | 7 (all CDK-managed) |
 | Customer-managed SCPs | 2 (BaseSecurityPolicy, NonProductionCostControl) |
 | Region for global services | `us-east-1` |
 | Enabled policy types at root | `SERVICE_CONTROL_POLICY` (enabled 2026-04-25, see [LEARNINGS](../engineering-journal/LEARNINGS.md)) |
@@ -25,33 +25,31 @@ The complete picture of what's in AWS Organizations: accounts, OUs, the dual-CAM
 Root [r-f3un]
 ├── infiquetra            [645166163764]   mgmt account, jeff@infiquetra.com
 │
-├── Core                  [ou-f3un-772uqvdc]   ← CDK-managed, empty
-├── Media                 [ou-f3un-8hynekjx]   ← CDK-managed, empty
-├── Consulting            [ou-f3un-esi8ublq]   ← CDK-managed, empty
-├── Apps                  [ou-f3un-srsbk9oh]   ← CDK-managed
-│   └── CAMPPS            [ou-f3un-pb5ixa96]   ← CDK-managed, empty (the "new" CAMPPS)
-│       ├── Production    [ou-f3un-cec60ji6]   ← CDK-managed, empty
-│       └── NonProd       [ou-f3un-yb8hu7vq]   ← CDK-managed, empty
-│
-└── CAMPPS                [ou-f3un-s13dqexp]   ← LEGACY, pre-CDK (the "old" CAMPPS)
-    ├── workloads         [ou-f3un-bhg44nrb]
-    │   ├── PRODUCTION    [ou-f3un-ad24hdlv]
-    │   │   └── campps-prod  [431643435299]
-    │   └── SDLC          [ou-f3un-egwd0huq]
-    │       └── campps-dev   [477152411873]
-    └── CICD              [ou-f3un-ewwb2txi]   ← legacy, leftover from suspended campps-cicd
-        └── PRODUCTION    [ou-f3un-cfcpbryc]   ← empty
+├── Core                  [ou-f3un-772uqvdc]   empty
+├── Media                 [ou-f3un-8hynekjx]   empty
+├── Consulting            [ou-f3un-esi8ublq]   empty
+└── Apps                  [ou-f3un-srsbk9oh]
+    └── CAMPPS            [ou-f3un-pb5ixa96]
+        ├── Production    [ou-f3un-cec60ji6]
+        │   └── campps-prod  [431643435299]
+        └── NonProd       [ou-f3un-yb8hu7vq]
+            └── campps-dev   [477152411873]
 ```
+
+All OUs are CDK-managed. The legacy top-level `CAMPPS` subtree and its
+`workloads/*` + `CICD/*` children were deleted on 2026-05-02 — see the
+[engineering journal entry](../engineering-journal/ARCHIVE.md) for the migration
+narrative.
 
 ## Accounts
 
 | Account ID | Name | Email | Status | Lives in |
 |---|---|---|---|---|
 | `645166163764` | infiquetra | jeff@infiquetra.com | ACTIVE | Root (mgmt accounts don't go in OUs) |
-| `431643435299` | campps-prod | _unset shown_ | ACTIVE | `CAMPPS / workloads / PRODUCTION` (legacy) |
-| `477152411873` | campps-dev | _unset shown_ | ACTIVE | `CAMPPS / workloads / SDLC` (legacy) |
+| `431643435299` | campps-prod | _unset shown_ | ACTIVE | `Apps / CAMPPS / Production` |
+| `477152411873` | campps-dev | _unset shown_ | ACTIVE | `Apps / CAMPPS / NonProd` |
 
-**Note**: `campps-cicd` (`424272146308`) was the originally-suspended account flagged in `.claude/audit-current-state.md` (2025-07-13). It is no longer in the org as of this snapshot — closed or removed at some point. The empty `CICD/PRODUCTION` OU is the only remaining trace.
+**Note**: `campps-cicd` (`424272146308`) was the originally-suspended account flagged in `.claude/audit-current-state.md` (2025-07-13). It was closed or removed before the 2026-05-02 migration; the empty `CICD/PRODUCTION` OU that was its last trace was deleted as part of that migration.
 
 ## What CDK manages — `OrganizationStack`
 
@@ -79,27 +77,25 @@ These exist in AWS but live outside the CDK stack — changes to them won't show
 
 | Resource | Why CDK doesn't manage it |
 |---|---|
-| Legacy `CAMPPS` OU and its children (`workloads/PRODUCTION`, `workloads/SDLC`, `CICD`, `CICD/PRODUCTION`) | Created manually before this CDK existed |
-| `campps-prod` and `campps-dev` accounts | Account creation requires `organizations:CreateAccount` and is typically not in IaC — even if it were, importing existing accounts into CDK is risky |
+| `campps-prod` and `campps-dev` accounts | Account creation requires `organizations:CreateAccount` and is typically not in IaC — even if it were, importing existing accounts into CDK is risky. Account-to-OU placement is a separate imperative `move-account` operation. |
 | `infiquetra` mgmt account | Mgmt accounts in AWS Organizations cannot be moved into OUs and are not modeled in CDK |
 | Organization itself (`r-f3un`) | Created when AWS Organizations was first turned on for this account |
 | `SERVICE_CONTROL_POLICY` enablement at the root | Imperative one-time AWS-side step; no CFN equivalent. See [LEARNINGS](../engineering-journal/LEARNINGS.md). |
 
-## The dual-CAMPPS situation explained
+## SCP coverage by account
 
-Two OUs both named "CAMPPS" coexist at different positions in the tree:
+Effective SCPs for each workload account, after the 2026-05-02 migration:
 
-| | Legacy CAMPPS | New CAMPPS |
-|---|---|---|
-| ID | `ou-f3un-s13dqexp` | `ou-f3un-pb5ixa96` |
-| Parent | Root | Apps OU |
-| Contents | The actual workload accounts (`campps-prod`, `campps-dev`) inside its `workloads` sub-tree | Empty scaffolding (`Production`, `NonProd` sub-OUs, both empty) |
-| Created by | Manual / pre-CDK | CDK (`OrganizationStack`) |
-| SCPs attached | None | `NonProductionCostControl` (on the inner `NonProd` only) |
+| Account | Direct SCPs | Inherited via | Effective deny set |
+|---|---|---|---|
+| `campps-prod` (431643435299) | `FullAWSAccess` | `Apps` → `BaseSecurityPolicy` | root user, delete logging, IAM/Org without MFA |
+| `campps-dev` (477152411873) | `FullAWSAccess` | `Apps` → `BaseSecurityPolicy`, `NonProd` → `NonProductionCostControl` | above + EC2 launches outside `t3/t4g` `{nano,micro,small,medium}` |
 
-**Why this is OK**: AWS Organizations allows duplicate OU names at different parents. The two OUs are distinct resources. There is no conflict, no API error, just a naming collision in the tree. The state is intentional — see [DECISIONS](../engineering-journal/DECISIONS.md) for the rationale on additive deploy.
+**Note**: `aws organizations list-policies-for-target --target-id <account-id>` only shows direct attachments (which is just `FullAWSAccess` for both accounts). To see inherited policies, walk the parent chain with `list-parents` + `list-policies-for-target` at each level. See [LEARNINGS](../engineering-journal/LEARNINGS.md) 2026-05-02 for the gotcha.
 
-**How it ends**: A future migration (P1 in [QUEUED](../engineering-journal/QUEUED.md)) moves `campps-prod` and `campps-dev` from `CAMPPS/workloads/{PRODUCTION,SDLC}` into `Apps/CAMPPS/{Production,NonProd}`. Then the legacy `CAMPPS` OU and its children get deleted (`DeleteOrganizationalUnit` only works on empty OUs, in dependency order).
+## Historical: the dual-CAMPPS situation (now resolved)
+
+From 2026-04-25 to 2026-05-02 the org had two OUs named "CAMPPS" — a CDK-managed empty one under `Apps`, and a legacy pre-CDK one at the root holding the live accounts. The legacy tree was deleted on 2026-05-02 once the accounts were moved into the CDK-managed tree. See [ARCHIVE](../engineering-journal/ARCHIVE.md) 2026-05-02 for the full migration narrative and [DECISIONS](../engineering-journal/DECISIONS.md) for the original additive-deploy rationale.
 
 ## Deploying changes
 

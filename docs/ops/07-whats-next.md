@@ -25,14 +25,15 @@ These are real but small. None should block you from building application code:
 
 | Item | Effort | Why it could wait |
 |---|---|---|
-| Migrate `campps-prod`/`campps-dev` accounts into new OU tree | S | The legacy structure works. SCP coverage is the only benefit. |
 | Tighten OIDC trust from `repo:infiquetra/*` to `repo:infiquetra/infiquetra-aws-infra:*` | XS | Real concern only when you add other repos to the org |
 | Verify root MFA + CloudTrail org trail across all 3 accounts | S | Console-only checks; once-per-quarter cadence is fine |
-| Investigate $36/mo Directory Service line item | XS | Money, not infrastructure — fix when convenient |
 | Migrate self off legacy `AdministratorAccess` permission set | S | Cosmetic / consistency; doesn't unblock anything |
-| Bump `CoreAdministrator` from PT4H → PT12H in CDK | XS | Bundle with the migration above |
+| Bump `CoreAdministrator` (and other admin sets) from PT4H → PT12H in CDK | XS | Bundle with the permission-set migration above |
+| Upgrade GitHub Actions to Node 24 before 2026-06-02 | S | Annotations are non-blocking until the forced cutover |
 
-**Total time to address all six**: probably 2-4 hours of focused work, spread over a couple sessions. Not weeks.
+**Total time to address all five**: probably 2-3 hours of focused work, spread over a couple sessions. Not weeks.
+
+(The CAMPPS account migration and the WorkSpaces Directory Service decommission both shipped — see [`../engineering-journal/ARCHIVE.md`](../engineering-journal/ARCHIVE.md).)
 
 ## What you should actually do next
 
@@ -52,13 +53,9 @@ This forces you to:
 
 The discoveries from doing this **will tell you what setup is actually needed** — vs. what setup feels productive but isn't.
 
-### Option 2 — Decommission the cost surprise
+### Option 2 — Pick one P2 item from QUEUED and ship it
 
-Open AWS Console → Directory Service. Find what's running. If unused, delete it. Saves ~$430/yr. Probably 30 minutes of work. Tangible win.
-
-### Option 3 — Pick one P1/P2 item from QUEUED and ship it
-
-[`../engineering-journal/QUEUED.md`](../engineering-journal/QUEUED.md) has prioritized backlog. The P1 (CAMPPS migration) is the most consequential. Ship it in a single PR, archive the entry. Rinse, repeat.
+[`../engineering-journal/QUEUED.md`](../engineering-journal/QUEUED.md) has the prioritized backlog. The previous P1 (CAMPPS account migration) shipped on 2026-05-02; the next-most-consequential items are the SSO admin permission-set migration (P2) and the Node 24 GHA upgrade (P3, deadline 2026-06-02). Ship one in a single PR, archive the entry. Rinse, repeat.
 
 ## What you should NOT do next
 

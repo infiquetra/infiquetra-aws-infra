@@ -40,6 +40,8 @@
 
 **Revisit when:** SSO permission-set rollout is ready to attach to the new OUs and we want one source of truth in CDK. At that point, run the account-migration step (queued in QUEUED.md as P1) and `delete-organizational-unit` the old top-level CAMPPS once empty.
 
+**Executed 2026-05-02:** Trigger fired — both workload accounts migrated into the CDK-managed tree, all 6 legacy OUs deleted. The dual-CAMPPS situation is over. See [`ARCHIVE.md`](ARCHIVE.md) 2026-05-02 entry.
+
 **Commit:** Procedural — see workflow_dispatch run [24933555533](https://github.com/infiquetra/infiquetra-aws-infra/actions/runs/24933555533) for the deploy that established this state.
 
 ### Disable `push: branches: [main]` trigger temporarily during multi-step deploy debug (re-enabled after stabilization)
