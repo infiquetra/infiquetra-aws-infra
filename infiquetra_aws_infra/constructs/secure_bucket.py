@@ -31,9 +31,7 @@ class SecureBucket(Construct):
                 if hasattr(naming, "resource_name") and callable(
                     naming.resource_name
                 ):
-                    named = naming.resource_name(bucket_name)
-                    if isinstance(named, str) and named:
-                        final_bucket_name = named
+                    final_bucket_name = naming.resource_name(bucket_name)
             except ImportError:
                 pass
 
