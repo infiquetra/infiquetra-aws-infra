@@ -27,13 +27,13 @@ class SecureBucket(Construct):
         if bucket_name is not None:
             try:
                 from infiquetra_aws_infra import naming  # type: ignore[attr-defined]
-
-                if hasattr(naming, "resource_name") and callable(
-                    naming.resource_name
-                ):
-                    final_bucket_name = naming.resource_name(bucket_name)
             except ImportError:
-                pass
+                naming = None
+
+            if naming is not None and hasattr(naming, "resource_name") and callable(
+                naming.resource_name
+            ):
+                final_bucket_name = naming.resource_name(bucket_name)
 
         self._bucket = s3.Bucket(
             self,
