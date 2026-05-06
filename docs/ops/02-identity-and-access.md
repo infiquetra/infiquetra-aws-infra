@@ -12,8 +12,10 @@ Who can log in, with what permissions, and how those permissions are wired toget
 | Identity source | AWS-managed Identity Store (not federated to external IdP) |
 | Users | 1 (`jefcox`) |
 | Groups | 1 (`Administrators`, no members shown via API) |
-| Permission sets | 13 (2 legacy AWS-default + 11 CDK-managed) |
-| Account assignments | 6 (all to `jefcox` directly) |
+| Permission sets | Live audit: 13 (2 legacy AWS-default + 11 CDK-managed); CDK target: 14 (2 legacy + 12 CDK-managed) |
+| Account assignments | Live audit: 6 direct legacy assignments; CDK target adds 4 optional group assignments when group IDs are supplied |
+
+> **Status note (2026-05-06):** The live audit values above describe what was observed in AWS before this foundation update. The source now defines the target Identity Center assignments and workload deploy roles, but deployment still needs an explicit preflight and approval.
 
 ## Users
 
@@ -49,7 +51,8 @@ Two layers exist: **legacy** sets created when SSO was first turned on (2021), a
 | `MediaAdministrator` | `PT4H` | `AdministratorAccess` | Admin access for Media |
 | `AppsDeveloper` | `PT8H` | `PowerUserAccess` | Developer access for Apps |
 | `AppsAdministrator` | `PT4H` | `AdministratorAccess` | Admin access for Apps |
-| `CamppssDeveloper` | `PT8H` | `PowerUserAccess` | Developer access for CAMPPS workloads |
+| `CAMPPSDeveloper` | `PT8H` | `PowerUserAccess` + CAMPPS inline policy | Developer access for CAMPPS nonprod workloads |
+| `CAMPPSProductionBreakGlassAdministrator` | `PT4H` | `AdministratorAccess` | Emergency administrator access for CAMPPS production workloads |
 | `ConsultingDeveloper` | `PT8H` | `PowerUserAccess` | Developer access for Consulting |
 | `ConsultingAdministrator` | `PT4H` | `AdministratorAccess` | Admin access for Consulting |
 | `ReadOnlyAccess` | `PT4H` | `ReadOnlyAccess` | Generic read-only |
@@ -76,9 +79,22 @@ Six SSO account assignments — all on `jefcox` directly (no group-based assignm
 | `campps-dev` | `AdministratorAccess` (legacy) | USER `jefcox` |
 | `campps-dev` | `Billing` (legacy) | USER `jefcox` |
 
-**Important**: None of the **CDK-managed** permission sets have any account assignments yet. They exist as definitions in Identity Center but no human is using them. Migrating off the legacy `AdministratorAccess` requires (a) assigning `jefcox` (or the `Administrators` group) to `CoreAdministrator` on each account, (b) verifying access works, (c) removing the legacy assignments.
+**Important**: The six rows above are live legacy assignments from the last audit. The CDK target now supports group-based assignments, but those assignments are conditional and only materialize when the deployment supplies non-empty group IDs.
 
-## CI/CD identity — the GitHub OIDC role
+## CDK target human-access model
+
+`infiquetra_aws_infra/sso_stack.py` now defines four optional group assignment parameters. Empty defaults keep deployments safe while the real Identity Center group IDs are created or verified.
+
+| Parameter | Permission set | Target account | Purpose |
+|---|---|---|---|
+| `InfiquetraAdminsGroupId` | `CoreAdministrator` | `645166163764` management | Manage organization, SSO, and foundation stacks |
+| `CamppsDevelopersGroupId` | `CAMPPSDeveloper` | `477152411873` campps-dev | Day-to-day nonprod development and debugging |
+| `CamppsProdReadOnlyGroupId` | `ReadOnlyAccess` | `431643435299` campps-prod | Production inspection without write access |
+| `CamppsProdBreakGlassAdminsGroupId` | `CAMPPSProductionBreakGlassAdministrator` | `431643435299` campps-prod | Emergency production changes only |
+
+The intended migration path is: create or verify the groups, deploy these parameters, test each profile, then remove the direct legacy `AdministratorAccess` assignments. Do not remove the legacy assignments first.
+
+## CI/CD identity — GitHub OIDC roles
 
 This is a separate IAM-level identity (not an SSO permission set) used by GitHub Actions to deploy.
 
@@ -91,10 +107,10 @@ This is a separate IAM-level identity (not an SSO permission set) used by GitHub
 | Trust principal | `arn:aws:iam::645166163764:oidc-provider/token.actions.githubusercontent.com` |
 | Trust action | `sts:AssumeRoleWithWebIdentity` |
 | Trust audience claim | `sts.amazonaws.com` (default for `aws-actions/configure-aws-credentials`) |
-| Trust subject claim | `repo:infiquetra/*` (StringLike) |
+| Trust subject claim | CDK target: `repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/main` (StringEquals) |
 | OIDC provider | `arn:aws:iam::645166163764:oidc-provider/token.actions.githubusercontent.com` |
 
-### Trust policy (live)
+### Management trust policy target
 
 ```json
 {
@@ -104,30 +120,45 @@ This is a separate IAM-level identity (not an SSO permission set) used by GitHub
     "Principal": {"Federated": "arn:aws:iam::645166163764:oidc-provider/token.actions.githubusercontent.com"},
     "Action": "sts:AssumeRoleWithWebIdentity",
     "Condition": {
-      "StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com"},
-      "StringLike": {"token.actions.githubusercontent.com:sub": "repo:infiquetra/*"}
+      "StringEquals": {
+        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+        "token.actions.githubusercontent.com:sub": "repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/main"
+      }
     }
   }]
 }
 ```
 
-`⚠ Security observation:` The `sub` condition is `repo:infiquetra/*` — meaning **any GitHub repo in the `infiquetra` org can assume this role**, not just `infiquetra/infiquetra-aws-infra`. Tighter scoping (e.g., `repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/main`) would limit lateral movement if another repo in the org is compromised. Tracked as a candidate for the security backlog.
+This role is for the foundation repository only. CAMPPS service repositories must not reuse it.
 
-### Attached managed policies (7)
+### Attached managed policy target
 
-These are customer-managed IAM policies, not AWS-managed:
+The bootstrap app now attaches one customer-managed policy to the management deploy role:
 
 | Policy | Purpose |
 |---|---|
-| `infiquetra-aws-infra-gha-cdk-policy` | CDK bootstrap + asset upload |
-| `infiquetra-aws-infra-gha-infrastructure-policy` | Core IaC operations (CFN, IAM, Organizations) |
-| `infiquetra-aws-infra-gha-security-policy` | KMS, Secrets Manager, ACM |
-| `infiquetra-aws-infra-gha-data-analytics-policy` | Data services scope |
-| `infiquetra-aws-infra-gha-event-driven-policy` | EventBridge, SNS, SQS scope |
-| `infiquetra-aws-infra-gha-serverless-policy` | Lambda, API Gateway scope |
-| `infiquetra-aws-infra-gha-edge-services-policy` | CloudFront, Route 53, WAF |
+| `infiquetra-aws-infra-gha-cdk-policy` | Scoped CDK deployment permissions for the foundation stacks and bootstrap stack |
 
-These are created by the **`infiquetra-aws-infra-gha-bootstrap`** CFN stack, which is a **separate one-time CDK app** at `github-oidc-bootstrap/`. The bootstrap stack provisioned the OIDC provider, the GHA role, and the 7 managed policies. It is not redeployed in the normal CI/CD flow — only re-run when the role's permission scope needs to change.
+The old broad workload policies were intentionally removed from the CDK target. Application repositories get separate workload-account roles instead.
+
+### CAMPPS workload deploy roles
+
+`app_campps_bootstrap.py` defines deploy-role stacks for the CAMPPS workload accounts:
+
+| Stack | Account | GitHub environment | Role pattern |
+|---|---|---|---|
+| `CamppsNonProdDeployRolesStack` | `477152411873` campps-dev | `nonprod` | `campps-<service>-nonprod-gha-deploy-role` |
+| `CamppsProductionDeployRolesStack` | `431643435299` campps-prod | `production` | `campps-<service>-production-gha-deploy-role` |
+
+Each service is registered in `infiquetra_aws_infra/campps_service_registry.py`. The first registered service is `infiquetra/campps-tenant-setup-service`, which creates `campps-tenant-setup-<environment>-gha-deploy-role` and `campps-tenant-setup-<environment>-gha-deploy-policy`.
+
+Trust is exact to the repository and GitHub environment:
+
+```text
+repo:infiquetra/<service-repo>:environment:<nonprod-or-production>
+```
+
+The workload deploy policy excludes management-plane services such as Organizations, SSO Admin, SSO, and IdentityStore. It is scoped to serverless app resources named with `campps-<service>-<environment>-*`, CDK asset buckets in the workload account, and app IAM roles/policies under `campps-<service>-<environment>-app-*`. App roles must be created with the per-service permissions boundary `campps-<service>-<environment>-permissions-boundary` before they can be passed to Lambda, API Gateway, EventBridge, or CloudFormation.
 
 ## How identities flow into AWS API calls
 

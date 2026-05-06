@@ -25,6 +25,23 @@
 
 ---
 
+## 2026-05-06
+
+### Use SSO for human CAMPPS access and per-repository OIDC roles for service deployments
+
+**Decision.** Use AWS Identity Center group assignments for human access and registry-generated GitHub OIDC deploy roles for CAMPPS service repositories. Local development can deploy to `campps-dev` through the `CAMPPSDeveloper` permission set, while normal CI/CD deployments use per-service roles in `campps-dev` and `campps-prod` with trust scoped to the exact GitHub repository and environment.
+
+**Rejected alternatives.** 
+- Reuse `infiquetra-aws-infra-gha-role` for service repositories: fastest path, but it gives application repos a management-account role that can affect Organizations, SSO, IAM, and foundation stacks.
+- Use one org-wide CAMPPS write deploy role: avoids IAM changes when adding repos, but creates lateral movement risk because any trusted repo could deploy with the same write permissions.
+- Keep production deployments local-only until the app matures: simple for one developer, but delays auditability, environment protection, and release-flow testing until the riskiest stage.
+
+**Implementation.** `infiquetra_aws_infra/sso_stack.py` defines optional Identity Center group assignments. `github-oidc-bootstrap/github_oidc_bootstrap/github_oidc_stack.py` tightens the management OIDC role to this repo's `main` branch. `infiquetra_aws_infra/campps_service_registry.py`, `infiquetra_aws_infra/campps_deploy_roles_stack.py`, and `app_campps_bootstrap.py` define the workload-account deploy-role target.
+
+**Revisit when.** Reconsider the per-repo registry if CAMPPS has enough repositories that adding a service to this foundation repo becomes a material delivery bottleneck. At that point, prefer automating registry updates or moving the registry to a dedicated CAMPPS bootstrap repo before broadening write-role trust.
+
+**Commit.** Pending — foundation target implemented locally, not yet deployed.
+
 ## 2026-04-25
 
 ### Create new `Apps>CAMPPS>{Production,NonProd}` OUs alongside existing top-level CAMPPS — additive, not migrative

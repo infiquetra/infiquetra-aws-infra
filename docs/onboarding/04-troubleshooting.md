@@ -138,21 +138,34 @@ If that doesn't work, you may need to use `--resources-to-skip` to bypass specif
 
 ### `Configure AWS Credentials` step fails with `Not authorized to perform sts:AssumeRoleWithWebIdentity`
 
-**Cause**: The OIDC trust policy on `infiquetra-aws-infra-gha-role` doesn't match this workflow's claims.
+**Cause**: The OIDC trust policy on the target deploy role doesn't match this workflow's claims.
 
 **Fix**:
 ```bash
-# Inspect the role's trust policy
+# Inspect the foundation role's trust policy
 aws iam get-role --role-name infiquetra-aws-infra-gha-role \
   --profile infiquetra-root \
   --query 'Role.AssumeRolePolicyDocument'
 ```
 
-Currently the trust policy allows `sub LIKE "repo:infiquetra/*"`. If you forked the repo, the `sub` will be `repo:<your-fork>:...` and won't match. Solutions:
+For the foundation repository, the expected subject is:
 
-1. **Run from a branch in the canonical repo** (preferred)
-2. **Add a per-fork condition** (avoid — sprawls trust policy)
-3. **Provision a separate IAM role for forks** (correct way if you really need fork-driven deploys)
+```text
+repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/main
+```
+
+For CAMPPS service repositories, the expected subject is environment scoped:
+
+```text
+repo:infiquetra/<service-repo>:environment:<nonprod-or-production>
+```
+
+If this fails, check that:
+
+1. The workflow is running from the canonical repository, not a fork.
+2. Foundation deploys are running from `main`.
+3. Service deploy jobs set the matching GitHub environment before configuring AWS credentials.
+4. The service repository has been added to `infiquetra_aws_infra/campps_service_registry.py` and the workload bootstrap stack has been deployed.
 
 ### Deploy succeeds but your change isn't visible in AWS
 

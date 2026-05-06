@@ -126,18 +126,22 @@ So the practical security posture today rests on:
 
 ## OIDC trust scoping
 
-The GitHub Actions role's trust policy restricts assumption to:
+The management GitHub Actions role's CDK target restricts assumption to:
 
-```
-sub LIKE "repo:infiquetra/*"
+```text
+sub == "repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/main"
 aud == "sts.amazonaws.com"
 ```
 
-`⚠ Observation:` The `sub` filter is **organization-wide**, not repo-specific. Any repo in `infiquetra/*` can assume `infiquetra-aws-infra-gha-role`. If another repo is added (e.g., `infiquetra/some-other-app`) and its workflow misuses this role, it gets the same blast radius.
+That role is for this foundation repository only. It can deploy management-account infrastructure such as Organizations, Identity Center, IAM, and the foundation bootstrap stack, so CAMPPS service repositories must not reuse it.
 
-**Tightening**: change to `sub LIKE "repo:infiquetra/infiquetra-aws-infra:*"` to limit to this single repo, or even `sub == "repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/main"` to limit to the main branch (prevents PR branches from deploying).
+CAMPPS service repositories use separate workload-account roles with GitHub environment scoped subjects:
 
-To change: edit `github-oidc-bootstrap/github_oidc_bootstrap/github_oidc_bootstrap_stack.py`, then `cd github-oidc-bootstrap && uv run cdk deploy --profile infiquetra-root`.
+```text
+repo:infiquetra/<service-repo>:environment:<nonprod-or-production>
+```
+
+To change the management trust policy: edit `github-oidc-bootstrap/github_oidc_bootstrap/github_oidc_stack.py`, then `cd github-oidc-bootstrap && uv run cdk deploy --profile infiquetra-root`. To add a CAMPPS service repository, add it to `infiquetra_aws_infra/campps_service_registry.py` and deploy the workload bootstrap stacks after preflight approval.
 
 ## What CloudTrail and CloudWatch Logs look like
 

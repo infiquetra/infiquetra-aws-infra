@@ -1,0 +1,813 @@
+"""CAMPPS workload-account deploy roles for GitHub Actions."""
+
+from collections.abc import Sequence
+from typing import Any
+
+from aws_cdk import ArnFormat, CfnOutput, Duration, Stack
+from aws_cdk import aws_iam as iam
+from constructs import Construct
+
+from infiquetra_aws_infra.campps_service_registry import (
+    CAMPPS_SERVICE_REPOSITORIES,
+    DeployEnvironment,
+    ServiceRepository,
+)
+
+CAMPPS_DEV_ACCOUNT_ID = "477152411873"
+CAMPPS_PROD_ACCOUNT_ID = "431643435299"
+
+GITHUB_OIDC_URL = "https://token.actions.githubusercontent.com"
+GITHUB_OIDC_HOST = "token.actions.githubusercontent.com"
+GITHUB_OIDC_AUDIENCE = "sts.amazonaws.com"
+
+
+class CamppsDeployRolesStack(Stack):
+    """Create per-service GitHub Actions deploy roles in a CAMPPS account."""
+
+    def __init__(
+        self,
+        scope: Construct,
+        construct_id: str,
+        *,
+        target_environment: DeployEnvironment,
+        service_repositories: Sequence[ServiceRepository] = CAMPPS_SERVICE_REPOSITORIES,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(scope, construct_id, **kwargs)
+
+        oidc_provider = iam.CfnOIDCProvider(
+            self,
+            "GitHubActionsOidcProvider",
+            url=GITHUB_OIDC_URL,
+            client_id_list=[GITHUB_OIDC_AUDIENCE],
+        )
+
+        for service_repository in service_repositories:
+            if target_environment not in service_repository.environments:
+                continue
+
+            deploy_role = self._create_deploy_role(
+                oidc_provider=oidc_provider,
+                service_repository=service_repository,
+                target_environment=target_environment,
+            )
+            permissions_boundary = self._create_app_permissions_boundary(
+                service_repository=service_repository,
+                target_environment=target_environment,
+            )
+            deploy_policy = self._create_serverless_api_deploy_policy(
+                service_repository=service_repository,
+                target_environment=target_environment,
+                permissions_boundary=permissions_boundary,
+            )
+            deploy_role.add_managed_policy(deploy_policy)
+
+            CfnOutput(
+                self,
+                f"{self._logical_id_prefix(service_repository.name)}DeployRoleArn",
+                value=deploy_role.role_arn,
+                description=(
+                    f"Deploy role ARN for {service_repository.repository} "
+                    f"{target_environment} deployments"
+                ),
+            )
+
+    def _create_deploy_role(
+        self,
+        *,
+        oidc_provider: iam.CfnOIDCProvider,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+    ) -> iam.Role:
+        return iam.Role(
+            self,
+            f"{self._logical_id_prefix(service_repository.name)}DeployRole",
+            role_name=service_repository.role_name(target_environment),
+            assumed_by=iam.FederatedPrincipal(
+                federated=oidc_provider.attr_arn,
+                conditions={
+                    "StringEquals": {
+                        f"{GITHUB_OIDC_HOST}:aud": GITHUB_OIDC_AUDIENCE,
+                        f"{GITHUB_OIDC_HOST}:sub": service_repository.github_subject(
+                            target_environment
+                        ),
+                    }
+                },
+                assume_role_action="sts:AssumeRoleWithWebIdentity",
+            ),
+            max_session_duration=Duration.hours(2),
+            description=(
+                f"GitHub Actions deploy role for {service_repository.repository} "
+                f"{target_environment}"
+            ),
+        )
+
+    def _create_app_permissions_boundary(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+    ) -> iam.ManagedPolicy:
+        prefix = f"campps-{service_repository.name}-{target_environment}"
+        return iam.ManagedPolicy(
+            self,
+            f"{self._logical_id_prefix(service_repository.name)}AppPermissionsBoundary",
+            managed_policy_name=service_repository.permissions_boundary_name(
+                target_environment
+            ),
+            description=(
+                f"Maximum app role permissions for {service_repository.repository} "
+                f"{target_environment}"
+            ),
+            statements=[
+                iam.PolicyStatement(
+                    actions=["cloudwatch:PutMetricData"],
+                    resources=["*"],
+                ),
+                iam.PolicyStatement(
+                    actions=[
+                        "dynamodb:BatchGetItem",
+                        "dynamodb:BatchWriteItem",
+                        "dynamodb:DeleteItem",
+                        "dynamodb:GetItem",
+                        "dynamodb:PutItem",
+                        "dynamodb:Query",
+                        "dynamodb:Scan",
+                        "dynamodb:UpdateItem",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="dynamodb",
+                            resource="table",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    actions=["events:PutEvents"],
+                    resources=[
+                        self.format_arn(
+                            service="events",
+                            resource="event-bus",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    actions=[
+                        "kms:Decrypt",
+                        "kms:DescribeKey",
+                        "kms:Encrypt",
+                        "kms:GenerateDataKey",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="kms",
+                            resource="key",
+                            resource_name="*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                    conditions={
+                        "StringEquals": {
+                            "aws:ResourceTag/Service": service_repository.name,
+                            "aws:ResourceTag/Environment": target_environment,
+                        }
+                    },
+                ),
+                iam.PolicyStatement(
+                    actions=[
+                        "logs:CreateLogStream",
+                        "logs:PutLogEvents",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="logs",
+                            resource="log-group",
+                            resource_name=f"/aws/lambda/{prefix}-*:log-stream:*",
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    actions=["secretsmanager:GetSecretValue"],
+                    resources=[
+                        self.format_arn(
+                            service="secretsmanager",
+                            resource="secret",
+                            resource_name=(
+                                f"campps/{service_repository.name}/{target_environment}/*"
+                            ),
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    actions=[
+                        "sqs:ChangeMessageVisibility",
+                        "sqs:DeleteMessage",
+                        "sqs:GetQueueAttributes",
+                        "sqs:ReceiveMessage",
+                        "sqs:SendMessage",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="sqs",
+                            resource=f"{prefix}-*",
+                            arn_format=ArnFormat.NO_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    actions=["ssm:GetParameter", "ssm:GetParameters"],
+                    resources=[
+                        self.format_arn(
+                            service="ssm",
+                            resource="parameter",
+                            resource_name=(
+                                f"campps/{service_repository.name}/{target_environment}/*"
+                            ),
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+            ],
+        )
+
+    def _create_serverless_api_deploy_policy(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+        permissions_boundary: iam.ManagedPolicy,
+    ) -> iam.ManagedPolicy:
+        prefix = f"campps-{service_repository.name}-{target_environment}"
+        app_iam_prefix = f"{prefix}-app"
+        permissions_boundary_arn = permissions_boundary.managed_policy_arn
+        return iam.ManagedPolicy(
+            self,
+            f"{self._logical_id_prefix(service_repository.name)}DeployPolicy",
+            managed_policy_name=service_repository.policy_name(target_environment),
+            description=(
+                f"Serverless API deployment permissions for "
+                f"{service_repository.repository} {target_environment}"
+            ),
+            statements=[
+                iam.PolicyStatement(
+                    sid="CloudFormationDeployments",
+                    actions=[
+                        "cloudformation:CancelUpdateStack",
+                        "cloudformation:ContinueUpdateRollback",
+                        "cloudformation:CreateChangeSet",
+                        "cloudformation:CreateStack",
+                        "cloudformation:DeleteChangeSet",
+                        "cloudformation:DeleteStack",
+                        "cloudformation:DescribeChangeSet",
+                        "cloudformation:DescribeStackEvents",
+                        "cloudformation:DescribeStackResource",
+                        "cloudformation:DescribeStackResources",
+                        "cloudformation:DescribeStacks",
+                        "cloudformation:ExecuteChangeSet",
+                        "cloudformation:GetTemplate",
+                        "cloudformation:GetTemplateSummary",
+                        "cloudformation:SetStackPolicy",
+                        "cloudformation:UpdateStack",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="cloudformation",
+                            resource="stack",
+                            resource_name=f"{prefix}-*/*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        ),
+                        self.format_arn(
+                            service="cloudformation",
+                            resource="changeSet",
+                            resource_name="cdk-deploy-change-set/*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        ),
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="CloudFormationTemplateValidation",
+                    actions=["cloudformation:ValidateTemplate"],
+                    resources=["*"],
+                ),
+                iam.PolicyStatement(
+                    sid="CdkAssetsBucket",
+                    actions=[
+                        "s3:AbortMultipartUpload",
+                        "s3:GetBucketLocation",
+                        "s3:GetObject",
+                        "s3:ListBucket",
+                        "s3:ListBucketMultipartUploads",
+                        "s3:PutObject",
+                    ],
+                    resources=[
+                        f"arn:aws:s3:::cdk-hnb659fds-assets-{self.account}-{self.region}",
+                        f"arn:aws:s3:::cdk-hnb659fds-assets-{self.account}-{self.region}/*",
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="CreateBoundedServerlessRoles",
+                    actions=["iam:CreateRole"],
+                    resources=[
+                        self.format_arn(
+                            service="iam",
+                            region="",
+                            resource="role",
+                            resource_name=f"{app_iam_prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                    conditions={
+                        "StringEquals": {
+                            "iam:PermissionsBoundary": permissions_boundary_arn
+                        }
+                    },
+                ),
+                iam.PolicyStatement(
+                    sid="ManageServerlessRoles",
+                    actions=[
+                        "iam:DeleteRole",
+                        "iam:DeleteRolePolicy",
+                        "iam:DetachRolePolicy",
+                        "iam:GetRole",
+                        "iam:GetRolePolicy",
+                        "iam:ListAttachedRolePolicies",
+                        "iam:ListRolePolicies",
+                        "iam:PutRolePolicy",
+                        "iam:TagRole",
+                        "iam:UntagRole",
+                        "iam:UpdateAssumeRolePolicy",
+                        "iam:UpdateRole",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="iam",
+                            region="",
+                            resource="role",
+                            resource_name=f"{app_iam_prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="ManageServerlessPolicies",
+                    actions=[
+                        "iam:CreatePolicy",
+                        "iam:CreatePolicyVersion",
+                        "iam:DeletePolicy",
+                        "iam:DeletePolicyVersion",
+                        "iam:GetPolicy",
+                        "iam:GetPolicyVersion",
+                        "iam:ListPolicyVersions",
+                        "iam:SetDefaultPolicyVersion",
+                        "iam:TagPolicy",
+                        "iam:UntagPolicy",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="iam",
+                            region="",
+                            resource="policy",
+                            resource_name=f"{app_iam_prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="AttachServerlessPolicies",
+                    actions=["iam:AttachRolePolicy"],
+                    resources=[
+                        self.format_arn(
+                            service="iam",
+                            region="",
+                            resource="role",
+                            resource_name=f"{app_iam_prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                    conditions={
+                        "ArnLike": {
+                            "iam:PolicyARN": self.format_arn(
+                                service="iam",
+                                region="",
+                                resource="policy",
+                                resource_name=f"{app_iam_prefix}-*",
+                                arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                            )
+                        }
+                    },
+                ),
+                iam.PolicyStatement(
+                    sid="PassServerlessRoles",
+                    actions=["iam:PassRole"],
+                    resources=[
+                        self.format_arn(
+                            service="iam",
+                            region="",
+                            resource="role",
+                            resource_name=f"{app_iam_prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                    conditions={
+                        "StringEquals": {
+                            "iam:PassedToService": [
+                                "apigateway.amazonaws.com",
+                                "cloudformation.amazonaws.com",
+                                "events.amazonaws.com",
+                                "lambda.amazonaws.com",
+                            ]
+                        }
+                    },
+                ),
+                iam.PolicyStatement(
+                    sid="LambdaApiRuntimeResources",
+                    actions=[
+                        "lambda:CreateAlias",
+                        "lambda:CreateEventSourceMapping",
+                        "lambda:CreateFunction",
+                        "lambda:DeleteAlias",
+                        "lambda:DeleteEventSourceMapping",
+                        "lambda:DeleteFunction",
+                        "lambda:GetAlias",
+                        "lambda:GetEventSourceMapping",
+                        "lambda:GetFunction",
+                        "lambda:GetFunctionConfiguration",
+                        "lambda:ListAliases",
+                        "lambda:ListEventSourceMappings",
+                        "lambda:ListTags",
+                        "lambda:ListVersionsByFunction",
+                        "lambda:PublishVersion",
+                        "lambda:RemovePermission",
+                        "lambda:TagResource",
+                        "lambda:UntagResource",
+                        "lambda:UpdateAlias",
+                        "lambda:UpdateEventSourceMapping",
+                        "lambda:UpdateFunctionCode",
+                        "lambda:UpdateFunctionConfiguration",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="lambda",
+                            resource="function",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="GrantServerlessInvokePermissions",
+                    actions=["lambda:AddPermission"],
+                    resources=[
+                        self.format_arn(
+                            service="lambda",
+                            resource="function",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        )
+                    ],
+                    conditions={
+                        "StringEquals": {
+                            "lambda:Principal": [
+                                "apigateway.amazonaws.com",
+                                "events.amazonaws.com",
+                            ]
+                        }
+                    },
+                ),
+                iam.PolicyStatement(
+                    sid="LambdaLayerReads",
+                    actions=["lambda:GetLayerVersion"],
+                    resources=[
+                        self.format_arn(
+                            service="lambda",
+                            resource="layer",
+                            resource_name="*:*",
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="ApiGatewayReadDeployments",
+                    actions=["apigateway:GET"],
+                    resources=[
+                        self.format_arn(
+                            service="apigateway",
+                            account="",
+                            resource="/restapis",
+                            arn_format=ArnFormat.NO_RESOURCE_NAME,
+                        ),
+                        self.format_arn(
+                            service="apigateway",
+                            account="",
+                            resource="/restapis",
+                            resource_name="*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        ),
+                        self.format_arn(
+                            service="apigateway",
+                            account="",
+                            resource="/tags",
+                            resource_name="*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        ),
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="ApiGatewayCreateDeployments",
+                    actions=["apigateway:POST"],
+                    resources=[
+                        self.format_arn(
+                            service="apigateway",
+                            account="",
+                            resource="/restapis",
+                            arn_format=ArnFormat.NO_RESOURCE_NAME,
+                        )
+                    ],
+                    conditions={
+                        "StringEquals": {
+                            "aws:RequestTag/Service": service_repository.name,
+                            "aws:RequestTag/Environment": target_environment,
+                        },
+                        "ForAllValues:StringEquals": {
+                            "aws:TagKeys": ["Service", "Environment"]
+                        },
+                    },
+                ),
+                iam.PolicyStatement(
+                    sid="ApiGatewayWriteDeployments",
+                    actions=[
+                        "apigateway:DELETE",
+                        "apigateway:PATCH",
+                        "apigateway:POST",
+                        "apigateway:PUT",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="apigateway",
+                            account="",
+                            resource="/restapis",
+                            resource_name="*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        ),
+                        self.format_arn(
+                            service="apigateway",
+                            account="",
+                            resource="/tags",
+                            resource_name="*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        ),
+                    ],
+                    conditions={
+                        "StringEquals": {
+                            "aws:ResourceTag/Service": service_repository.name,
+                            "aws:ResourceTag/Environment": target_environment,
+                        }
+                    },
+                ),
+                iam.PolicyStatement(
+                    sid="DynamoDbTables",
+                    actions=[
+                        "dynamodb:CreateTable",
+                        "dynamodb:DeleteTable",
+                        "dynamodb:DescribeContinuousBackups",
+                        "dynamodb:DescribeTable",
+                        "dynamodb:DescribeTimeToLive",
+                        "dynamodb:ListTagsOfResource",
+                        "dynamodb:TagResource",
+                        "dynamodb:UntagResource",
+                        "dynamodb:UpdateContinuousBackups",
+                        "dynamodb:UpdateTable",
+                        "dynamodb:UpdateTimeToLive",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="dynamodb",
+                            resource="table",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="EventBridgeRules",
+                    actions=[
+                        "events:DeleteRule",
+                        "events:DescribeRule",
+                        "events:ListTagsForResource",
+                        "events:ListTargetsByRule",
+                        "events:PutRule",
+                        "events:PutTargets",
+                        "events:RemoveTargets",
+                        "events:TagResource",
+                        "events:UntagResource",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="events",
+                            resource="rule",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="SqsQueues",
+                    actions=[
+                        "sqs:CreateQueue",
+                        "sqs:DeleteQueue",
+                        "sqs:GetQueueAttributes",
+                        "sqs:GetQueueUrl",
+                        "sqs:ListQueueTags",
+                        "sqs:SetQueueAttributes",
+                        "sqs:TagQueue",
+                        "sqs:UntagQueue",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="sqs",
+                            resource=f"{prefix}-*",
+                            arn_format=ArnFormat.NO_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="CloudWatchAlarms",
+                    actions=[
+                        "cloudwatch:DeleteAlarms",
+                        "cloudwatch:DescribeAlarms",
+                        "cloudwatch:PutMetricAlarm",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="cloudwatch",
+                            resource="alarm",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="LambdaLogGroups",
+                    actions=[
+                        "logs:CreateLogGroup",
+                        "logs:DeleteLogGroup",
+                        "logs:DescribeLogGroups",
+                        "logs:ListTagsForResource",
+                        "logs:PutRetentionPolicy",
+                        "logs:TagResource",
+                        "logs:UntagResource",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="logs",
+                            resource="log-group",
+                            resource_name=f"/aws/lambda/{prefix}-*",
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        ),
+                        self.format_arn(
+                            service="logs",
+                            resource="log-group",
+                            resource_name=f"/aws/lambda/{prefix}-*:log-stream:*",
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        ),
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="KmsKeyCreation",
+                    actions=["kms:CreateKey"],
+                    resources=["*"],
+                    conditions={
+                        "StringEquals": {
+                            "aws:RequestTag/Service": service_repository.name,
+                            "aws:RequestTag/Environment": target_environment,
+                        },
+                        "ForAllValues:StringEquals": {
+                            "aws:TagKeys": ["Service", "Environment"]
+                        },
+                    },
+                ),
+                iam.PolicyStatement(
+                    sid="KmsAliases",
+                    actions=[
+                        "kms:CreateAlias",
+                        "kms:DeleteAlias",
+                        "kms:UpdateAlias",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="kms",
+                            resource="alias",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="TaggedKmsKeys",
+                    actions=[
+                        "kms:DescribeKey",
+                        "kms:EnableKeyRotation",
+                        "kms:GetKeyPolicy",
+                        "kms:GetKeyRotationStatus",
+                        "kms:ListResourceTags",
+                        "kms:PutKeyPolicy",
+                        "kms:ScheduleKeyDeletion",
+                        "kms:TagResource",
+                        "kms:UntagResource",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="kms",
+                            resource="key",
+                            resource_name="*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                    conditions={
+                        "StringEquals": {
+                            "aws:ResourceTag/Service": service_repository.name,
+                            "aws:ResourceTag/Environment": target_environment,
+                        }
+                    },
+                ),
+                iam.PolicyStatement(
+                    sid="SecretsManagerSecrets",
+                    actions=[
+                        "secretsmanager:CreateSecret",
+                        "secretsmanager:DeleteSecret",
+                        "secretsmanager:DescribeSecret",
+                        "secretsmanager:GetResourcePolicy",
+                        "secretsmanager:PutSecretValue",
+                        "secretsmanager:TagResource",
+                        "secretsmanager:UntagResource",
+                        "secretsmanager:UpdateSecret",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="secretsmanager",
+                            resource="secret",
+                            resource_name=(
+                                f"campps/{service_repository.name}/{target_environment}/*"
+                            ),
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="SsmParameters",
+                    actions=[
+                        "ssm:AddTagsToResource",
+                        "ssm:DeleteParameter",
+                        "ssm:GetParameter",
+                        "ssm:GetParameters",
+                        "ssm:ListTagsForResource",
+                        "ssm:PutParameter",
+                        "ssm:RemoveTagsFromResource",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="ssm",
+                            resource="parameter",
+                            resource_name=(
+                                f"campps/{service_repository.name}/{target_environment}/*"
+                            ),
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="CdkBootstrapVersion",
+                    actions=["ssm:GetParameter"],
+                    resources=[
+                        self.format_arn(
+                            service="ssm",
+                            resource="parameter",
+                            resource_name="cdk-bootstrap/hnb659fds/version",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="SsmParameterDiscovery",
+                    actions=["ssm:DescribeParameters"],
+                    resources=["*"],
+                    conditions={
+                        "StringLike": {
+                            "ssm:Name": (
+                                f"/campps/{service_repository.name}/{target_environment}/*"
+                            )
+                        }
+                    },
+                ),
+            ],
+        )
+
+    @staticmethod
+    def _logical_id_prefix(service_name: str) -> str:
+        return "".join(part.capitalize() for part in service_name.split("-"))

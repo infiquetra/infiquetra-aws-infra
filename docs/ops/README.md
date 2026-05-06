@@ -4,7 +4,7 @@ You are the owner/operator. This is the comprehensive snapshot of **what current
 
 > Audience: The operator (you) — assumes AWS / CDK familiarity. For newcomer-friendly walkthroughs, see [`../onboarding/`](../onboarding/).
 >
-> Snapshot date: **2026-05-02** (org tree refresh after CAMPPS migration). Identity / login / cost data still reflects 2026-04-27 — those areas haven't changed. Re-pull any time the AWS state diverges materially from what's documented.
+> Snapshot date: **2026-05-06** for the CAMPPS access target model and **2026-05-02** for the org tree refresh after CAMPPS migration. Cost data still reflects 2026-04-27. Re-pull any time the AWS state diverges materially from what's documented.
 
 ## You are here
 
@@ -25,7 +25,7 @@ flowchart LR
 | # | Section | What's in it |
 |---|---|---|
 | 01 | [AWS Organization](01-aws-organization.md) | The full account + OU tree, SCP coverage by account, what CDK manages vs. what's intentionally outside its scope |
-| 02 | [Identity & Access](02-identity-and-access.md) | All 13 SSO permission sets (legacy + CDK-managed), who's assigned what, the GitHub OIDC role, IAM trust chains |
+| 02 | [Identity & Access](02-identity-and-access.md) | Live and target SSO permission sets, legacy and group-based assignments, GitHub OIDC roles, IAM trust chains |
 | 03 | [Login Flows](03-login-flows.md) | Step-by-step flows for developer SSO login, CI/CD OIDC federation, MFA, session lifecycle |
 | 04 | [CI/CD Pipeline](04-ci-cd-pipeline.md) | Composite actions + reusable workflows, the deploy chain, branch protection, what runs where |
 | 05 | [Security Controls](05-security-controls.md) | Service Control Policies (active on both workload accounts since 2026-05-02), MFA enforcement, what's actually blocked |
@@ -41,8 +41,8 @@ flowchart LR
 | **OUs** | 7 total (all CDK-managed; both workload accounts placed in `Apps/CAMPPS/{Production,NonProd}`) |
 | **SCPs** | 2 customer-managed (BaseSecurityPolicy, NonProductionCostControl) |
 | **Identity Center users** | 1 (`jefcox`) + 1 group (`Administrators`, currently empty) |
-| **SSO permission sets** | 13 (2 legacy + 11 CDK-managed) |
-| **GitHub OIDC role** | `infiquetra-aws-infra-gha-role` (trusts `repo:infiquetra/*`) |
+| **SSO permission sets** | Live audit: 13; CDK target: 14 |
+| **GitHub OIDC roles** | Foundation role target is repo/main scoped; CAMPPS service roles are per-repo and workload-account scoped |
 | **CFN stacks deployed** | 3 (Organization, SSO, gha-bootstrap) |
 | **Last 30 days spend** | $84 (mostly Amazon Registrar + AWS Directory Service) |
 | **Last 90 days spend** | $173 |
@@ -58,6 +58,6 @@ uv run python docs/ops/diagrams/generate.py
 
 - **Both workload accounts are in the CDK-managed OU tree** (as of 2026-05-02). `campps-prod` lives in `Apps/CAMPPS/Production`; `campps-dev` lives in `Apps/CAMPPS/NonProd`. The legacy `CAMPPS` subtree has been deleted. See [01-aws-organization.md](01-aws-organization.md) and the [ARCHIVE](../engineering-journal/ARCHIVE.md) entry for the migration narrative.
 - **SCPs are active on both workload accounts.** `BaseSecurityPolicy` inherited via `Apps`; `NonProductionCostControl` additionally inherited by `campps-dev` via `NonProd`. See [05-security-controls.md](05-security-controls.md).
-- **You currently log in via the legacy `AdministratorAccess` permission set** (PT12H), not the CDK-managed `CoreAdministrator` (PT4H). Migration is a P2 backlog item. See [02-identity-and-access.md](02-identity-and-access.md).
+- **You currently log in via legacy direct `AdministratorAccess` assignments**, but the CDK target now defines group-based management, CAMPPS dev, production read-only, and production break-glass access. Migration is a P2 backlog item. See [02-identity-and-access.md](02-identity-and-access.md).
 - **The CI/CD pipeline is fully working** as of 2026-04-25 — see the [`../engineering-journal/ARCHIVE.md`](../engineering-journal/ARCHIVE.md) for the multi-PR stabilization story.
 - **Most of your monthly spend is Amazon Registrar (domain registration) + AWS Directory Service.** Neither is created by this repo's CDK — both predate this repo. See [06-cost.md](06-cost.md).

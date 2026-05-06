@@ -69,16 +69,18 @@ Most workflow changes go in `.github/workflows/`. The pattern is:
 
 When editing reusable workflows, remember the caller-permissions rule (see [LEARNINGS](../engineering-journal/LEARNINGS.md)).
 
-### Pattern D — Modify the GitHub OIDC role
+### Pattern D — Modify GitHub OIDC roles
 
-Edit `github-oidc-bootstrap/github_oidc_bootstrap/github_oidc_bootstrap_stack.py`. **This is a separate CDK app** — deploy from inside `github-oidc-bootstrap/`:
+For the foundation repository's management-account deploy role, edit `github-oidc-bootstrap/github_oidc_bootstrap/github_oidc_stack.py`. **This is a separate CDK app** — deploy from inside `github-oidc-bootstrap/`:
 
 ```bash
 cd github-oidc-bootstrap
 uv run cdk deploy --profile infiquetra-root
 ```
 
-Not part of the regular CI flow.
+That role is scoped to `infiquetra/infiquetra-aws-infra` on `main` and is not for CAMPPS service repositories. To add a CAMPPS service deploy role, edit `infiquetra_aws_infra/campps_service_registry.py`, synthesize `app_campps_bootstrap.py`, and deploy the workload bootstrap stacks after preflight approval.
+
+Not part of the regular foundation CI flow.
 
 ## Step 4 — Local validation
 

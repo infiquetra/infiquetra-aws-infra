@@ -37,3 +37,6 @@ cdk.context.json
 
 # AWS
 .aws/.secrets
+
+# Claude session state
+.remember/

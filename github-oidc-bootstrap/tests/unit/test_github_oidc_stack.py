@@ -1,230 +1,181 @@
-"""
-Unit tests for GitHub OIDC Stack.
+"""Unit tests for the GitHub OIDC bootstrap stack."""
 
-Tests the CDK stack creation, IAM policies, and OIDC provider configuration.
-"""
+from collections.abc import Iterable
 
-import pytest
 from aws_cdk import App, Environment
 from aws_cdk.assertions import Template
 
 from github_oidc_bootstrap.github_oidc_stack import GitHubOIDCStack
 
 
-class TestGitHubOIDCStack:
-    """Test cases for GitHubOIDCStack."""
+def synth_template() -> Template:
+    app = App()
+    stack = GitHubOIDCStack(
+        app,
+        "TestGitHubOIDCStack",
+        env=Environment(account="123456789012", region="us-east-1"),
+    )
+    return Template.from_stack(stack)
 
-    @pytest.fixture
-    def app(self) -> App:
-        """Create CDK App for testing."""
-        return App()
 
-    @pytest.fixture
-    def stack(self, app: App) -> GitHubOIDCStack:
-        """Create GitHubOIDCStack for testing."""
-        return GitHubOIDCStack(
-            app,
-            "TestGitHubOIDCStack",
-            env=Environment(account="123456789012", region="us-east-1"),
+def find_deploy_role(template: Template) -> dict:
+    roles = template.find_resources("AWS::IAM::Role")
+    for role in roles.values():
+        if role["Properties"].get("RoleName") == "infiquetra-aws-infra-gha-role":
+            return dict(role)
+    raise AssertionError("infiquetra-aws-infra-gha-role not found")
+
+
+def find_deploy_role_logical_id(template: Template) -> str:
+    roles = template.find_resources("AWS::IAM::Role")
+    for logical_id, role in roles.items():
+        if role["Properties"].get("RoleName") == "infiquetra-aws-infra-gha-role":
+            return logical_id
+    raise AssertionError("infiquetra-aws-infra-gha-role not found")
+
+
+def managed_policy_names(template: Template) -> set[str]:
+    policies = template.find_resources("AWS::IAM::ManagedPolicy")
+    return {
+        policy["Properties"]["ManagedPolicyName"]
+        for policy in policies.values()
+        if "ManagedPolicyName" in policy["Properties"]
+    }
+
+
+def find_managed_policy_logical_id(template: Template, policy_name: str) -> str:
+    policies = template.find_resources("AWS::IAM::ManagedPolicy")
+    for logical_id, policy in policies.items():
+        if policy["Properties"].get("ManagedPolicyName") == policy_name:
+            return logical_id
+    raise AssertionError(f"{policy_name} not found")
+
+
+def normalize_actions(actions: str | Iterable[str] | None) -> tuple[str, ...]:
+    if actions is None:
+        return ()
+    if isinstance(actions, str):
+        return (actions.strip().lower(),)
+    return tuple(action.strip().lower() for action in actions)
+
+
+def find_github_oidc_provider_logical_ids(template: Template) -> set[str]:
+    oidc_provider_resources = {
+        **template.find_resources("AWS::IAM::OIDCProvider"),
+        **template.find_resources("Custom::AWSCDKOpenIdConnectProvider"),
+    }
+
+    return {
+        logical_id
+        for logical_id, provider in oidc_provider_resources.items()
+        if provider["Properties"].get("Url")
+        == "https://token.actions.githubusercontent.com"
+    }
+
+
+def is_github_oidc_provider_reference(
+    federated_principal: str | dict,
+    oidc_provider_logical_ids: set[str],
+) -> bool:
+    if isinstance(federated_principal, str):
+        return "token.actions.githubusercontent.com" in federated_principal
+
+    if federated_principal.get("Ref") in oidc_provider_logical_ids:
+        return True
+
+    get_att = federated_principal.get("Fn::GetAtt")
+    return isinstance(get_att, list) and get_att[0] in oidc_provider_logical_ids
+
+
+def test_oidc_provider_creation() -> None:
+    template = synth_template()
+
+    template.has_resource_properties(
+        "Custom::AWSCDKOpenIdConnectProvider",
+        {
+            "Url": "https://token.actions.githubusercontent.com",
+            "ClientIDList": ["sts.amazonaws.com"],
+        },
+    )
+
+
+def test_management_role_trust_is_repo_and_main_scoped() -> None:
+    template = synth_template()
+    deploy_role = find_deploy_role(template)
+    oidc_provider_logical_ids = find_github_oidc_provider_logical_ids(template)
+    statements = deploy_role["Properties"]["AssumeRolePolicyDocument"]["Statement"]
+
+    assert len(statements) == 1
+    statement = statements[0]
+    assert statement["Effect"] == "Allow"
+    assert statement["Action"] == "sts:AssumeRoleWithWebIdentity"
+    assert is_github_oidc_provider_reference(
+        statement["Principal"]["Federated"], oidc_provider_logical_ids
+    )
+    assert statement["Condition"] == {
+        "StringEquals": {
+            "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+            "token.actions.githubusercontent.com:sub": "repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/main",
+        }
+    }
+
+
+def test_management_role_has_only_foundation_deploy_policy() -> None:
+    template = synth_template()
+    deploy_role = find_deploy_role(template)
+    policy_logical_id = find_managed_policy_logical_id(
+        template, "infiquetra-aws-infra-gha-cdk-policy"
+    )
+
+    assert managed_policy_names(template) == {"infiquetra-aws-infra-gha-cdk-policy"}
+    assert "Policies" not in deploy_role["Properties"]
+    assert deploy_role["Properties"].get("ManagedPolicyArns") == [
+        {"Ref": policy_logical_id}
+    ]
+
+
+def test_no_inline_policy_resources_attach_to_management_role() -> None:
+    template = synth_template()
+    deploy_role_logical_id = find_deploy_role_logical_id(template)
+    inline_policies = template.find_resources("AWS::IAM::Policy")
+
+    for policy in inline_policies.values():
+        assert {"Ref": deploy_role_logical_id} not in policy["Properties"].get(
+            "Roles", []
+        )
+        assert "infiquetra-aws-infra-gha-role" not in policy["Properties"].get(
+            "Roles", []
         )
 
-    @pytest.fixture
-    def template(self, stack: GitHubOIDCStack) -> Template:
-        """Create CloudFormation template for testing."""
-        return Template.from_stack(stack)
 
-    def test_stack_creation(self, stack: GitHubOIDCStack) -> None:
-        """Test that the stack can be created without errors."""
-        assert stack is not None
-        assert stack.stack_name == "TestGitHubOIDCStack"
+def test_management_role_policy_does_not_include_workload_admin_actions() -> None:
+    workload_admin_services = {
+        "lambda",
+        "apigateway",
+        "apigatewayv2",
+        "dynamodb",
+        "events",
+        "route53",
+    }
+    template = synth_template()
+    policies = template.find_resources("AWS::IAM::ManagedPolicy")
+    policy_documents = [
+        policy["Properties"]["PolicyDocument"] for policy in policies.values()
+    ]
 
-    def test_oidc_provider_creation(self, template: Template) -> None:
-        """Test that OIDC provider is created with correct configuration."""
-        # CDK creates OIDC providers as custom resources
-        template.has_resource_properties(
-            "Custom::AWSCDKOpenIdConnectProvider",
-            {
-                "Url": "https://token.actions.githubusercontent.com",
-                "ClientIDList": ["sts.amazonaws.com"],
-                "ThumbprintList": [
-                    "6938fd4d98bab03faadb97b34396831e3780aea1",
-                    "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
-                ],
-            },
-        )
+    for document in policy_documents:
+        for statement in document["Statement"]:
+            assert "NotAction" not in statement
 
-    def test_iam_role_creation(self, template: Template) -> None:
-        """Test that IAM role is created with appropriate configuration."""
-        template.has_resource_properties(
-            "AWS::IAM::Role",
-            {
-                "RoleName": "infiquetra-aws-infra-gha-role",
-                "Description": "Role for GitHub Actions to deploy CDK stacks from infiquetra-aws-infra",
-                "MaxSessionDuration": 43200,  # 12 hours in seconds
-            },
-        )
+    actions = {
+        action
+        for document in policy_documents
+        for statement in document["Statement"]
+        for action in normalize_actions(statement.get("Action"))
+    }
 
-    def test_iam_role_trust_policy(self, template: Template) -> None:
-        """Test that IAM role has correct trust policy."""
-        # Get the GitHub Actions role (not the custom resource provider role)
-        roles = template.find_resources("AWS::IAM::Role")
-        github_role = None
-        for _role_name, role_resource in roles.items():
-            role_name_prop = role_resource["Properties"].get("RoleName")
-            if role_name_prop == "infiquetra-aws-infra-gha-role":
-                github_role = role_resource
-                break
-
-        assert github_role is not None, "infiquetra-aws-infra-gha-role not found"
-        assume_role_policy = github_role["Properties"]["AssumeRolePolicyDocument"]
-
-        # Verify the trust policy structure
-        assert assume_role_policy["Version"] == "2012-10-17"
-        assert len(assume_role_policy["Statement"]) == 1
-
-        statement = assume_role_policy["Statement"][0]
-        assert statement["Effect"] == "Allow"
-        assert statement["Action"] == "sts:AssumeRoleWithWebIdentity"
-
-        # Verify conditions
-        conditions = statement["Condition"]
-        assert "StringEquals" in conditions
-        assert "StringLike" in conditions
-
-        # Check specific conditions
-        string_equals = conditions["StringEquals"]
-        assert (
-            string_equals["token.actions.githubusercontent.com:aud"]
-            == "sts.amazonaws.com"
-        )
-        assert (
-            string_equals["token.actions.githubusercontent.com:repository"]
-            == "infiquetra/infiquetra-aws-infra"
-        )
-
-        string_like = conditions["StringLike"]
-        expected_subs = [
-            "repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/main",
-            "repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/develop",
-            "repo:infiquetra/infiquetra-aws-infra:pull_request:refs/heads/main",
-        ]
-        assert string_like["token.actions.githubusercontent.com:sub"] == expected_subs
-
-        expected_actors = ["infiquetra/*", "github-actions[bot]"]
-        assert (
-            string_like["token.actions.githubusercontent.com:actor"] == expected_actors
-        )
-
-    def test_iam_policy_creation(self, template: Template) -> None:
-        """Test that IAM policy is created and attached to role."""
-        template.resource_count_is("AWS::IAM::Policy", 1)
-
-        # Verify policy is attached to the role
-        template.has_resource_properties(
-            "AWS::IAM::Policy",
-            {
-                "PolicyName": "infiquetra-aws-infra-gha-deployment-policy",
-            },
-        )
-
-    def test_iam_policy_permissions_scope(self, template: Template) -> None:
-        """Test that IAM policy has appropriately scoped permissions."""
-        policies = template.find_resources("AWS::IAM::Policy")
-        policy_resource = next(iter(policies.values()))
-        policy_document = policy_resource["Properties"]["PolicyDocument"]
-
-        statements = policy_document["Statement"]
-
-        # Verify CloudFormation permissions are scoped
-        cf_statements = [
-            s
-            for s in statements
-            if any(
-                action.startswith("cloudformation:") for action in s.get("Action", [])
-            )
-        ]
-        assert len(cf_statements) >= 1
-
-        # Check that some statements have resource restrictions
-        scoped_statements = [s for s in statements if s.get("Resource") != ["*"]]
-        assert len(scoped_statements) > 0, (
-            "Some IAM statements should have scoped resources"
-        )
-
-    def test_cloudformation_outputs(self, template: Template) -> None:
-        """Test that required CloudFormation outputs are created."""
-        template.has_output("GitHubActionsRoleArn", {})
-        template.has_output("GitHubOIDCProviderArn", {})
-
-    def test_resource_naming_conventions(self, template: Template) -> None:
-        """Test that resources follow naming conventions."""
-        # Check that role name follows convention
-        template.has_resource_properties(
-            "AWS::IAM::Role",
-            {"RoleName": "infiquetra-aws-infra-gha-role"},
-        )
-
-        # Check that policy name follows convention
-        template.has_resource_properties(
-            "AWS::IAM::Policy",
-            {"PolicyName": "infiquetra-aws-infra-gha-deployment-policy"},
-        )
-
-    def test_no_overly_permissive_policies(self, template: Template) -> None:
-        """Test that no policies grant wildcard permissions to sensitive actions."""
-        policies = template.find_resources("AWS::IAM::Policy")
-        policy_resource = next(iter(policies.values()))
-        policy_document = policy_resource["Properties"]["PolicyDocument"]
-
-        statements = policy_document["Statement"]
-
-        # Check for dangerous wildcard combinations
-        for statement in statements:
-            actions = statement.get("Action", [])
-            resources = statement.get("Resource", [])
-
-            # If resource is wildcard, actions should not include dangerous wildcards
-            if resources == ["*"]:
-                dangerous_wildcards = [
-                    "iam:*",
-                    "s3:*",
-                    "cloudformation:*",
-                    "organizations:*",
-                    "sso:*",
-                    "sso-admin:*",
-                    "identitystore:*",
-                    "cloudtrail:*",
-                ]
-                for action in actions:
-                    assert action not in dangerous_wildcards, (
-                        f"Found dangerous wildcard action: {action}"
-                    )
-
-    def test_session_duration_limit(self, template: Template) -> None:
-        """Test that IAM role has appropriate session duration limit."""
-        template.has_resource_properties(
-            "AWS::IAM::Role",
-            {"MaxSessionDuration": 43200},  # 12 hours maximum
-        )
-
-    def test_minimal_required_permissions(self, template: Template) -> None:
-        """Test that policy includes minimal required permissions for CDK."""
-        policies = template.find_resources("AWS::IAM::Policy")
-        policy_resource = next(iter(policies.values()))
-        policy_document = policy_resource["Properties"]["PolicyDocument"]
-
-        statements = policy_document["Statement"]
-        all_actions = []
-        for statement in statements:
-            all_actions.extend(statement.get("Action", []))
-
-        # Verify essential CDK permissions are present
-        essential_actions = [
-            "sts:GetCallerIdentity",
-            "cloudformation:DescribeStacks",
-            "s3:GetObject",
-            "s3:PutObject",
-        ]
-
-        for action in essential_actions:
-            assert action in all_actions, f"Missing essential action: {action}"
+    assert "*" not in actions
+    assert not any(
+        action.split(":", maxsplit=1)[0] in workload_admin_services
+        for action in actions
+    )

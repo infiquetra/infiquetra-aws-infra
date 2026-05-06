@@ -63,7 +63,7 @@ sequenceDiagram
 
 **No AWS credentials needed** — `cdk synth` doesn't talk to AWS. PR validation runs in a sandboxed runner with `contents: read` token and no IAM elevation.
 
-## The deploy flow (with AWS write access)
+## The foundation deploy flow (with management-account AWS write access)
 
 ```mermaid
 sequenceDiagram
@@ -81,7 +81,7 @@ sequenceDiagram
     GH->>Wf: trigger
     Wf->>Reuse: call with environment=production, stack=all
     Reuse->>OIDC: request token
-    OIDC-->>Reuse: signed JWT (aud=sts.amazonaws.com, sub=repo:infiquetra/...)
+    OIDC-->>Reuse: signed JWT (aud=sts.amazonaws.com, sub=repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/main)
     Reuse->>STS: AssumeRoleWithWebIdentity
     STS-->>Reuse: short-lived credentials (1h)
     Reuse->>CFN: uv run cdk deploy InfiquetraOrganizationStack
@@ -92,6 +92,8 @@ sequenceDiagram
     Reuse-->>GH: deployment-status=success
     GH-->>Dev: workflow run summary
 ```
+
+This flow is for the foundation repository only. It deploys management-account infrastructure such as Organizations, Identity Center, and the management GitHub OIDC role. CAMPPS service repositories use separate workload-account deploy roles.
 
 ### Permissions on the deploy workflow
 
@@ -126,7 +128,123 @@ gh workflow run "Deploy Infrastructure" \
 | `environment` | `production` | `production`, `nonprod`, `staging` |
 | `stack` | `all` | `all`, `organization`, `sso` |
 
-**Note**: `nonprod` and `staging` map to `aws-account=TBD-NONPROD-ACCOUNT` placeholder — they don't deploy anywhere real yet. Auto-deploy on push always uses `production`.
+**Note**: For this foundation repository, `nonprod` and `staging` map to `aws-account=TBD-NONPROD-ACCOUNT` placeholder — they don't deploy anywhere real yet. Auto-deploy on push always uses the management account through the `production` workflow environment.
+
+## CAMPPS service repository release flow
+
+Each CAMPPS service repository should own its own workflow and service CDK app. The foundation repo only bootstraps the workload deploy roles those service repos assume.
+
+| Stage | AWS access | Target | Trigger |
+|---|---|---|---|
+| PR validation | None, or read-only validation later | No deployment | Pull request checks: tests, lint, synth, security, policy validation |
+| Nonprod deploy | `campps-<service>-nonprod-gha-deploy-role` | `campps-dev` (`477152411873`) | Merge to `main` or manual dispatch using GitHub environment `nonprod` |
+| Production deploy | `campps-<service>-production-gha-deploy-role` | `campps-prod` (`431643435299`) | Protected GitHub environment `production`, with manual approval |
+| Local nonprod deploy | SSO `CAMPPSDeveloper` target profile | `campps-dev` | Developer debugging and fast iteration |
+| Local production deploy | SSO break-glass target profile | `campps-prod` | Emergency only, documented after use |
+
+The workload OIDC trust policy uses `repo:infiquetra/<service-repo>:environment:<nonprod-or-production>`, so service workflows must set the matching GitHub environment before calling `aws-actions/configure-aws-credentials`. Do not point service repositories at `infiquetra-aws-infra-gha-role`; that role is intentionally scoped to this foundation repo.
+
+Service repos should keep application IAM roles under `campps-<service>-<environment>-app-*` and create them with the per-service permissions boundary `campps-<service>-<environment>-permissions-boundary`. That boundary is part of the deploy-role bootstrap and is what lets service CDK stacks create app roles without letting them mutate the deploy identity.
+
+### CAMPPS deploy-role bootstrap preflight
+
+Do not deploy these stacks casually. They create write-capable deploy identities in the workload accounts. Run the read-only checks first, review the synthesized IAM, then deploy nonprod before production.
+
+1. Confirm the service registry contains only repos that should receive AWS write access:
+
+   ```bash
+   uv run python - <<'PY'
+   from infiquetra_aws_infra.campps_service_registry import CAMPPS_SERVICE_REPOSITORIES
+
+   for service in CAMPPS_SERVICE_REPOSITORIES:
+       print(service.name, service.repository, service.environments)
+   PY
+   ```
+
+2. Confirm the target GitHub repository has matching environments:
+
+   ```bash
+   gh api repos/infiquetra/campps-tenant-setup-service/environments \
+     --jq '.environments[].name'
+   ```
+
+   Expected before relying on OIDC deploys: `nonprod` and `production` exist. Production should require manual approval.
+
+3. Confirm both workload accounts are CDK bootstrapped in `us-east-1`:
+
+   ```bash
+   aws cloudformation describe-stacks \
+     --stack-name CDKToolkit \
+     --profile campps-dev --region us-east-1 \
+     --query 'Stacks[0].StackStatus'
+
+   aws cloudformation describe-stacks \
+     --stack-name CDKToolkit \
+     --profile campps-prod-readonly --region us-east-1 \
+     --query 'Stacks[0].StackStatus'
+   ```
+
+   If either stack is missing, bootstrap that account explicitly before deploying service roles.
+
+4. Synthesize and review the workload deploy-role target:
+
+   ```bash
+   uv run cdk -a "python app_campps_bootstrap.py" synth --quiet
+   ```
+
+   Review `cdk.out/CamppsNonProdDeployRolesStack.template.json` and `cdk.out/CamppsProductionDeployRolesStack.template.json` before deployment. Confirm there are no permissions for Organizations, SSO Admin, SSO, or IdentityStore.
+
+5. Deploy nonprod first after explicit approval:
+
+   ```bash
+   uv run cdk -a "python app_campps_bootstrap.py" deploy \
+     CamppsNonProdDeployRolesStack \
+     --profile campps-dev --region us-east-1
+   ```
+
+6. Test one service repository nonprod deploy through GitHub Actions using environment `nonprod`.
+
+7. Deploy production only after the nonprod path is proven and the production GitHub environment has manual approval configured:
+
+   ```bash
+   uv run cdk -a "python app_campps_bootstrap.py" deploy \
+     CamppsProductionDeployRolesStack \
+     --profile campps-prod-breakglass --region us-east-1
+   ```
+
+8. After both stacks deploy, store the resulting role ARNs as GitHub environment secrets in the service repo. Use separate secrets for nonprod and production.
+
+### SSO group-assignment preflight
+
+The CDK target defines optional group assignments, but the parameters are intentionally empty by default. Do not remove legacy direct `AdministratorAccess` assignments until every replacement profile has been tested.
+
+1. Confirm or create the Identity Center groups:
+   - `InfiquetraAdmins`
+   - `CAMPPSDevelopers`
+   - `CAMPPSProdReadOnly`
+   - `CAMPPSProdBreakGlassAdmins`
+
+2. Resolve their Identity Store group IDs:
+
+   ```bash
+   aws identitystore list-groups \
+     --identity-store-id d-90676975b4 \
+     --profile infiquetra-root \
+     --query 'Groups[].{DisplayName:DisplayName,GroupId:GroupId}' \
+     --output table
+   ```
+
+3. Synthesize the SSO stack with parameter overrides and inspect the resulting account assignments.
+
+4. Deploy the SSO stack only after the group IDs are verified by copy/paste, not guessed.
+
+5. Test replacement profiles in this order:
+   1. management admin
+   2. `campps-dev` developer
+   3. `campps-prod-readonly`
+   4. `campps-prod-breakglass`
+
+6. Remove legacy direct `AdministratorAccess` assignments only after all replacement profiles work.
 
 ## Branch and merge protection
 

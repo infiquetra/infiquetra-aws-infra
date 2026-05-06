@@ -3,11 +3,15 @@
 from typing import Any
 
 import aws_cdk as cdk
-from aws_cdk import CfnOutput, Stack
+from aws_cdk import CfnCondition, CfnOutput, CfnParameter, Fn, Stack
 from aws_cdk import aws_sso as sso
 from constructs import Construct
 
 from .organization_stack import OrganizationStack
+
+MANAGEMENT_ACCOUNT_ID = "645166163764"
+CAMPPS_DEV_ACCOUNT_ID = "477152411873"
+CAMPPS_PROD_ACCOUNT_ID = "431643435299"
 
 
 class SSOStack(Stack):
@@ -37,6 +41,10 @@ class SSOStack(Stack):
 
         # Create permission sets for different roles and business units
         self.create_permission_sets()
+
+        # Create optional SSO account assignments
+        self.create_assignment_parameters()
+        self.create_account_assignments()
 
         # Create outputs
         self.create_outputs()
@@ -163,7 +171,7 @@ class SSOStack(Stack):
         self.campps_developer_permission_set = sso.CfnPermissionSet(
             self,
             "CamppsDeveloperPermissionSet",
-            name="CamppssDeveloper",
+            name="CAMPPSDeveloper",
             description="Development access for CAMPPS application workloads",
             instance_arn=self.sso_instance_arn,
             session_duration="PT8H",  # 8 hours
@@ -174,6 +182,26 @@ class SSOStack(Stack):
                 cdk.CfnTag(key="BusinessUnit", value="Apps"),
                 cdk.CfnTag(key="Project", value="CAMPPS"),
                 cdk.CfnTag(key="AccessLevel", value="PowerUser"),
+            ],
+        )
+
+        # CAMPPS Production Break-Glass Admin - Emergency production access
+        self.campps_prod_breakglass_permission_set = sso.CfnPermissionSet(
+            self,
+            "CamppsProductionBreakGlassAdministratorPermissionSet",
+            name="CAMPPSProductionBreakGlassAdministrator",
+            description=(
+                "Emergency administrative access for CAMPPS production workloads"
+            ),
+            instance_arn=self.sso_instance_arn,
+            session_duration="PT4H",  # 4 hours
+            managed_policies=["arn:aws:iam::aws:policy/AdministratorAccess"],
+            tags=[
+                cdk.CfnTag(key="Role", value="BreakGlassAdministrator"),
+                cdk.CfnTag(key="BusinessUnit", value="Apps"),
+                cdk.CfnTag(key="Project", value="CAMPPS"),
+                cdk.CfnTag(key="Environment", value="Production"),
+                cdk.CfnTag(key="AccessLevel", value="Full"),
             ],
         )
 
@@ -223,6 +251,133 @@ class SSOStack(Stack):
                 cdk.CfnTag(key="AccessLevel", value="ReadOnly"),
             ],
         )
+
+    def create_assignment_parameters(self) -> None:
+        """Create optional group ID parameters for SSO assignments."""
+
+        self.infiquetra_admins_group_id = CfnParameter(
+            self,
+            "InfiquetraAdminsGroupId",
+            type="String",
+            default="",
+            description=(
+                "Optional Identity Center group ID for Infiquetra administrators"
+            ),
+        )
+        self.campps_developers_group_id = CfnParameter(
+            self,
+            "CamppsDevelopersGroupId",
+            type="String",
+            default="",
+            description="Optional Identity Center group ID for CAMPPS developers",
+        )
+        self.campps_prod_readonly_group_id = CfnParameter(
+            self,
+            "CamppsProdReadOnlyGroupId",
+            type="String",
+            default="",
+            description=(
+                "Optional Identity Center group ID for CAMPPS production read-only "
+                "access"
+            ),
+        )
+        self.campps_prod_breakglass_admins_group_id = CfnParameter(
+            self,
+            "CamppsProdBreakGlassAdminsGroupId",
+            type="String",
+            default="",
+            description=(
+                "Optional Identity Center group ID for CAMPPS production break-glass "
+                "administrators"
+            ),
+        )
+
+        self.infiquetra_admins_group_id_provided = self.create_group_id_condition(
+            "InfiquetraAdminsGroupIdProvided",
+            self.infiquetra_admins_group_id,
+        )
+        self.campps_developers_group_id_provided = self.create_group_id_condition(
+            "CamppsDevelopersGroupIdProvided",
+            self.campps_developers_group_id,
+        )
+        self.campps_prod_readonly_group_id_provided = self.create_group_id_condition(
+            "CamppsProdReadOnlyGroupIdProvided",
+            self.campps_prod_readonly_group_id,
+        )
+        self.campps_prod_breakglass_admins_group_id_provided = (
+            self.create_group_id_condition(
+                "CamppsProdBreakGlassAdminsGroupIdProvided",
+                self.campps_prod_breakglass_admins_group_id,
+            )
+        )
+
+    def create_group_id_condition(
+        self,
+        condition_id: str,
+        group_id_parameter: CfnParameter,
+    ) -> CfnCondition:
+        """Create condition for checking whether a group ID parameter was supplied."""
+
+        return CfnCondition(
+            self,
+            condition_id,
+            expression=Fn.condition_not(
+                Fn.condition_equals(group_id_parameter.value_as_string, "")
+            ),
+        )
+
+    def create_account_assignments(self) -> None:
+        """Create optional SSO account assignments for configured groups."""
+
+        assignments = [
+            (
+                "InfiquetraAdminsManagementAssignment",
+                self.infiquetra_admins_group_id,
+                MANAGEMENT_ACCOUNT_ID,
+                self.core_admin_permission_set.attr_permission_set_arn,
+                self.infiquetra_admins_group_id_provided,
+            ),
+            (
+                "CamppsDevelopersDevAssignment",
+                self.campps_developers_group_id,
+                CAMPPS_DEV_ACCOUNT_ID,
+                self.campps_developer_permission_set.attr_permission_set_arn,
+                self.campps_developers_group_id_provided,
+            ),
+            (
+                "CamppsProdReadOnlyAssignment",
+                self.campps_prod_readonly_group_id,
+                CAMPPS_PROD_ACCOUNT_ID,
+                self.readonly_permission_set.attr_permission_set_arn,
+                self.campps_prod_readonly_group_id_provided,
+            ),
+            (
+                "CamppsProdBreakGlassAdminAssignment",
+                self.campps_prod_breakglass_admins_group_id,
+                CAMPPS_PROD_ACCOUNT_ID,
+                self.campps_prod_breakglass_permission_set.attr_permission_set_arn,
+                self.campps_prod_breakglass_admins_group_id_provided,
+            ),
+        ]
+
+        for (
+            assignment_id,
+            group_id,
+            account_id,
+            permission_set_arn,
+            condition,
+        ) in assignments:
+            assignment = sso.CfnAssignment(
+                self,
+                assignment_id,
+                instance_arn=self.sso_instance_arn,
+                permission_set_arn=permission_set_arn,
+                principal_id=group_id.value_as_string,
+                principal_type="GROUP",
+                target_id=account_id,
+                target_type="AWS_ACCOUNT",
+            )
+            assignment.cfn_options.condition = condition
 
     def create_campps_developer_policy(self) -> dict:
         """Create inline policy for CAMPPS developers."""
@@ -324,6 +479,13 @@ class SSOStack(Stack):
 
         CfnOutput(
             self,
+            "CamppsProdBreakGlassPermissionSetArn",
+            value=self.campps_prod_breakglass_permission_set.attr_permission_set_arn,
+            description="CAMPPS Production Break-Glass Permission Set ARN",
+        )
+
+        CfnOutput(
+            self,
             "ConsultingDeveloperPermissionSetArn",
             value=self.consulting_developer_permission_set.attr_permission_set_arn,
             description="Consulting Developer Permission Set ARN",
@@ -364,6 +526,9 @@ class SSOStack(Stack):
             "apps_admin": self.apps_admin_permission_set.attr_permission_set_arn,
             "campps_developer": (
                 self.campps_developer_permission_set.attr_permission_set_arn
+            ),
+            "campps_prod_breakglass": (
+                self.campps_prod_breakglass_permission_set.attr_permission_set_arn
             ),
             "consulting_developer": (
                 self.consulting_developer_permission_set.attr_permission_set_arn

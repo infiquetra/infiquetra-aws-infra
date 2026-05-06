@@ -53,27 +53,11 @@ class GitHubOIDCStack(Stack):
         github_oidc_provider = self._create_oidc_provider()
 
         # Create IAM role for GitHub Actions
-        github_actions_role = self._create_github_actions_role(
-            github_oidc_provider, self.repo_full_name
-        )
+        github_actions_role = self._create_github_actions_role(github_oidc_provider)
 
-        # Create managed policies for serverless deployments
+        # Attach the foundation CDK deployment policy to the role
         cdk_deployment_policy = self._create_cdk_deployment_policy()
-        serverless_policy = self._create_serverless_policy()
-        event_driven_policy = self._create_event_driven_policy()
-        edge_services_policy = self._create_edge_services_policy()
-        data_analytics_policy = self._create_data_analytics_policy()
-        security_policy = self._create_security_policy()
-        infrastructure_policy = self._create_infrastructure_policy()
-
-        # Attach all managed policies to role
         github_actions_role.add_managed_policy(cdk_deployment_policy)
-        github_actions_role.add_managed_policy(serverless_policy)
-        github_actions_role.add_managed_policy(event_driven_policy)
-        github_actions_role.add_managed_policy(edge_services_policy)
-        github_actions_role.add_managed_policy(data_analytics_policy)
-        github_actions_role.add_managed_policy(security_policy)
-        github_actions_role.add_managed_policy(infrastructure_policy)
 
         # Output the role ARN for use in GitHub Actions
         CfnOutput(
@@ -111,11 +95,9 @@ class GitHubOIDCStack(Stack):
         )
 
     def _create_github_actions_role(
-        self, oidc_provider: iam.OpenIdConnectProvider, repo_full_name: str
+        self, oidc_provider: iam.OpenIdConnectProvider
     ) -> iam.Role:
         """Create IAM role for GitHub Actions with appropriate trust policy."""
-
-        # Create FederatedPrincipal with conditions for GitHub OIDC
 
         return iam.Role(
             self,
@@ -127,10 +109,7 @@ class GitHubOIDCStack(Stack):
                 {
                     "StringEquals": {
                         "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-                    },
-                    "StringLike": {
-                        #                        "token.actions.githubusercontent.com:sub": f"repo:{repo_full_name}:*",
-                        "token.actions.githubusercontent.com:sub": "repo:infiquetra/*",
+                        "token.actions.githubusercontent.com:sub": "repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/main",
                     },
                 },
                 "sts:AssumeRoleWithWebIdentity",
@@ -170,9 +149,9 @@ class GitHubOIDCStack(Stack):
                 ],
                 resources=[
                     f"arn:aws:cloudformation:{region}:{account_id}:stack/CDKToolkit/*",
-                    f"arn:aws:cloudformation:{region}:{account_id}:stack/*-Organizations-*/*",
-                    f"arn:aws:cloudformation:{region}:{account_id}:stack/*-SSO-*/*",
-                    f"arn:aws:cloudformation:{region}:{account_id}:stack/*/*",
+                    f"arn:aws:cloudformation:{region}:{account_id}:stack/InfiquetraOrganizationStack/*",
+                    f"arn:aws:cloudformation:{region}:{account_id}:stack/InfiquetraSSOStack/*",
+                    f"arn:aws:cloudformation:{region}:{account_id}:stack/infiquetra-aws-infra-gha-bootstrap/*",
                 ],
             ),
             # Allow listing stacks and getting templates globally for CDK operations
@@ -353,7 +332,10 @@ class GitHubOIDCStack(Stack):
                     "sso:GetInlinePolicyForPermissionSet",
                     "sso:ListManagedPoliciesInPermissionSet",
                     "sso:ListAccountsForProvisionedPermissionSet",
+                    "sso:ListAccountAssignments",
                     "sso:ListPermissionSetProvisioningStatus",
+                    "sso:DescribeAccountAssignmentCreationStatus",
+                    "sso:DescribeAccountAssignmentDeletionStatus",
                     "sso:DescribePermissionSetProvisioningStatus",
                 ],
                 resources=["*"],
@@ -427,209 +409,6 @@ class GitHubOIDCStack(Stack):
             "CDKDeploymentPolicy",
             managed_policy_name="infiquetra-aws-infra-gha-cdk-policy",
             description="CDK, Organizations, and SSO deployment permissions",
-            document=iam.PolicyDocument(statements=policy_statements),
-        )
-
-    def _create_serverless_policy(self) -> iam.ManagedPolicy:
-        """Create policy for core serverless services (Lambda, API Gateway, DynamoDB)."""
-        policy_statements = [
-            # Lambda permissions - comprehensive serverless deployment
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["lambda:*"],
-                resources=["*"],
-            ),
-            # API Gateway permissions - for REST and HTTP APIs
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["apigateway:*", "apigatewayv2:*"],
-                resources=["*"],
-            ),
-            # DynamoDB permissions - for NoSQL database operations
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["dynamodb:*"],
-                resources=["*"],
-            ),
-        ]
-
-        return iam.ManagedPolicy(
-            self,
-            "ServerlessPolicy",
-            managed_policy_name="infiquetra-aws-infra-gha-serverless-policy",
-            description="Core serverless services: Lambda, API Gateway, DynamoDB",
-            document=iam.PolicyDocument(statements=policy_statements),
-        )
-
-    def _create_event_driven_policy(self) -> iam.ManagedPolicy:
-        """Create policy for event-driven services (EventBridge, Step Functions, SNS, SQS)."""
-        policy_statements = [
-            # EventBridge permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["events:*"],
-                resources=["*"],
-            ),
-            # Step Functions permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["states:*"],
-                resources=["*"],
-            ),
-            # SNS/SQS permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["sns:*", "sqs:*"],
-                resources=["*"],
-            ),
-        ]
-
-        return iam.ManagedPolicy(
-            self,
-            "EventDrivenPolicy",
-            managed_policy_name="infiquetra-aws-infra-gha-event-driven-policy",
-            description="Event-driven services: EventBridge, Step Functions, SNS, SQS",
-            document=iam.PolicyDocument(statements=policy_statements),
-        )
-
-    def _create_edge_services_policy(self) -> iam.ManagedPolicy:
-        """Create policy for edge services (CloudFront, WAF, Route53)."""
-        policy_statements = [
-            # CloudFront permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["cloudfront:*"],
-                resources=["*"],
-            ),
-            # WAF permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["wafv2:*"],
-                resources=["*"],
-            ),
-            # Route53 permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["route53:*", "route53resolver:*"],
-                resources=["*"],
-            ),
-        ]
-
-        return iam.ManagedPolicy(
-            self,
-            "EdgeServicesPolicy",
-            managed_policy_name="infiquetra-aws-infra-gha-edge-services-policy",
-            description="Edge services: CloudFront, WAF, Route53",
-            document=iam.PolicyDocument(statements=policy_statements),
-        )
-
-    def _create_data_analytics_policy(self) -> iam.ManagedPolicy:
-        """Create policy for data analytics services (Athena, Glue, Kinesis)."""
-        policy_statements = [
-            # Athena permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["athena:*"],
-                resources=["*"],
-            ),
-            # Glue permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["glue:*"],
-                resources=["*"],
-            ),
-            # Kinesis permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["kinesis:*", "firehose:*", "kinesisanalytics:*"],
-                resources=["*"],
-            ),
-        ]
-
-        return iam.ManagedPolicy(
-            self,
-            "DataAnalyticsPolicy",
-            managed_policy_name="infiquetra-aws-infra-gha-data-analytics-policy",
-            description="Data analytics services: Athena, Glue, Kinesis",
-            document=iam.PolicyDocument(statements=policy_statements),
-        )
-
-    def _create_security_policy(self) -> iam.ManagedPolicy:
-        """Create policy for security services (Cognito, Secrets Manager, KMS, X-Ray)."""
-        policy_statements = [
-            # Cognito permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["cognito-idp:*", "cognito-identity:*"],
-                resources=["*"],
-            ),
-            # Secrets Manager permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["secretsmanager:*"],
-                resources=["*"],
-            ),
-            # KMS permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["kms:*"],
-                resources=["*"],
-            ),
-            # X-Ray permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["xray:*"],
-                resources=["*"],
-            ),
-        ]
-
-        return iam.ManagedPolicy(
-            self,
-            "SecurityPolicy",
-            managed_policy_name="infiquetra-aws-infra-gha-security-policy",
-            description="Security services: Cognito, Secrets Manager, KMS, X-Ray",
-            document=iam.PolicyDocument(statements=policy_statements),
-        )
-
-    def _create_infrastructure_policy(self) -> iam.ManagedPolicy:
-        """Create policy for infrastructure services (EC2/VPC, ECR, AppSync, CloudWatch)."""
-        policy_statements = [
-            # EC2/VPC permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["ec2:*"],
-                resources=["*"],
-            ),
-            # ECR permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["ecr:*"],
-                resources=["*"],
-            ),
-            # AppSync permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["appsync:*"],
-                resources=["*"],
-            ),
-            # Enhanced CloudWatch permissions
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=[
-                    "logs:*",
-                    "cloudwatch:*",
-                    "synthetics:*",
-                    "applicationinsights:*",
-                ],
-                resources=["*"],
-            ),
-        ]
-
-        return iam.ManagedPolicy(
-            self,
-            "InfrastructurePolicy",
-            managed_policy_name="infiquetra-aws-infra-gha-infrastructure-policy",
-            description="Infrastructure services: EC2/VPC, ECR, AppSync, CloudWatch",
             document=iam.PolicyDocument(statements=policy_statements),
         )
 

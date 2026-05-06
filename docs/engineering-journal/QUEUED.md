@@ -25,14 +25,23 @@
 
 ## P2
 
-### Migrate user off legacy `AdministratorAccess` permission set onto CDK-managed `CoreAdministrator`
+### Bootstrap CAMPPS workload deploy roles before first service repo release
 
 **Status:** not-started
-**Why:** Currently using `AWSReservedSSO_AdministratorAccess_12c07039380b9161` — the AWS-default permission set created when SSO was first set up in 2021. This is invisible to the CDK (`sso_stack.py` defines a separate `CoreAdministrator` set with `AdministratorAccess` policy attached). Long-term goal is single source of truth in CDK.
-**Effort:** S (assign self to new permission set, verify access, optionally unassign from legacy)
-**Worth it when:** `CoreAdministrator`'s `PT4H` session duration is acceptable, or the related Maybe item below (bump to PT12H) ships first. Also worth it when other team members need admin access — onboarding via the CDK-managed set is cleaner than the legacy one.
+**Why:** The registry-generated deploy roles are now defined in source, but service repositories cannot deploy through GitHub Actions until `CamppsNonProdDeployRolesStack` and `CamppsProductionDeployRolesStack` are explicitly preflighted and deployed into `campps-dev` and `campps-prod`.
+**Effort:** M (verify target account CDK bootstrap state, review synthesized IAM, deploy nonprod first, then production)
+**Worth it when:** The first CAMPPS service repo is ready to run nonprod deployment through GitHub Actions.
+**Related items:** `app_campps_bootstrap.py`, `infiquetra_aws_infra/campps_service_registry.py`, `infiquetra_aws_infra/campps_deploy_roles_stack.py`.
+**Notes:** Deployment requires explicit approval. Confirm GitHub environments `nonprod` and `production` exist in the service repo before relying on the OIDC `environment:` subject.
+
+### Migrate human access off legacy direct `AdministratorAccess` assignments
+
+**Status:** in-progress
+**Why:** Current live access still uses direct legacy `AdministratorAccess` assignments for `jefcox` in the management, `campps-dev`, and `campps-prod` accounts. The CDK target now defines optional group assignments for management admin, CAMPPS dev, production read-only, and production break-glass access. Long-term goal is group-based Identity Center access managed by CDK.
+**Effort:** M (verify/create groups, deploy parameters, test profiles, then remove legacy direct assignments)
+**Worth it when:** The SSO target change is ready for an explicit preflight and the new profiles can be tested in order: management admin, dev developer, prod read-only, prod break-glass.
 **Related items:** Maybe item to bump `core_admin_permission_set` from PT4H → PT12H in `sso_stack.py`.
-**Notes:** Don't unassign self from the legacy set until `CoreAdministrator` access is verified working — risk of locking out.
+**Notes:** Do not remove legacy assignments until every replacement profile has been tested. The CDK parameters are intentionally empty by default so a deploy cannot create broken assignments with guessed group IDs.
 
 ### Bump IAM Identity Center "Session duration" knob (interactive sessions)
 

@@ -66,10 +66,10 @@ with Diagram(
             dev_acct = OrganizationsAccount("campps-dev\n477152411873")
 
         with Cluster("Identity Center (SSO)"):
-            sso = IAM("13 Permission Sets\n1 user, 1 group")
+            sso = IAM("Live: 13 sets\nTarget: 14 sets\n1 user, 1 group")
 
         with Cluster("CI/CD federation"):
-            oidc = IAMRole("infiquetra-aws-\ninfra-gha-role")
+            oidc = IAMRole("foundation repo\nOIDC deploy role")
 
     dev >> Edge(label="aws sso login\n(8h portal session)") >> sso
     sso >> Edge(label="assume role") >> mgmt
@@ -183,19 +183,17 @@ with Diagram(
 
     with Cluster("GitHub Actions runner"):
         wf = Cloudformation("deploy-\ninfrastructure\n.yml")
-        oidc_token = IAM("GitHub OIDC token\nsub=repo:infiquetra/*")
+        oidc_token = IAM("GitHub OIDC token\nsub=infra repo\nmain branch")
 
     with Cluster("AWS account 645166163764"):
         provider = IAM("OIDC provider\ntoken.actions.\ngithubusercontent.com")
-        role = IAMRole(
-            "infiquetra-aws-\ninfra-gha-role\n(7 managed policies,\nmax 12h)"
-        )
+        role = IAMRole("infiquetra-aws-\ninfra-gha-role\n(foundation policy,\nmax 12h)")
         cfn = Cloudformation("CloudFormation\nOrg + SSO stacks")
 
     push >> Edge(label="trigger") >> wf
     wf >> Edge(label="request token") >> oidc_token
     oidc_token >> Edge(label="present + verify") >> provider
-    provider >> Edge(label="trust check\nrepo:infiquetra/*") >> role
+    provider >> Edge(label="trust check\ninfra repo main") >> role
     role >> Edge(label="STS\nAssumeRoleWith\nWebIdentity") >> wf
     wf >> Edge(label="cdk deploy", style="dashed") >> cfn
 
