@@ -330,6 +330,36 @@ class CamppsDeployRolesStack(Stack):
             ),
         ]
 
+    def _cdk_bootstrap_role_statements(self) -> list[iam.PolicyStatement]:
+        """Allow assuming the CDK modern-bootstrap roles + passing cfn-exec.
+
+        CDK deploys with a restricted GitHub Actions principal by assuming the
+        ``cdk-hnb659fds`` bootstrap deploy/file-publishing/image-publishing/
+        lookup roles, then handing CloudFormation the bootstrap cfn-exec role.
+        Without these grants CDK falls back to acting as the GitHub Actions
+        deploy role directly, which then lacks ``iam:PassRole`` on the
+        bootstrap cfn-exec role and the deploy fails. Scoped to the
+        ``hnb659fds`` qualifier in this account and region only.
+        """
+        return [
+            iam.PolicyStatement(
+                sid="CdkBootstrapAssumeRoles",
+                actions=["sts:AssumeRole"],
+                resources=[
+                    f"arn:aws:iam::{self.account}:role/"
+                    f"cdk-hnb659fds-*-{self.account}-{self.region}",
+                ],
+            ),
+            iam.PolicyStatement(
+                sid="CdkBootstrapPassExecRole",
+                actions=["iam:PassRole"],
+                resources=[
+                    f"arn:aws:iam::{self.account}:role/"
+                    f"cdk-hnb659fds-cfn-exec-role-{self.account}-{self.region}",
+                ],
+            ),
+        ]
+
     def _cloudformation_baseline_statements(
         self,
         *,
@@ -404,6 +434,7 @@ class CamppsDeployRolesStack(Stack):
                     )
                 ],
             ),
+            *self._cdk_bootstrap_role_statements(),
         ]
 
     def _create_codeartifact_publish_deploy_policy(
@@ -870,6 +901,7 @@ class CamppsDeployRolesStack(Stack):
                             f"arn:aws:s3:::cdk-hnb659fds-assets-{self.account}-{self.region}/*",
                         ],
                     ),
+                    *self._cdk_bootstrap_role_statements(),
                     iam.PolicyStatement(
                         sid="CreateBoundedServerlessRoles",
                         actions=["iam:CreateRole"],
