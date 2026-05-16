@@ -189,7 +189,7 @@ class SSOStack(Stack):
         self.campps_prod_breakglass_permission_set = sso.CfnPermissionSet(
             self,
             "CamppsProductionBreakGlassAdministratorPermissionSet",
-            name="CAMPPSProductionBreakGlassAdministrator",
+            name="CAMPPSProdBreakGlassAdmin",
             description=(
                 "Emergency administrative access for CAMPPS production workloads"
             ),

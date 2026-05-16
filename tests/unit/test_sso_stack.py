@@ -41,11 +41,24 @@ def test_prod_breakglass_permission_set_exists() -> None:
     template.has_resource_properties(
         "AWS::SSO::PermissionSet",
         {
-            "Name": "CAMPPSProductionBreakGlassAdministrator",
+            "Name": "CAMPPSProdBreakGlassAdmin",
             "SessionDuration": "PT4H",
             "ManagedPolicies": ["arn:aws:iam::aws:policy/AdministratorAccess"],
         },
     )
+
+
+def test_permission_set_names_fit_identity_center_limit() -> None:
+    template_json = synth_template().to_json()
+    permission_sets = [
+        resource["Properties"]
+        for resource in template_json["Resources"].values()
+        if resource["Type"] == "AWS::SSO::PermissionSet"
+    ]
+
+    assert permission_sets
+    for permission_set in permission_sets:
+        assert len(permission_set["Name"]) <= 32
 
 
 def test_optional_group_parameters_exist() -> None:
