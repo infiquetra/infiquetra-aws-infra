@@ -8,8 +8,8 @@ Two customer-managed SCPs exist, both deployed by `OrganizationStack`.
 
 | SCP | Policy ID | Attached to OUs | Inherited by accounts |
 |---|---|---|---|
-| `BaseSecurityPolicy` | `p-oop3272h` | `Core`, `Media`, `Apps`, `Consulting` | `campps-prod`, `campps-staging` after account creation, `campps-dev` (via `Apps`) |
-| `NonProductionCostControl` | `p-caqfo4ef` | `Apps>CAMPPS>Staging` and `Apps>CAMPPS>NonProd` | `campps-staging` after account creation (via `Staging`), `campps-dev` (via `NonProd`) |
+| `BaseSecurityPolicy` | `p-oop3272h` | `Core`, `Media`, `Apps`, `Consulting` | `campps-prod`, `campps-staging` after account creation, `campps-nonprod` (via `Apps`) |
+| `NonProductionCostControl` | `p-caqfo4ef` | `Apps>CAMPPS>Staging` and `Apps>CAMPPS>NonProd` | `campps-staging` after account creation (via `Staging`), `campps-nonprod` (via `NonProd`) |
 
 As of the 2026-05-02 CAMPPS account migration (see [ARCHIVE](../engineering-journal/ARCHIVE.md)), the legacy workload accounts are in the CDK-managed OU tree and inherit the appropriate SCPs. The new `campps-staging` account will inherit `BaseSecurityPolicy` through `Apps` and `NonProductionCostControl` through `Apps / CAMPPS / Staging` once account creation completes.
 
@@ -93,7 +93,7 @@ Source: `infiquetra_aws_infra/organization_stack.py` lines 195–220.
 }
 ```
 
-Restricts non-prod and staging accounts to small burstable EC2 instance types. Useful guardrail against accidental `r5.24xlarge` launches outside production. Active for `campps-dev` since the 2026-05-02 migration and targeted for `campps-staging` after account creation.
+Restricts non-prod and staging accounts to small burstable EC2 instance types. Useful guardrail against accidental `r5.24xlarge` launches outside production. Active for `campps-nonprod` since the 2026-05-02 migration and targeted for `campps-staging` after account creation.
 
 ## What's NOT covered by SCPs (today)
 
@@ -111,7 +111,7 @@ So the practical security posture today rests on:
 | Layer | Enforcement |
 |---|---|
 | **Identity Center sign-in** | MFA registered for `jefcox` (FIDO/TOTP). Required at portal sign-in based on the IAM IC `Authentication` settings. |
-| **SCP-level MFA enforcement** | The `RequireMFAForSensitiveActions` statement in `BaseSecurityPolicy` blocks IAM/Organizations writes without MFA. Active on `campps-prod` and `campps-dev` since the 2026-05-02 migration; pending verification for `campps-staging` after account creation. Uses `BoolIfExists`, so service principals are unaffected. |
+| **SCP-level MFA enforcement** | The `RequireMFAForSensitiveActions` statement in `BaseSecurityPolicy` blocks IAM/Organizations writes without MFA. Active on `campps-prod` and `campps-nonprod` since the 2026-05-02 migration; pending verification for `campps-staging` after account creation. Uses `BoolIfExists`, so service principals are unaffected. |
 | **mgmt account root user** | Not in scope of SCPs. Verify root MFA is enabled in the AWS Console: IAM → Account → MFA. |
 
 ## Root user protection
@@ -121,7 +121,7 @@ So the practical security posture today rests on:
 | `infiquetra` (645166163764) | _verify in console_ | _verify_ |
 | `campps-prod` (431643435299) | _verify_ | _verify_ |
 | `campps-staging` (pending deployment) | _pending account creation_ | _pending verification_ |
-| `campps-dev` (477152411873) | _verify_ | _verify_ |
+| `campps-nonprod` (477152411873) | _verify_ | _verify_ |
 
 > Action item: confirm root user MFA is enabled and root is not used for daily ops on all four accounts after `campps-staging` is created. There's no API to query root-MFA status programmatically — this requires console verification.
 

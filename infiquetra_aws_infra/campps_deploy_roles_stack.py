@@ -13,7 +13,7 @@ from infiquetra_aws_infra.campps_service_registry import (
     ServiceRepository,
 )
 
-CAMPPS_DEV_ACCOUNT_ID = "477152411873"
+CAMPPS_NONPROD_ACCOUNT_ID = "477152411873"
 CAMPPS_STAGING_ACCOUNT_ID = "050922968859"
 CAMPPS_PROD_ACCOUNT_ID = "431643435299"
 

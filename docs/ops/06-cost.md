@@ -17,7 +17,7 @@ Pulled from AWS Cost Explorer on 2026-04-27. Period: 2026-01-27 through 2026-04-
 
 ### By month, per account
 
-| Month | infiquetra (mgmt) | campps-prod | campps-dev | Total |
+| Month | infiquetra (mgmt) | campps-prod | campps-nonprod | Total |
 |---|---:|---:|---:|---:|
 | 2026-01 (partial, last 5d) | $6.55 | $0.00 | $0.00 | $6.55 |
 | 2026-02 | $38.80 | $0.51 | $0.00 | $39.31 |

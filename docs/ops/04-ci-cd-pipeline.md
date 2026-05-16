@@ -137,10 +137,10 @@ Each CAMPPS service repository should own its own workflow and service CDK app. 
 | Stage | AWS access | Target | Trigger |
 |---|---|---|---|
 | PR validation | None, or read-only validation later | No deployment | Pull request checks: tests, lint, synth, security, policy validation |
-| Nonprod deploy | `campps-<service>-nonprod-gha-deploy-role` | `campps-dev` (`477152411873`) | Automatic deploy from merges to `main`, or manual dispatch using GitHub environment `nonprod` |
+| Nonprod deploy | `campps-<service>-nonprod-gha-deploy-role` | `campps-nonprod` (`477152411873`) | Automatic deploy from merges to `main`, or manual dispatch using GitHub environment `nonprod` |
 | Staging deploy | `campps-<service>-staging-gha-deploy-role` after staging account ID is available | `campps-staging` (pending deployment) | Manual dispatch or scheduled release using GitHub environment `staging` |
 | Production deploy | `campps-<service>-production-gha-deploy-role` | `campps-prod` (`431643435299`) | Manual deploy with approval using protected GitHub environment `production` and production release tags |
-| Local nonprod deploy | SSO `CAMPPSDeveloper` target profile | `campps-dev` | Developer debugging and fast iteration |
+| Local nonprod deploy | SSO `CAMPPSDeveloper` target profile | `campps-nonprod` | Developer debugging and fast iteration |
 | Local staging deploy | SSO `CAMPPSDeveloper` target profile after account creation | `campps-staging` | Release rehearsal and staging debugging |
 | Local production deploy | SSO break-glass target profile | `campps-prod` | Emergency only, documented after use |
 
@@ -177,7 +177,7 @@ Do not deploy these stacks casually. They create write-capable deploy identities
    ```bash
    aws cloudformation describe-stacks \
      --stack-name CDKToolkit \
-     --profile campps-dev --region us-east-1 \
+     --profile campps-nonprod --region us-east-1 \
      --query 'Stacks[0].StackStatus'
 
    aws cloudformation describe-stacks \
@@ -201,7 +201,7 @@ Do not deploy these stacks casually. They create write-capable deploy identities
    ```bash
    uv run cdk -a "python app_campps_bootstrap.py" deploy \
      CamppsNonProdDeployRolesStack \
-     --profile campps-dev --region us-east-1
+     --profile campps-nonprod --region us-east-1
    ```
 
 6. Test one service repository nonprod deploy through GitHub Actions using environment `nonprod`.
@@ -244,7 +244,7 @@ The CDK target defines optional group assignments, but the parameters are intent
 
 5. Test replacement profiles in this order:
    1. management admin
-   2. `campps-dev` developer
+   2. `campps-nonprod` developer
    3. `campps-prod-readonly`
    4. `campps-prod-breakglass`
 

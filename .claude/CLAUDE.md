@@ -432,11 +432,11 @@ Attempting to deploy SSO first will fail.
 
 Both CAMPPS workload accounts live in the CDK-managed `Apps>CAMPPS` tree as of 2026-05-02:
 - `campps-prod` (431643435299) — `Apps/CAMPPS/Production` (`ou-f3un-cec60ji6`)
-- `campps-dev` (477152411873) — `Apps/CAMPPS/NonProd` (`ou-f3un-yb8hu7vq`)
+- `campps-nonprod` (477152411873) — `Apps/CAMPPS/NonProd` (`ou-f3un-yb8hu7vq`)
 
 The legacy top-level `CAMPPS` OU and its `workloads/{PRODUCTION,SDLC}` + `CICD/PRODUCTION` subtree have been deleted. The previously-suspended `campps-cicd` account (424272146308) was already removed from the org before this work — the empty `CICD/PRODUCTION` OU was its only remaining trace, and is now gone too.
 
-Both accounts inherit `BaseSecurityPolicy` from the `Apps` OU; `campps-dev` additionally inherits `NonProductionCostControl` from `NonProd` (restricts EC2 launches to t3/t4g nano-medium).
+Both accounts inherit `BaseSecurityPolicy` from the `Apps` OU; `campps-nonprod` additionally inherits `NonProductionCostControl` from `NonProd` (restricts EC2 launches to t3/t4g nano-medium).
 
 See [`docs/engineering-journal/ARCHIVE.md`](../docs/engineering-journal/ARCHIVE.md) 2026-05-02 entry for the migration write-up.
 

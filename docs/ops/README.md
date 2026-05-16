@@ -37,7 +37,7 @@ flowchart LR
 | | |
 |---|---|
 | **AWS Organization** | `r-f3un` in account `645166163764` (infiquetra) |
-| **Active accounts** | `infiquetra` (mgmt), `campps-prod`, `campps-dev` |
+| **Active accounts** | `infiquetra` (mgmt), `campps-prod`, `campps-nonprod` |
 | **OUs** | 7 total (all CDK-managed; both workload accounts placed in `Apps/CAMPPS/{Production,NonProd}`) |
 | **SCPs** | 2 customer-managed (BaseSecurityPolicy, NonProductionCostControl) |
 | **Identity Center users** | 1 (`jefcox`) + 1 group (`Administrators`, currently empty) |
@@ -56,8 +56,8 @@ flowchart LR
 uv run python docs/ops/diagrams/generate.py
 ```
 
-- **Both workload accounts are in the CDK-managed OU tree** (as of 2026-05-02). `campps-prod` lives in `Apps/CAMPPS/Production`; `campps-dev` lives in `Apps/CAMPPS/NonProd`. The legacy `CAMPPS` subtree has been deleted. See [01-aws-organization.md](01-aws-organization.md) and the [ARCHIVE](../engineering-journal/ARCHIVE.md) entry for the migration narrative.
-- **SCPs are active on both workload accounts.** `BaseSecurityPolicy` inherited via `Apps`; `NonProductionCostControl` additionally inherited by `campps-dev` via `NonProd`. See [05-security-controls.md](05-security-controls.md).
+- **Both workload accounts are in the CDK-managed OU tree** (as of 2026-05-02). `campps-prod` lives in `Apps/CAMPPS/Production`; `campps-nonprod` lives in `Apps/CAMPPS/NonProd`. The legacy `CAMPPS` subtree has been deleted. See [01-aws-organization.md](01-aws-organization.md) and the [ARCHIVE](../engineering-journal/ARCHIVE.md) entry for the migration narrative.
+- **SCPs are active on both workload accounts.** `BaseSecurityPolicy` inherited via `Apps`; `NonProductionCostControl` additionally inherited by `campps-nonprod` via `NonProd`. See [05-security-controls.md](05-security-controls.md).
 - **You currently log in via legacy direct `AdministratorAccess` assignments**, but the CDK target now defines group-based management, CAMPPS dev, production read-only, and production break-glass access. Migration is a P2 backlog item. See [02-identity-and-access.md](02-identity-and-access.md).
 - **The CI/CD pipeline is fully working** as of 2026-04-25 — see the [`../engineering-journal/ARCHIVE.md`](../engineering-journal/ARCHIVE.md) for the multi-PR stabilization story.
 - **Most of your monthly spend is Amazon Registrar (domain registration) + AWS Directory Service.** Neither is created by this repo's CDK — both predate this repo. See [06-cost.md](06-cost.md).

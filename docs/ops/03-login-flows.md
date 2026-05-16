@@ -119,14 +119,14 @@ CAMPPS service repositories do not use the management-account `infiquetra-aws-in
 
 | Environment | Account | Subject claim |
 |---|---|---|
-| `nonprod` | `477152411873` campps-dev | `repo:infiquetra/<service-repo>:environment:nonprod` |
+| `nonprod` | `477152411873` campps-nonprod | `repo:infiquetra/<service-repo>:environment:nonprod` |
 | `production` | `431643435299` campps-prod | `repo:infiquetra/<service-repo>:environment:production` |
 
 The first registered service is `infiquetra/campps-tenant-setup-service`, which gets `campps-tenant-setup-nonprod-gha-deploy-role` and `campps-tenant-setup-production-gha-deploy-role` when `app_campps_bootstrap.py` is deployed. Those workload roles exclude Organizations, SSO Admin, SSO, and IdentityStore permissions.
 
 ## Programmatic access to other accounts
 
-If you need API access into `campps-prod` or `campps-dev` from your local CLI today:
+If you need API access into `campps-prod` or `campps-nonprod` from your local CLI today:
 
 ```bash
 # Current legacy profiles (uses the same sso-session)
@@ -137,7 +137,7 @@ sso_account_id = 431643435299
 sso_role_name = AdministratorAccess
 region = us-east-1
 
-[profile campps-dev-legacy-admin]
+[profile campps-nonprod-legacy-admin]
 sso_session = infiquetra
 sso_account_id = 477152411873
 sso_role_name = AdministratorAccess
@@ -146,13 +146,13 @@ EOF
 
 # Use them
 aws sts get-caller-identity --profile campps-prod-legacy-admin
-aws sts get-caller-identity --profile campps-dev-legacy-admin
+aws sts get-caller-identity --profile campps-nonprod-legacy-admin
 ```
 
 Those profiles reflect the live legacy assignments from the last audit. The CDK target is group based:
 
 ```ini
-[profile campps-dev]
+[profile campps-nonprod]
 sso_session = infiquetra
 sso_account_id = 477152411873
 sso_role_name = CAMPPSDeveloper
