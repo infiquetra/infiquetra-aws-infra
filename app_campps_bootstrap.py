@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from infiquetra_aws_infra.campps_deploy_roles_stack import (
     CAMPPS_DEV_ACCOUNT_ID,
     CAMPPS_PROD_ACCOUNT_ID,
+    CAMPPS_STAGING_ACCOUNT_ID,
     CamppsDeployRolesStack,
 )
 
@@ -20,6 +21,14 @@ CamppsDeployRolesStack(
     target_environment="nonprod",
     env=Environment(account=CAMPPS_DEV_ACCOUNT_ID, region="us-east-1"),
     description="GitHub Actions deploy roles for CAMPPS nonprod workload account",
+)
+
+CamppsDeployRolesStack(
+    app,
+    "CamppsStagingDeployRolesStack",
+    target_environment="staging",
+    env=Environment(account=CAMPPS_STAGING_ACCOUNT_ID, region="us-east-1"),
+    description="GitHub Actions deploy roles for CAMPPS staging workload account",
 )
 
 CamppsDeployRolesStack(

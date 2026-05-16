@@ -20,8 +20,8 @@ repos:
     rev: 1.7.5
     hooks:
       - id: bandit
-        args: [--configfile, .bandit, --format, json]
-        exclude: ^tests/
+        args: [--format, json]
+        exclude: ^(tests/|github-oidc-bootstrap/tests/)
         additional_dependencies: ["pbr"]
 
 

@@ -69,6 +69,32 @@ def test_nonproduction_cost_control_targets_nonprod_and_staging() -> None:
     )
 
 
+def test_base_security_allows_cdk_execution_role_policy_cleanup() -> None:
+    template = synth_template()
+
+    template.has_resource_properties(
+        "AWS::Organizations::Policy",
+        {
+            "Name": "BaseSecurityPolicy",
+            "Content": Match.object_like({
+                "Statement": Match.array_with([
+                    Match.object_like({
+                        "Sid": "RequireMFAForSensitiveActions",
+                        "Condition": {
+                            "BoolIfExists": {"aws:MultiFactorAuthPresent": "false"},
+                            "ArnNotLike": {
+                                "aws:PrincipalARN": (
+                                    "arn:*:iam::*:role/cdk-hnb659fds-cfn-exec-role-*-*"
+                                )
+                            },
+                        },
+                    })
+                ])
+            }),
+        },
+    )
+
+
 def test_campps_staging_outputs_exist() -> None:
     template_json = synth_template().to_json()
     outputs = template_json["Outputs"]

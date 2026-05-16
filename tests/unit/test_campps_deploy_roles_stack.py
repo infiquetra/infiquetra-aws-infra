@@ -1,5 +1,6 @@
 """Unit tests for CAMPPS service deploy role generation."""
 
+import json
 from collections.abc import Iterable
 from typing import Any
 
@@ -11,6 +12,12 @@ from infiquetra_aws_infra.campps_service_registry import (
     CAMPPS_SERVICE_REPOSITORIES,
     DeployEnvironment,
     ServiceRepository,
+)
+
+DEPLOY_ENVIRONMENTS: tuple[DeployEnvironment, ...] = (
+    "nonprod",
+    "staging",
+    "production",
 )
 
 
@@ -118,6 +125,19 @@ def policy_documents(template: Template) -> Iterable[dict[str, Any]]:
         yield policy["Properties"]["PolicyDocument"]
 
 
+def managed_policy_document_sizes(template: Template) -> dict[str, int]:
+    managed_policies = template.find_resources("AWS::IAM::ManagedPolicy")
+    return {
+        policy["Properties"].get("ManagedPolicyName", logical_id): len(
+            json.dumps(
+                policy["Properties"]["PolicyDocument"],
+                separators=(",", ":"),
+            )
+        )
+        for logical_id, policy in managed_policies.items()
+    }
+
+
 def test_default_registry_includes_tenant_setup_service() -> None:
     assert (
         ServiceRepository(
@@ -135,6 +155,25 @@ def test_deploy_role_uses_service_and_environment_name() -> None:
         "AWS::IAM::Role",
         {"RoleName": "campps-tenant-setup-nonprod-gha-deploy-role"},
     )
+
+
+def test_managed_policy_documents_fit_iam_size_limit() -> None:
+    policy_sizes: dict[str, dict[str, int]] = {}
+
+    for environment in DEPLOY_ENVIRONMENTS:
+        template = synth_template(target_environment=environment)
+        policy_sizes[environment] = managed_policy_document_sizes(template)
+
+    violations = {
+        environment: {
+            policy_name: size
+            for policy_name, size in environment_sizes.items()
+            if size > 6144
+        }
+        for environment, environment_sizes in policy_sizes.items()
+    }
+
+    assert not any(violations.values()), violations
 
 
 def test_deploy_role_trust_is_exact_repo_and_environment() -> None:

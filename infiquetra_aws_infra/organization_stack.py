@@ -192,7 +192,12 @@ class OrganizationStack(Stack):
                     ],
                     "Resource": "*",
                     "Condition": {
-                        "BoolIfExists": {"aws:MultiFactorAuthPresent": "false"}
+                        "BoolIfExists": {"aws:MultiFactorAuthPresent": "false"},
+                        "ArnNotLike": {
+                            "aws:PrincipalARN": (
+                                "arn:*:iam::*:role/cdk-hnb659fds-cfn-exec-role-*-*"
+                            )
+                        },
                     },
                 },
             ],
