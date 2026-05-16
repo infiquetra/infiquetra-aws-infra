@@ -76,8 +76,8 @@ Six SSO account assignments — all on `jefcox` directly (no group-based assignm
 | `infiquetra` (mgmt) | `Billing` (legacy) | USER `jefcox` |
 | `campps-prod` | `AdministratorAccess` (legacy) | USER `jefcox` |
 | `campps-prod` | `Billing` (legacy) | USER `jefcox` |
-| `campps-dev` | `AdministratorAccess` (legacy) | USER `jefcox` |
-| `campps-dev` | `Billing` (legacy) | USER `jefcox` |
+| `campps-nonprod` | `AdministratorAccess` (legacy) | USER `jefcox` |
+| `campps-nonprod` | `Billing` (legacy) | USER `jefcox` |
 
 **Important**: The six rows above are live legacy assignments from the last audit. The CDK target now supports group-based assignments, but those assignments are conditional and only materialize when the deployment supplies non-empty group IDs.
 
@@ -88,7 +88,7 @@ Six SSO account assignments — all on `jefcox` directly (no group-based assignm
 | Parameter | Permission set | Target account | Purpose |
 |---|---|---|---|
 | `InfiquetraAdminsGroupId` | `CoreAdministrator` | `645166163764` management | Manage organization, SSO, and foundation stacks |
-| `CamppsDevelopersGroupId` | `CAMPPSDeveloper` | `477152411873` campps-dev | Day-to-day nonprod development and debugging |
+| `CamppsDevelopersGroupId` | `CAMPPSDeveloper` | `477152411873` campps-nonprod | Day-to-day nonprod development and debugging |
 | `CamppsProdReadOnlyGroupId` | `ReadOnlyAccess` | `431643435299` campps-prod | Production inspection without write access |
 | `CamppsProdBreakGlassAdminsGroupId` | `CAMPPSProductionBreakGlassAdministrator` | `431643435299` campps-prod | Emergency production changes only |
 
@@ -147,7 +147,7 @@ The old broad workload policies were intentionally removed from the CDK target. 
 
 | Stack | Account | GitHub environment | Role pattern |
 |---|---|---|---|
-| `CamppsNonProdDeployRolesStack` | `477152411873` campps-dev | `nonprod` | `campps-<service>-nonprod-gha-deploy-role` |
+| `CamppsNonProdDeployRolesStack` | `477152411873` campps-nonprod | `nonprod` | `campps-<service>-nonprod-gha-deploy-role` |
 | `CamppsProductionDeployRolesStack` | `431643435299` campps-prod | `production` | `campps-<service>-production-gha-deploy-role` |
 
 Each service is registered in `infiquetra_aws_infra/campps_service_registry.py`. The first registered service is `infiquetra/campps-tenant-setup-service`, which creates `campps-tenant-setup-<environment>-gha-deploy-role` and `campps-tenant-setup-<environment>-gha-deploy-policy`.

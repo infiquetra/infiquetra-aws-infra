@@ -41,7 +41,7 @@ These are real, but they are bounded. Only the first two block the first GitHub 
 
 ### Option 1 — Build a thing
 
-Start with the first CAMPPS service slice and deploy the simplest useful version to `campps-dev`:
+Start with the first CAMPPS service slice and deploy the simplest useful version to `campps-nonprod`:
 
 - A Lambda function behind API Gateway
 - A small service-owned database or parameter set
@@ -99,4 +99,4 @@ Empirical findings from past debugging:
 
 ## The one-line summary
 
-> Organization foundation is done. Preflight the CAMPPS access/deploy target, then build the smallest real service slice in `campps-dev` and let the next gaps surface naturally.
+> Organization foundation is done. Preflight the CAMPPS access/deploy target, then build the smallest real service slice in `campps-nonprod` and let the next gaps surface naturally.

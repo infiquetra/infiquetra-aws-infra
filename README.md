@@ -235,7 +235,7 @@ cdk deploy InfiquetraSSOStack --profile infiquetra-root
 The CAMPPS workload accounts live in the CDK-managed `Apps>CAMPPS` tree:
 
 - `campps-prod` (431643435299) — `Apps/CAMPPS/Production`
-- `campps-dev` (477152411873) — `Apps/CAMPPS/NonProd`
+- `campps-nonprod` (477152411873) — `Apps/CAMPPS/NonProd`
 
 The legacy top-level `CAMPPS/workloads/*` and `CICD/*` subtree was deleted on 2026-05-02 once both accounts were moved into the new tree. The previously-suspended `campps-cicd` account (424272146308) was already removed from the org before that. See [`docs/engineering-journal/ARCHIVE.md`](docs/engineering-journal/ARCHIVE.md) (2026-05-02 entry) for the migration narrative.
 

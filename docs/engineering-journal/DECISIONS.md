@@ -25,6 +25,24 @@
 
 ---
 
+## 2026-05-16
+
+### Rename the CAMPPS nonprod account nickname from `campps-dev` to `campps-nonprod`
+
+**Decision.** Rename the workload account nickname from `campps-dev` to `campps-nonprod` everywhere it appears as a human-facing name or local identifier: the AWS Organizations account Name, the IAM account alias (`camppsdev` → `camppsnonprod`, sign-in URL follows), the CDK constant `CAMPPS_DEV_ACCOUNT_ID` → `CAMPPS_NONPROD_ACCOUNT_ID`, CLI profile examples, and the ops/onboarding docs and diagrams. Account ID `477152411873` is unchanged. The account already lives in `Apps / CAMPPS / NonProd`, so this aligns the nickname with the environment it actually represents.
+
+**Rationale.** The account was originally nicknamed `campps-dev` but functions as the shared nonprod environment (it is the OIDC target for the `nonprod` GitHub environment and the `Apps/CAMPPS/NonProd` OU). The `dev` nickname created a split between the account's name and its `nonprod` environment label, which was a recurring source of confusion in deploy docs and the GitHub-environment-to-account mapping. Renaming removes that split.
+
+**Rejected alternatives.**
+- Leave the nickname as `campps-dev`: zero churn, but perpetuates the name/environment mismatch and keeps every doc and diagram having to explain that `campps-dev` is really nonprod.
+- Rename the CDK construct/logical ID `CamppsDevelopersDevAssignment` and the `CamppsDevelopers` SSO group too: superficially consistent, but renaming the logical ID would force a replacement of the live SSO assignment, and `CamppsDevelopers` names the human group (developers, the people), not the environment. Both were deliberately left as-is.
+
+**Impact.** Naming only, zero functional impact. No change to the account ID, any ARN, OIDC trust policy, deploy-role name, permission set, SSO assignment, or CloudFormation logical ID. `cdk synth CamppsNonProdDeployRolesStack` produces no template change. The CDK constant rename is a pure source-symbol rename (same string value `"477152411873"`).
+
+**Revisit when.** Reconsider the nickname if a dedicated developer-iteration account is ever split out from shared nonprod, at which point `campps-dev` could be reintroduced for that distinct account.
+
+**Commit.** This PR (`chore/rename-campps-dev-to-campps-nonprod`).
+
 ## 2026-05-15
 
 ### Create CAMPPS staging as a separate CDK-managed AWS account

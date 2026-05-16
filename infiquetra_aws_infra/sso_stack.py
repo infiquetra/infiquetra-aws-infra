@@ -10,7 +10,7 @@ from constructs import Construct
 from .organization_stack import OrganizationStack
 
 MANAGEMENT_ACCOUNT_ID = "645166163764"
-CAMPPS_DEV_ACCOUNT_ID = "477152411873"
+CAMPPS_NONPROD_ACCOUNT_ID = "477152411873"
 CAMPPS_PROD_ACCOUNT_ID = "431643435299"
 
 
@@ -340,7 +340,7 @@ class SSOStack(Stack):
             (
                 "CamppsDevelopersDevAssignment",
                 self.campps_developers_group_id,
-                CAMPPS_DEV_ACCOUNT_ID,
+                CAMPPS_NONPROD_ACCOUNT_ID,
                 self.campps_developer_permission_set.attr_permission_set_arn,
                 self.campps_developers_group_id_provided,
             ),

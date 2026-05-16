@@ -63,7 +63,7 @@ with Diagram(
         with Cluster("Active workload accounts"):
             mgmt = OrganizationsAccount("infiquetra\n645166163764")
             prod = OrganizationsAccount("campps-prod\n431643435299")
-            dev_acct = OrganizationsAccount("campps-dev\n477152411873")
+            dev_acct = OrganizationsAccount("campps-nonprod\n477152411873")
 
         with Cluster("Identity Center (SSO)"):
             sso = IAM("Live: 13 sets\nTarget: 14 sets\n1 user, 1 group")
@@ -111,7 +111,7 @@ with Diagram(
                 )
 
     prod_acct = OrganizationsAccount("campps-prod\n431643435299")
-    dev_acct = OrganizationsAccount("campps-dev\n477152411873")
+    dev_acct = OrganizationsAccount("campps-nonprod\n477152411873")
 
     root >> mgmt_acct
     root >> core_ou
@@ -154,7 +154,7 @@ with Diagram(
     with Cluster("AWS Accounts"):
         mgmt = OrganizationsAccount("infiquetra\n645166163764")
         prod = OrganizationsAccount("campps-prod\n431643435299")
-        dev_acct = OrganizationsAccount("campps-dev\n477152411873")
+        dev_acct = OrganizationsAccount("campps-nonprod\n477152411873")
 
     dev >> Edge(label="1. aws sso login") >> cli
     cli >> Edge(label="2. open browser") >> browser
