@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: 'Deployment environment (production, nonprod, staging)'
+        description: 'Foundation deployment label; stacks deploy from the management account'
         required: true
         type: string
       stack:
@@ -91,7 +91,7 @@ jobs:
         run: |
           echo "## 🏢 Deploying Organization Stack" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment label**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**Account**: ${{ inputs.aws-account }}" >> $GITHUB_STEP_SUMMARY
           echo "**Region**: ${{ inputs.aws-region }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -117,7 +117,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 👥 Deploying SSO Stack" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment label**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**Account**: ${{ inputs.aws-account }}" >> $GITHUB_STEP_SUMMARY
           echo "**Region**: ${{ inputs.aws-region }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -162,7 +162,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Environment** | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployment label** | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Stack(s)** | ${{ inputs.stack }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Account** | ${{ inputs.aws-account }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Region** | ${{ inputs.aws-region }} |" >> $GITHUB_STEP_SUMMARY

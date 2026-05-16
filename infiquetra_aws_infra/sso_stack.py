@@ -189,7 +189,7 @@ class SSOStack(Stack):
         self.campps_prod_breakglass_permission_set = sso.CfnPermissionSet(
             self,
             "CamppsProductionBreakGlassAdministratorPermissionSet",
-            name="CAMPPSProductionBreakGlassAdministrator",
+            name="CAMPPSProdBreakGlassAdmin",
             description=(
                 "Emergency administrative access for CAMPPS production workloads"
             ),
@@ -341,6 +341,13 @@ class SSOStack(Stack):
                 "CamppsDevelopersDevAssignment",
                 self.campps_developers_group_id,
                 CAMPPS_DEV_ACCOUNT_ID,
+                self.campps_developer_permission_set.attr_permission_set_arn,
+                self.campps_developers_group_id_provided,
+            ),
+            (
+                "CamppsDevelopersStagingAssignment",
+                self.campps_developers_group_id,
+                self.organization_stack.campps_staging_account.attr_account_id,
                 self.campps_developer_permission_set.attr_permission_set_arn,
                 self.campps_developers_group_id_provided,
             ),

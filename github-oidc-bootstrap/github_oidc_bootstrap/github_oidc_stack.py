@@ -290,8 +290,10 @@ class GitHubOIDCStack(Stack):
                 actions=[
                     "organizations:DescribeOrganization",
                     "organizations:DescribeAccount",
+                    "organizations:DescribeCreateAccountStatus",
                     "organizations:ListAccounts",
                     "organizations:ListRoots",
+                    "organizations:ListParents",
                     "organizations:ListOrganizationalUnitsForParent",
                     "organizations:ListChildren",
                     "organizations:DescribeOrganizationalUnit",

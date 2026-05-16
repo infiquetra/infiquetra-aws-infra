@@ -179,3 +179,20 @@ def test_management_role_policy_does_not_include_workload_admin_actions() -> Non
         action.split(":", maxsplit=1)[0] in workload_admin_services
         for action in actions
     )
+
+
+def test_management_role_can_stabilize_organization_account_creation() -> None:
+    template = synth_template()
+    policies = template.find_resources("AWS::IAM::ManagedPolicy")
+    actions = {
+        action
+        for policy in policies.values()
+        for statement in policy["Properties"]["PolicyDocument"]["Statement"]
+        for action in normalize_actions(statement.get("Action"))
+    }
+
+    assert {
+        "organizations:createaccount",
+        "organizations:describecreateaccountstatus",
+        "organizations:listparents",
+    } <= actions

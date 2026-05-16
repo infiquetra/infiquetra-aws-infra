@@ -28,6 +28,22 @@
 
 ---
 
+## 2026-05-15
+
+### Identity Center permission set names are capped at 32 characters
+
+**Context.** The first `InfiquetraSSOStack` deploy after adding CAMPPS staging tried to create the CAMPPS production break-glass permission set.
+
+**Evidence.** CloudFormation failed `AWS::SSO::PermissionSet` `CamppsProductionBreakGlassAdministratorPermissionSet` with `Model validation failed (#/Name: expected maxLength: 32, actual: 39)`.
+
+**Mechanism.** The CloudFormation logical ID can be descriptive, but the Identity Center `Name` property is the physical permission-set name and must satisfy the service model's 32-character limit.
+
+**Fix.** Renamed the physical permission set to `CAMPPSProdBreakGlassAdmin` and added a unit test that asserts every synthesized `AWS::SSO::PermissionSet` name is 32 characters or shorter.
+
+**Validation.** `uv run pytest tests/unit/test_sso_stack.py -v` passed, then `uv run cdk deploy InfiquetraSSOStack --profile infiquetra-root --require-approval never` completed with stack status `UPDATE_COMPLETE`.
+
+**Generalizable rule.** For AWS resources with human-readable names, add synth-time tests for documented service limits. CloudFormation often validates these only at deploy time, after a changeset has already started.
+
 ## 2026-05-02
 
 ### `aws organizations list-policies-for-target` returns direct attachments only — never inherited SCPs

@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
-DeployEnvironment = Literal["nonprod", "production"]
+DeployEnvironment = Literal["nonprod", "staging", "production"]
 
 
 @dataclass(frozen=True)
@@ -12,7 +12,7 @@ class ServiceRepository:
 
     name: str
     repository: str
-    environments: tuple[DeployEnvironment, ...] = ("nonprod", "production")
+    environments: tuple[DeployEnvironment, ...] = ("nonprod", "staging", "production")
     deploy_profile: str = "serverless-api"
 
     def github_subject(self, environment: DeployEnvironment) -> str:

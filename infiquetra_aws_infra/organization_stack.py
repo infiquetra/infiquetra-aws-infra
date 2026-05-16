@@ -113,6 +113,35 @@ class OrganizationStack(Stack):
             ],
         )
 
+        self.campps_staging_ou = organizations.CfnOrganizationalUnit(
+            self,
+            "CamppsStagingOU",
+            name="Staging",
+            parent_id=self.apps_campps_ou.ref,
+            tags=[
+                cdk.CfnTag(key="Environment", value="Staging"),
+                cdk.CfnTag(key="Project", value="CAMPPS"),
+                cdk.CfnTag(key="AccountType", value="PreProduction"),
+            ],
+        )
+
+        self.campps_staging_account = organizations.CfnAccount(
+            self,
+            "CamppsStagingAccount",
+            account_name="campps-staging",
+            email="jeff+campps-staging@infiquetra.com",
+            parent_ids=[self.campps_staging_ou.ref],
+            role_name="OrganizationAccountAccessRole",
+            tags=[
+                cdk.CfnTag(key="Project", value="CAMPPS"),
+                cdk.CfnTag(key="Environment", value="Staging"),
+                cdk.CfnTag(key="AccountType", value="PreProduction"),
+                cdk.CfnTag(key="BusinessUnit", value="Apps"),
+                cdk.CfnTag(key="ManagedBy", value="CDK"),
+            ],
+        )
+        self.campps_staging_account.apply_removal_policy(cdk.RemovalPolicy.RETAIN)
+
         self.campps_nonprod_ou = organizations.CfnOrganizationalUnit(
             self,
             "CamppsNonProdOU",
@@ -163,7 +192,12 @@ class OrganizationStack(Stack):
                     ],
                     "Resource": "*",
                     "Condition": {
-                        "BoolIfExists": {"aws:MultiFactorAuthPresent": "false"}
+                        "BoolIfExists": {"aws:MultiFactorAuthPresent": "false"},
+                        "ArnNotLike": {
+                            "aws:PrincipalARN": (
+                                "arn:*:iam::*:role/cdk-hnb659fds-cfn-exec-role-*-*"
+                            )
+                        },
                     },
                 },
             ],
@@ -225,7 +259,7 @@ class OrganizationStack(Stack):
             description="Cost controls for non-production environments",
             type="SERVICE_CONTROL_POLICY",
             content=dev_cost_control_policy,
-            target_ids=[self.campps_nonprod_ou.ref],
+            target_ids=[self.campps_nonprod_ou.ref, self.campps_staging_ou.ref],
             tags=[
                 cdk.CfnTag(key="PolicyType", value="CostControl"),
                 cdk.CfnTag(key="AccountType", value="NonProduction"),
@@ -279,6 +313,20 @@ class OrganizationStack(Stack):
 
         CfnOutput(
             self,
+            "CamppsStagingOUId",
+            value=self.campps_staging_ou.ref,
+            description="CAMPPS Staging OU ID",
+        )
+
+        CfnOutput(
+            self,
+            "CamppsStagingAccountId",
+            value=self.campps_staging_account.attr_account_id,
+            description="CAMPPS Staging account ID",
+        )
+
+        CfnOutput(
+            self,
             "CamppsNonProdOUId",
             value=self.campps_nonprod_ou.ref,
             description="CAMPPS NonProd OU ID",
@@ -294,5 +342,7 @@ class OrganizationStack(Stack):
             "consulting_ou_id": self.consulting_ou.ref,
             "campps_ou_id": self.apps_campps_ou.ref,
             "campps_production_ou_id": self.campps_production_ou.ref,
+            "campps_staging_ou_id": self.campps_staging_ou.ref,
+            "campps_staging_account_id": self.campps_staging_account.attr_account_id,
             "campps_nonprod_ou_id": self.campps_nonprod_ou.ref,
         }
