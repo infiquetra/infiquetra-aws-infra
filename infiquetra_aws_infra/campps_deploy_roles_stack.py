@@ -21,6 +21,9 @@ GITHUB_OIDC_URL = "https://token.actions.githubusercontent.com"
 GITHUB_OIDC_HOST = "token.actions.githubusercontent.com"
 GITHUB_OIDC_AUDIENCE = "sts.amazonaws.com"
 
+CODEARTIFACT_DOMAIN = "infiquetra"
+CODEARTIFACT_REPOSITORY = "campps"
+
 
 class CamppsDeployRolesStack(Stack):
     """Create per-service GitHub Actions deploy roles in a CAMPPS account."""
@@ -56,7 +59,7 @@ class CamppsDeployRolesStack(Stack):
                 service_repository=service_repository,
                 target_environment=target_environment,
             )
-            deploy_policies = self._create_serverless_api_deploy_policies(
+            deploy_policies = self._create_deploy_policies(
                 service_repository=service_repository,
                 target_environment=target_environment,
                 permissions_boundary=permissions_boundary,
@@ -238,6 +241,524 @@ class CamppsDeployRolesStack(Stack):
             ],
         )
 
+    def _create_deploy_policies(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+        permissions_boundary: iam.ManagedPolicy,
+    ) -> tuple[iam.ManagedPolicy, ...]:
+        """Select the deploy policy builder for the service deploy profile.
+
+        ``serverless-api`` returns a split set of managed policies to stay under
+        the IAM managed-policy size limit. The ``platform-foundation`` and
+        ``codeartifact-publish`` profiles each return a single managed policy.
+        """
+        if service_repository.deploy_profile == "platform-foundation":
+            return (
+                self._create_platform_foundation_deploy_policy(
+                    service_repository=service_repository,
+                    target_environment=target_environment,
+                    permissions_boundary=permissions_boundary,
+                ),
+            )
+        if service_repository.deploy_profile == "codeartifact-publish":
+            return (
+                self._create_codeartifact_publish_deploy_policy(
+                    service_repository=service_repository,
+                    target_environment=target_environment,
+                    permissions_boundary=permissions_boundary,
+                ),
+            )
+        return self._create_serverless_api_deploy_policies(
+            service_repository=service_repository,
+            target_environment=target_environment,
+            permissions_boundary=permissions_boundary,
+        )
+
+    def _codeartifact_domain_arn(self) -> str:
+        return str(
+            self.format_arn(
+                service="codeartifact",
+                resource="domain",
+                resource_name=CODEARTIFACT_DOMAIN,
+                arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+            )
+        )
+
+    def _codeartifact_repository_arn(self) -> str:
+        return str(
+            self.format_arn(
+                service="codeartifact",
+                resource="repository",
+                resource_name=f"{CODEARTIFACT_DOMAIN}/{CODEARTIFACT_REPOSITORY}",
+                arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+            )
+        )
+
+    def _codeartifact_package_arn(self) -> str:
+        return str(
+            self.format_arn(
+                service="codeartifact",
+                resource="package",
+                resource_name=f"{CODEARTIFACT_DOMAIN}/{CODEARTIFACT_REPOSITORY}/*",
+                arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+            )
+        )
+
+    def _codeartifact_consume_statements(self) -> list[iam.PolicyStatement]:
+        """Read grant so CI ``uv sync`` can pull the pinned campps-contracts dep."""
+        return [
+            iam.PolicyStatement(
+                sid="CodeArtifactConsumeAuth",
+                actions=[
+                    "codeartifact:GetAuthorizationToken",
+                    "codeartifact:GetRepositoryEndpoint",
+                ],
+                resources=[
+                    self._codeartifact_domain_arn(),
+                    self._codeartifact_repository_arn(),
+                ],
+            ),
+            iam.PolicyStatement(
+                sid="CodeArtifactConsumeRead",
+                actions=["codeartifact:ReadFromRepository"],
+                resources=[self._codeartifact_repository_arn()],
+            ),
+            iam.PolicyStatement(
+                sid="CodeArtifactBearerToken",
+                actions=["sts:GetServiceBearerToken"],
+                resources=["*"],
+            ),
+        ]
+
+    def _cloudformation_baseline_statements(
+        self,
+        *,
+        prefix: str,
+    ) -> list[iam.PolicyStatement]:
+        """CloudFormation + CDK-assets S3 + cdk-bootstrap SSM read baseline."""
+        return [
+            iam.PolicyStatement(
+                sid="CloudFormationDeployments",
+                actions=[
+                    "cloudformation:CancelUpdateStack",
+                    "cloudformation:ContinueUpdateRollback",
+                    "cloudformation:CreateChangeSet",
+                    "cloudformation:CreateStack",
+                    "cloudformation:DeleteChangeSet",
+                    "cloudformation:DeleteStack",
+                    "cloudformation:DescribeChangeSet",
+                    "cloudformation:DescribeStackEvents",
+                    "cloudformation:DescribeStackResource",
+                    "cloudformation:DescribeStackResources",
+                    "cloudformation:DescribeStacks",
+                    "cloudformation:ExecuteChangeSet",
+                    "cloudformation:GetTemplate",
+                    "cloudformation:GetTemplateSummary",
+                    "cloudformation:SetStackPolicy",
+                    "cloudformation:UpdateStack",
+                ],
+                resources=[
+                    self.format_arn(
+                        service="cloudformation",
+                        resource="stack",
+                        resource_name=f"{prefix}-*/*",
+                        arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                    ),
+                    self.format_arn(
+                        service="cloudformation",
+                        resource="changeSet",
+                        resource_name="cdk-deploy-change-set/*",
+                        arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                    ),
+                ],
+            ),
+            iam.PolicyStatement(
+                sid="CloudFormationTemplateValidation",
+                actions=["cloudformation:ValidateTemplate"],
+                resources=["*"],
+            ),
+            iam.PolicyStatement(
+                sid="CdkAssetsBucket",
+                actions=[
+                    "s3:AbortMultipartUpload",
+                    "s3:GetBucketLocation",
+                    "s3:GetObject",
+                    "s3:ListBucket",
+                    "s3:ListBucketMultipartUploads",
+                    "s3:PutObject",
+                ],
+                resources=[
+                    f"arn:aws:s3:::cdk-hnb659fds-assets-{self.account}-{self.region}",
+                    f"arn:aws:s3:::cdk-hnb659fds-assets-{self.account}-{self.region}/*",
+                ],
+            ),
+            iam.PolicyStatement(
+                sid="CdkBootstrapVersion",
+                actions=["ssm:GetParameter"],
+                resources=[
+                    self.format_arn(
+                        service="ssm",
+                        resource="parameter",
+                        resource_name="cdk-bootstrap/hnb659fds/version",
+                        arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                    )
+                ],
+            ),
+        ]
+
+    def _create_codeartifact_publish_deploy_policy(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+        permissions_boundary: iam.ManagedPolicy,
+    ) -> iam.ManagedPolicy:
+        prefix = f"campps-{service_repository.name}-{target_environment}"
+        return iam.ManagedPolicy(
+            self,
+            f"{self._logical_id_prefix(service_repository.name)}DeployPolicy",
+            managed_policy_name=service_repository.policy_name(target_environment),
+            description=(
+                f"CodeArtifact publish deployment permissions for "
+                f"{service_repository.repository} {target_environment}"
+            ),
+            statements=[
+                *self._cloudformation_baseline_statements(prefix=prefix),
+                *self._codeartifact_consume_statements(),
+                iam.PolicyStatement(
+                    sid="CodeArtifactPublishAuth",
+                    actions=[
+                        "codeartifact:GetAuthorizationToken",
+                        "sts:GetServiceBearerToken",
+                    ],
+                    resources=["*"],
+                ),
+                iam.PolicyStatement(
+                    sid="CodeArtifactPublishPackages",
+                    actions=["codeartifact:PublishPackageVersion"],
+                    resources=[self._codeartifact_package_arn()],
+                ),
+                iam.PolicyStatement(
+                    sid="CodeArtifactPublishReads",
+                    actions=[
+                        "codeartifact:DescribeDomain",
+                        "codeartifact:DescribePackageVersion",
+                        "codeartifact:DescribeRepository",
+                        "codeartifact:ListPackageVersions",
+                        "codeartifact:ListPackages",
+                        "codeartifact:ListRepositories",
+                        "codeartifact:ReadFromRepository",
+                    ],
+                    resources=[
+                        self._codeartifact_domain_arn(),
+                        self._codeartifact_repository_arn(),
+                        self._codeartifact_package_arn(),
+                    ],
+                ),
+            ],
+        )
+
+    def _create_platform_foundation_deploy_policy(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+        permissions_boundary: iam.ManagedPolicy,
+    ) -> iam.ManagedPolicy:
+        prefix = f"campps-{service_repository.name}-{target_environment}"
+        scoped_path = f"campps/{service_repository.name}/{target_environment}"
+        permissions_boundary_arn = permissions_boundary.managed_policy_arn
+        return iam.ManagedPolicy(
+            self,
+            f"{self._logical_id_prefix(service_repository.name)}DeployPolicy",
+            managed_policy_name=service_repository.policy_name(target_environment),
+            description=(
+                f"Platform foundation deployment permissions for "
+                f"{service_repository.repository} {target_environment}"
+            ),
+            statements=[
+                *self._cloudformation_baseline_statements(prefix=prefix),
+                *self._codeartifact_consume_statements(),
+                iam.PolicyStatement(
+                    sid="PlatformEventBuses",
+                    actions=[
+                        "events:CreateEventBus",
+                        "events:DeleteEventBus",
+                        "events:DescribeEventBus",
+                        "events:ListTagsForResource",
+                        "events:TagResource",
+                        "events:UntagResource",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="events",
+                            resource="event-bus",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformKmsKeyCreation",
+                    actions=["kms:CreateKey"],
+                    resources=["*"],
+                    conditions={
+                        "StringEquals": {
+                            "aws:RequestTag/Service": service_repository.name,
+                            "aws:RequestTag/Environment": target_environment,
+                        },
+                        "ForAllValues:StringEquals": {
+                            "aws:TagKeys": ["Service", "Environment"]
+                        },
+                    },
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformKmsAliases",
+                    actions=[
+                        "kms:CreateAlias",
+                        "kms:DeleteAlias",
+                        "kms:UpdateAlias",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="kms",
+                            resource="alias",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformTaggedKmsKeys",
+                    actions=[
+                        "kms:DescribeKey",
+                        "kms:EnableKeyRotation",
+                        "kms:GetKeyPolicy",
+                        "kms:GetKeyRotationStatus",
+                        "kms:ListResourceTags",
+                        "kms:PutKeyPolicy",
+                        "kms:ScheduleKeyDeletion",
+                        "kms:TagResource",
+                        "kms:UntagResource",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="kms",
+                            resource="key",
+                            resource_name="*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                    conditions={
+                        "StringEquals": {
+                            "aws:ResourceTag/Service": service_repository.name,
+                            "aws:ResourceTag/Environment": target_environment,
+                        }
+                    },
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformSsmParameters",
+                    actions=[
+                        "ssm:AddTagsToResource",
+                        "ssm:DeleteParameter",
+                        "ssm:GetParameter",
+                        "ssm:GetParameters",
+                        "ssm:ListTagsForResource",
+                        "ssm:PutParameter",
+                        "ssm:RemoveTagsFromResource",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="ssm",
+                            resource="parameter",
+                            resource_name=f"{scoped_path}/*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformSsmParameterDiscovery",
+                    actions=["ssm:DescribeParameters"],
+                    resources=["*"],
+                    conditions={"StringLike": {"ssm:Name": f"/{scoped_path}/*"}},
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformCreateBoundedRoles",
+                    actions=["iam:CreateRole"],
+                    resources=[
+                        self.format_arn(
+                            service="iam",
+                            region="",
+                            resource="role",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                    conditions={
+                        "StringEquals": {
+                            "iam:PermissionsBoundary": permissions_boundary_arn
+                        }
+                    },
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformManageRoles",
+                    actions=[
+                        "iam:DeleteRole",
+                        "iam:DeleteRolePolicy",
+                        "iam:DetachRolePolicy",
+                        "iam:GetRole",
+                        "iam:GetRolePolicy",
+                        "iam:ListAttachedRolePolicies",
+                        "iam:ListRolePolicies",
+                        "iam:PutRolePolicy",
+                        "iam:TagRole",
+                        "iam:UntagRole",
+                        "iam:UpdateAssumeRolePolicy",
+                        "iam:UpdateRole",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="iam",
+                            region="",
+                            resource="role",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformManagePolicies",
+                    actions=[
+                        "iam:CreatePolicy",
+                        "iam:CreatePolicyVersion",
+                        "iam:DeletePolicy",
+                        "iam:DeletePolicyVersion",
+                        "iam:GetPolicy",
+                        "iam:GetPolicyVersion",
+                        "iam:ListPolicyVersions",
+                        "iam:SetDefaultPolicyVersion",
+                        "iam:TagPolicy",
+                        "iam:UntagPolicy",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="iam",
+                            region="",
+                            resource="policy",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformAttachPolicies",
+                    actions=["iam:AttachRolePolicy"],
+                    resources=[
+                        self.format_arn(
+                            service="iam",
+                            region="",
+                            resource="role",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                    conditions={
+                        "ArnLike": {
+                            "iam:PolicyARN": self.format_arn(
+                                service="iam",
+                                region="",
+                                resource="policy",
+                                resource_name=f"{prefix}-*",
+                                arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                            )
+                        }
+                    },
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformCloudWatchDashboards",
+                    actions=[
+                        "cloudwatch:DeleteDashboards",
+                        "cloudwatch:GetDashboard",
+                        "cloudwatch:PutDashboard",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="cloudwatch",
+                            region="",
+                            resource="dashboard",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformCloudWatchAlarms",
+                    actions=[
+                        "cloudwatch:DeleteAlarms",
+                        "cloudwatch:DescribeAlarms",
+                        "cloudwatch:PutMetricAlarm",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="cloudwatch",
+                            resource="alarm",
+                            resource_name=f"{prefix}-*",
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformLogGroups",
+                    actions=[
+                        "logs:CreateLogGroup",
+                        "logs:DeleteLogGroup",
+                        "logs:DescribeLogGroups",
+                        "logs:ListTagsForResource",
+                        "logs:PutRetentionPolicy",
+                        "logs:TagResource",
+                        "logs:UntagResource",
+                    ],
+                    resources=[
+                        self.format_arn(
+                            service="logs",
+                            resource="log-group",
+                            resource_name=f"/campps/{service_repository.name}/"
+                            f"{target_environment}-*",
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        ),
+                        self.format_arn(
+                            service="logs",
+                            resource="log-group",
+                            resource_name=f"/campps/{service_repository.name}/"
+                            f"{target_environment}-*:log-stream:*",
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        ),
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformCodeArtifactDomain",
+                    actions=[
+                        "codeartifact:CreateDomain",
+                        "codeartifact:DescribeDomain",
+                        "codeartifact:PutDomainPermissionsPolicy",
+                    ],
+                    resources=[self._codeartifact_domain_arn()],
+                ),
+                iam.PolicyStatement(
+                    sid="PlatformCodeArtifactRepository",
+                    actions=[
+                        "codeartifact:CreateRepository",
+                        "codeartifact:DescribeRepository",
+                        "codeartifact:PutRepositoryPermissionsPolicy",
+                        "codeartifact:ReadFromRepository",
+                    ],
+                    resources=[self._codeartifact_repository_arn()],
+                ),
+            ],
+        )
+
     def _create_serverless_api_deploy_policies(
         self,
         *,
@@ -258,6 +779,7 @@ class CamppsDeployRolesStack(Stack):
                     f"{service_repository.repository} {target_environment}"
                 ),
                 statements=[
+                    *self._codeartifact_consume_statements(),
                     iam.PolicyStatement(
                         sid="CloudFormationDeployments",
                         actions=[

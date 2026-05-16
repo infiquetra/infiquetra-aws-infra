@@ -35,6 +35,20 @@ class ServiceRepository:
 CAMPPS_SERVICE_REPOSITORIES: tuple[ServiceRepository, ...] = (
     ServiceRepository(
         name="tenant-setup",
-        repository="infiquetra/campps-tenant-setup-service",
+        repository="infiquetra/campps-tenant-setup",
+    ),
+    ServiceRepository(
+        name="platform",
+        repository="infiquetra/campps-platform",
+        deploy_profile="platform-foundation",
+    ),
+    ServiceRepository(
+        name="contracts",
+        repository="infiquetra/campps-contracts",
+        deploy_profile="codeartifact-publish",
+    ),
+    ServiceRepository(
+        name="identity-access",
+        repository="infiquetra/campps-identity-access",
     ),
 )
