@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to deploy to'
+        description: 'Foundation deployment label; stacks deploy from the management account'
         required: true
         default: 'production'
         type: choice
@@ -44,10 +44,7 @@ jobs:
     with:
       environment: ${{ inputs.environment || 'production' }}
       stack: ${{ inputs.stack || 'all' }}
-      # Map environment to AWS account
-      # Production: 645166163764 (current account)
-      # NonProd/Staging: TBD (placeholder for future accounts)
-      aws-account: ${{ (inputs.environment == 'production' || inputs.environment == '') && '645166163764' || 'TBD-NONPROD-ACCOUNT' }}
+      aws-account: '645166163764'
       aws-region: 'us-east-1'
       # Require approval for production, auto-approve for nonprod/staging
       require-approval: ${{ (inputs.environment == 'production' || inputs.environment == '') && false || false }}
@@ -77,7 +74,7 @@ jobs:
           if [[ "$STATUS" == "success" ]]; then
             echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Environment**: ${{ inputs.environment || 'production' }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Deployment label**: ${{ inputs.environment || 'production' }}" >> $GITHUB_STEP_SUMMARY
             echo "**Stack**: ${{ inputs.stack || 'all' }}" >> $GITHUB_STEP_SUMMARY
 
             if [[ "$TAG" != "" ]]; then
