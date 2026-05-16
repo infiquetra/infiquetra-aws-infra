@@ -586,6 +586,8 @@ def test_pass_role_is_scoped_to_serverless_services() -> None:
                 action.strip().lower()
                 for action in normalize_actions(statement.get("Action", []))
             }
+            if statement.get("Sid") == "CdkBootstrapPassExecRole":
+                continue
             if "iam:passrole" in normalized_actions:
                 pass_role_statements.append(statement)
 
@@ -711,6 +713,56 @@ def test_every_campps_profile_includes_codeartifact_consume_grant() -> None:
         assert "codeartifact:getrepositoryendpoint" in actions, repository
         assert "codeartifact:readfromrepository" in actions, repository
         assert "sts:getservicebearertoken" in actions, repository
+
+
+def test_every_campps_profile_can_assume_cdk_bootstrap_roles() -> None:
+    """Every deploy profile must be able to use the CDK modern-bootstrap
+    deploy/file-publishing/image-publishing/lookup roles and pass the
+    bootstrap cfn-exec role, scoped to the hnb659fds qualifier in this
+    account/region only."""
+    expected_assume_resource = (
+        "arn:aws:iam::477152411873:role/cdk-hnb659fds-*-477152411873-us-east-1"
+    )
+    expected_cfn_exec_resource = (
+        "arn:aws:iam::477152411873:role/"
+        "cdk-hnb659fds-cfn-exec-role-477152411873-us-east-1"
+    )
+
+    for repository in PROFILE_REPRESENTATIVE_REPOSITORIES:
+        for environment in DEPLOY_ENVIRONMENTS:
+            template = synth_template_for_repositories(
+                repository, target_environment=environment
+            )
+
+            assume_statements = [
+                statement
+                for policy_document in policy_documents(template)
+                for statement in policy_document["Statement"]
+                if statement.get("Sid") == "CdkBootstrapAssumeRoles"
+            ]
+            assert assume_statements, (repository, environment)
+            for statement in assume_statements:
+                assert set(normalize_actions(statement["Action"])) == {
+                    "sts:AssumeRole"
+                }, statement
+                resources = tuple(normalize_resources(statement["Resource"]))
+                assert expected_assume_resource in resources, statement
+                assert "*" not in resources, statement
+
+            pass_statements = [
+                statement
+                for policy_document in policy_documents(template)
+                for statement in policy_document["Statement"]
+                if statement.get("Sid") == "CdkBootstrapPassExecRole"
+            ]
+            assert pass_statements, (repository, environment)
+            for statement in pass_statements:
+                assert set(normalize_actions(statement["Action"])) == {
+                    "iam:PassRole"
+                }, statement
+                resources = tuple(normalize_resources(statement["Resource"]))
+                assert expected_cfn_exec_resource in resources, statement
+                assert "*" not in resources, statement
 
 
 def test_platform_foundation_role_can_create_scoped_platform_resources() -> None:
