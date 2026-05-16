@@ -123,6 +123,7 @@ def test_default_registry_includes_tenant_setup_service() -> None:
         ServiceRepository(
             name="tenant-setup",
             repository="infiquetra/campps-tenant-setup-service",
+            environments=("nonprod", "staging", "production"),
         ),
     ) == CAMPPS_SERVICE_REPOSITORIES
 
@@ -157,6 +158,20 @@ def test_production_role_uses_production_environment_subject() -> None:
         template,
         role_name="campps-tenant-setup-production-gha-deploy-role",
         target_environment="production",
+    )
+
+
+def test_staging_role_uses_staging_environment_subject() -> None:
+    template = synth_template(target_environment="staging")
+
+    template.has_resource_properties(
+        "AWS::IAM::Role",
+        {"RoleName": "campps-tenant-setup-staging-gha-deploy-role"},
+    )
+    assert_deploy_role_trust(
+        template,
+        role_name="campps-tenant-setup-staging-gha-deploy-role",
+        target_environment="staging",
     )
 
 
