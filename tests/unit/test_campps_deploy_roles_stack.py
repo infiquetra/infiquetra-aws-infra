@@ -170,20 +170,44 @@ def test_deploy_role_uses_service_and_environment_name() -> None:
     )
 
 
+PROFILE_REPRESENTATIVE_REPOSITORIES: tuple[ServiceRepository, ...] = (
+    ServiceRepository(
+        name="tenant-setup",
+        repository="infiquetra/campps-tenant-setup",
+    ),
+    ServiceRepository(
+        name="platform",
+        repository="infiquetra/campps-platform",
+        deploy_profile="platform-foundation",
+    ),
+    ServiceRepository(
+        name="contracts",
+        repository="infiquetra/campps-contracts",
+        deploy_profile="codeartifact-publish",
+    ),
+)
+
+IAM_MANAGED_POLICY_SIZE_LIMIT = 6144
+
+
 def test_managed_policy_documents_fit_iam_size_limit() -> None:
     policy_sizes: dict[str, dict[str, int]] = {}
 
-    for environment in DEPLOY_ENVIRONMENTS:
-        template = synth_template(target_environment=environment)
-        policy_sizes[environment] = managed_policy_document_sizes(template)
+    for repository in PROFILE_REPRESENTATIVE_REPOSITORIES:
+        for environment in DEPLOY_ENVIRONMENTS:
+            template = synth_template_for_repositories(
+                repository, target_environment=environment
+            )
+            key = f"{repository.deploy_profile}/{environment}"
+            policy_sizes[key] = managed_policy_document_sizes(template)
 
     violations = {
-        environment: {
+        key: {
             policy_name: size
             for policy_name, size in environment_sizes.items()
-            if size > 6144
+            if size > IAM_MANAGED_POLICY_SIZE_LIMIT
         }
-        for environment, environment_sizes in policy_sizes.items()
+        for key, environment_sizes in policy_sizes.items()
     }
 
     assert not any(violations.values()), violations
@@ -726,6 +750,85 @@ def test_platform_foundation_role_can_create_scoped_platform_resources() -> None
         ":repository/infiquetra/campps" in str(statement.get("Resource"))
         for statement in create_repo
     )
+
+
+def test_platform_foundation_policy_is_split_under_iam_size_limit() -> None:
+    template = synth_template_for_repositories(
+        ServiceRepository(
+            name="platform",
+            repository="infiquetra/campps-platform",
+            deploy_profile="platform-foundation",
+        )
+    )
+
+    sizes = managed_policy_document_sizes(template)
+    deploy_policy_sizes = {
+        name: size
+        for name, size in sizes.items()
+        if name.startswith("campps-platform-nonprod-gha-")
+        and "permissions-boundary" not in name
+    }
+
+    assert set(deploy_policy_sizes) == {
+        "campps-platform-nonprod-gha-deploy-policy",
+        "campps-platform-nonprod-gha-runtime-policy",
+        "campps-platform-nonprod-gha-data-policy",
+    }, deploy_policy_sizes
+    for name, size in deploy_policy_sizes.items():
+        assert size < IAM_MANAGED_POLICY_SIZE_LIMIT, (name, size)
+
+
+def test_platform_foundation_split_preserves_key_abilities() -> None:
+    template = synth_template_for_repositories(
+        ServiceRepository(
+            name="platform",
+            repository="infiquetra/campps-platform",
+            deploy_profile="platform-foundation",
+        )
+    )
+    actions = {action.lower() for action in collect_actions(template)}
+
+    assert "events:createeventbus" in actions
+    assert "kms:createkey" in actions
+    assert "iam:createrole" in actions
+    assert "codeartifact:createdomain" in actions
+    assert "codeartifact:createrepository" in actions
+    assert "cloudwatch:putdashboard" in actions
+    assert "logs:createloggroup" in actions
+
+    ssm_put = statements_for_action(template, "ssm:putparameter")
+    assert ssm_put
+    assert any(
+        "campps/platform/nonprod/*" in str(statement.get("Resource"))
+        for statement in ssm_put
+    )
+
+    create_role = statements_for_action(template, "iam:createrole")
+    assert create_role
+    assert all(
+        "iam:PermissionsBoundary"
+        in statement.get("Condition", {}).get("StringEquals", {})
+        for statement in create_role
+    )
+
+
+def test_codeartifact_publish_policy_fits_iam_size_limit() -> None:
+    template = synth_template_for_repositories(
+        ServiceRepository(
+            name="contracts",
+            repository="infiquetra/campps-contracts",
+            deploy_profile="codeartifact-publish",
+        )
+    )
+
+    sizes = managed_policy_document_sizes(template)
+    deploy_policy_sizes = {
+        name: size for name, size in sizes.items() if "permissions-boundary" not in name
+    }
+
+    assert deploy_policy_sizes
+    for name, size in deploy_policy_sizes.items():
+        assert size < IAM_MANAGED_POLICY_SIZE_LIMIT, (name, size)
 
 
 def test_codeartifact_publish_role_can_publish_package_versions() -> None:
