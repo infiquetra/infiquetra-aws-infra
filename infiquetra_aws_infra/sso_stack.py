@@ -345,6 +345,13 @@ class SSOStack(Stack):
                 self.campps_developers_group_id_provided,
             ),
             (
+                "CamppsDevelopersStagingAssignment",
+                self.campps_developers_group_id,
+                self.organization_stack.campps_staging_account.attr_account_id,
+                self.campps_developer_permission_set.attr_permission_set_arn,
+                self.campps_developers_group_id_provided,
+            ),
+            (
                 "CamppsProdReadOnlyAssignment",
                 self.campps_prod_readonly_group_id,
                 CAMPPS_PROD_ACCOUNT_ID,

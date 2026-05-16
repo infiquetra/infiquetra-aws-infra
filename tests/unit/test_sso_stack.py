@@ -64,7 +64,7 @@ def test_optional_group_parameters_exist() -> None:
 def test_group_assignments_target_expected_accounts() -> None:
     template = synth_template()
 
-    template.resource_count_is("AWS::SSO::Assignment", 4)
+    template.resource_count_is("AWS::SSO::Assignment", 5)
     template.has_resource_properties(
         "AWS::SSO::Assignment",
         {
@@ -80,6 +80,19 @@ def test_group_assignments_target_expected_accounts() -> None:
             "PrincipalType": "GROUP",
             "PrincipalId": {"Ref": "CamppsDevelopersGroupId"},
             "TargetId": "477152411873",
+            "TargetType": "AWS_ACCOUNT",
+        },
+    )
+    template.has_resource_properties(
+        "AWS::SSO::Assignment",
+        {
+            "PrincipalType": "GROUP",
+            "PrincipalId": {"Ref": "CamppsDevelopersGroupId"},
+            "TargetId": {
+                "Fn::ImportValue": Match.string_like_regexp(
+                    "TestOrganizationStack:ExportsOutputFnGetAttCamppsStagingAccountAccountId.*"
+                )
+            },
             "TargetType": "AWS_ACCOUNT",
         },
     )
