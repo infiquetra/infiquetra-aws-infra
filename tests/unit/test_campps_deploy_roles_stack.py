@@ -25,7 +25,7 @@ def synth_template(target_environment: DeployEnvironment = "nonprod") -> Templat
     return synth_template_for_repositories(
         ServiceRepository(
             name="tenant-setup",
-            repository="infiquetra/campps-tenant-setup-service",
+            repository="infiquetra/campps-tenant-setup",
         ),
         target_environment=target_environment,
     )
@@ -83,7 +83,7 @@ def assert_deploy_role_trust(
         string_equals["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com"
     )
     assert string_equals["token.actions.githubusercontent.com:sub"] == (
-        f"repo:infiquetra/campps-tenant-setup-service:environment:{target_environment}"
+        f"repo:infiquetra/campps-tenant-setup:environment:{target_environment}"
     )
 
     principal = statement["Principal"]
@@ -138,12 +138,25 @@ def managed_policy_document_sizes(template: Template) -> dict[str, int]:
     }
 
 
-def test_default_registry_includes_tenant_setup_service() -> None:
+def test_default_registry_includes_option_b_services() -> None:
     assert (
         ServiceRepository(
             name="tenant-setup",
-            repository="infiquetra/campps-tenant-setup-service",
-            environments=("nonprod", "staging", "production"),
+            repository="infiquetra/campps-tenant-setup",
+        ),
+        ServiceRepository(
+            name="platform",
+            repository="infiquetra/campps-platform",
+            deploy_profile="platform-foundation",
+        ),
+        ServiceRepository(
+            name="contracts",
+            repository="infiquetra/campps-contracts",
+            deploy_profile="codeartifact-publish",
+        ),
+        ServiceRepository(
+            name="identity-access",
+            repository="infiquetra/campps-identity-access",
         ),
     ) == CAMPPS_SERVICE_REPOSITORIES
 
@@ -626,3 +639,111 @@ def test_stack_creates_oidc_provider_for_workload_account() -> None:
             "ClientIdList": ["sts.amazonaws.com"],
         },
     )
+
+
+def collect_actions(template: Template) -> set[str]:
+    actions: set[str] = set()
+    for policy_document in policy_documents(template):
+        for statement in policy_document["Statement"]:
+            for action in normalize_actions(statement.get("Action", [])):
+                actions.add(action)
+    return actions
+
+
+def statements_for_action(template: Template, action_name: str) -> list[dict[str, Any]]:
+    matching: list[dict[str, Any]] = []
+    for policy_document in policy_documents(template):
+        for statement in policy_document["Statement"]:
+            normalized = {
+                action.strip().lower()
+                for action in normalize_actions(statement.get("Action", []))
+            }
+            if action_name in normalized:
+                matching.append(statement)
+    return matching
+
+
+def test_every_campps_profile_includes_codeartifact_consume_grant() -> None:
+    profiles = (
+        ServiceRepository(
+            name="tenant-setup", repository="infiquetra/campps-tenant-setup"
+        ),
+        ServiceRepository(
+            name="platform",
+            repository="infiquetra/campps-platform",
+            deploy_profile="platform-foundation",
+        ),
+        ServiceRepository(
+            name="contracts",
+            repository="infiquetra/campps-contracts",
+            deploy_profile="codeartifact-publish",
+        ),
+    )
+
+    for repository in profiles:
+        template = synth_template_for_repositories(repository)
+        actions = {action.lower() for action in collect_actions(template)}
+        assert "codeartifact:getauthorizationtoken" in actions, repository
+        assert "codeartifact:getrepositoryendpoint" in actions, repository
+        assert "codeartifact:readfromrepository" in actions, repository
+        assert "sts:getservicebearertoken" in actions, repository
+
+
+def test_platform_foundation_role_can_create_scoped_platform_resources() -> None:
+    template = synth_template_for_repositories(
+        ServiceRepository(
+            name="platform",
+            repository="infiquetra/campps-platform",
+            deploy_profile="platform-foundation",
+        )
+    )
+
+    create_role = statements_for_action(template, "iam:createrole")
+    assert create_role
+    assert any(
+        "campps-platform-nonprod-*" in str(statement.get("Resource"))
+        for statement in create_role
+    )
+    assert all(
+        "iam:PermissionsBoundary"
+        in statement.get("Condition", {}).get("StringEquals", {})
+        for statement in create_role
+    )
+
+    create_key = statements_for_action(template, "kms:createkey")
+    assert create_key
+
+    create_domain = statements_for_action(template, "codeartifact:createdomain")
+    assert create_domain
+    assert any(
+        ":domain/infiquetra" in str(statement.get("Resource"))
+        for statement in create_domain
+    )
+
+    create_repo = statements_for_action(template, "codeartifact:createrepository")
+    assert create_repo
+    assert any(
+        ":repository/infiquetra/campps" in str(statement.get("Resource"))
+        for statement in create_repo
+    )
+
+
+def test_codeartifact_publish_role_can_publish_package_versions() -> None:
+    template = synth_template_for_repositories(
+        ServiceRepository(
+            name="contracts",
+            repository="infiquetra/campps-contracts",
+            deploy_profile="codeartifact-publish",
+        )
+    )
+
+    publish = statements_for_action(template, "codeartifact:publishpackageversion")
+    assert publish
+    assert any(
+        ":package/infiquetra/campps/*" in str(statement.get("Resource"))
+        for statement in publish
+    )
+
+    actions = {action.lower() for action in collect_actions(template)}
+    assert "sts:getservicebearertoken" in actions
+    assert "codeartifact:getauthorizationtoken" in actions
