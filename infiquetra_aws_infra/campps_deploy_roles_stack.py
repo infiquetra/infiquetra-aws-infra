@@ -250,17 +250,15 @@ class CamppsDeployRolesStack(Stack):
     ) -> tuple[iam.ManagedPolicy, ...]:
         """Select the deploy policy builder for the service deploy profile.
 
-        ``serverless-api`` returns a split set of managed policies to stay under
-        the IAM managed-policy size limit. The ``platform-foundation`` and
-        ``codeartifact-publish`` profiles each return a single managed policy.
+        ``serverless-api`` and ``platform-foundation`` each return a split set
+        of managed policies to stay under the IAM managed-policy size limit.
+        The ``codeartifact-publish`` profile returns a single managed policy.
         """
         if service_repository.deploy_profile == "platform-foundation":
-            return (
-                self._create_platform_foundation_deploy_policy(
-                    service_repository=service_repository,
-                    target_environment=target_environment,
-                    permissions_boundary=permissions_boundary,
-                ),
+            return self._create_platform_foundation_deploy_policies(
+                service_repository=service_repository,
+                target_environment=target_environment,
+                permissions_boundary=permissions_boundary,
             )
         if service_repository.deploy_profile == "codeartifact-publish":
             return (
@@ -460,27 +458,51 @@ class CamppsDeployRolesStack(Stack):
             ],
         )
 
-    def _create_platform_foundation_deploy_policy(
+    def _create_platform_foundation_deploy_policies(
         self,
         *,
         service_repository: ServiceRepository,
         target_environment: DeployEnvironment,
         permissions_boundary: iam.ManagedPolicy,
-    ) -> iam.ManagedPolicy:
+    ) -> tuple[iam.ManagedPolicy, ...]:
+        """Split platform-foundation grants across core/runtime/data policies.
+
+        The combined platform-foundation document exceeds IAM's 6144-byte
+        managed-policy size quota, so the identical set of permissions is
+        partitioned into three managed policies, mirroring the
+        ``serverless-api`` core/runtime/data split:
+
+        * core: CloudFormation + CDK assets + CodeArtifact consume baseline
+        * runtime: EventBridge bus + KMS keys/aliases + SSM platform params
+        * data: IAM (bounded roles/policies) + CloudWatch + log groups +
+          CodeArtifact domain/repository creation
+        """
         prefix = f"campps-{service_repository.name}-{target_environment}"
         scoped_path = f"campps/{service_repository.name}/{target_environment}"
         permissions_boundary_arn = permissions_boundary.managed_policy_arn
-        return iam.ManagedPolicy(
+        logical_prefix = self._logical_id_prefix(service_repository.name)
+        core_policy = iam.ManagedPolicy(
             self,
-            f"{self._logical_id_prefix(service_repository.name)}DeployPolicy",
+            f"{logical_prefix}DeployPolicy",
             managed_policy_name=service_repository.policy_name(target_environment),
             description=(
-                f"Platform foundation deployment permissions for "
+                f"Platform foundation core deployment permissions for "
                 f"{service_repository.repository} {target_environment}"
             ),
             statements=[
                 *self._cloudformation_baseline_statements(prefix=prefix),
                 *self._codeartifact_consume_statements(),
+            ],
+        )
+        runtime_policy = iam.ManagedPolicy(
+            self,
+            f"{logical_prefix}RuntimeDeployPolicy",
+            managed_policy_name=f"{prefix}-gha-runtime-policy",
+            description=(
+                f"Platform foundation runtime deployment permissions for "
+                f"{service_repository.repository} {target_environment}"
+            ),
+            statements=[
                 iam.PolicyStatement(
                     sid="PlatformEventBuses",
                     actions=[
@@ -584,6 +606,18 @@ class CamppsDeployRolesStack(Stack):
                     resources=["*"],
                     conditions={"StringLike": {"ssm:Name": f"/{scoped_path}/*"}},
                 ),
+            ],
+        )
+        data_policy = iam.ManagedPolicy(
+            self,
+            f"{logical_prefix}DataDeployPolicy",
+            managed_policy_name=f"{prefix}-gha-data-policy",
+            description=(
+                f"Platform foundation data and configuration deployment "
+                f"permissions for {service_repository.repository} "
+                f"{target_environment}"
+            ),
+            statements=[
                 iam.PolicyStatement(
                     sid="PlatformCreateBoundedRoles",
                     actions=["iam:CreateRole"],
@@ -758,6 +792,7 @@ class CamppsDeployRolesStack(Stack):
                 ),
             ],
         )
+        return (core_policy, runtime_policy, data_policy)
 
     def _create_serverless_api_deploy_policies(
         self,
