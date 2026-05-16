@@ -70,7 +70,7 @@ sso_account_id = 431643435299
 sso_role_name = AdministratorAccess
 region = us-east-1
 
-[profile campps-dev]
+[profile campps-nonprod]
 sso_session = infiquetra
 sso_account_id = 477152411873
 sso_role_name = AdministratorAccess
@@ -120,11 +120,11 @@ You don't need to manually re-login through a typical workday. If you walk away 
 ```bash
 # Use any profile by name
 aws sts get-caller-identity --profile campps-prod
-aws sts get-caller-identity --profile campps-dev
+aws sts get-caller-identity --profile campps-nonprod
 
 # Or set a default for the shell
-export AWS_PROFILE=campps-dev
-aws sts get-caller-identity     # uses campps-dev
+export AWS_PROFILE=campps-nonprod
+aws sts get-caller-identity     # uses campps-nonprod
 ```
 
 A single `aws sso login --sso-session infiquetra` covers all profiles that share the `sso-session` block.

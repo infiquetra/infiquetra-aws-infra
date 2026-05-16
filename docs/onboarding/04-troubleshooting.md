@@ -46,7 +46,7 @@ Some operations only work on the **management account** (`645166163764`):
 - `aws identitystore *`
 - Cost Explorer, AWS Config aggregator, etc.
 
-Trying to run these against `campps-prod` or `campps-dev` will fail.
+Trying to run these against `campps-prod` or `campps-nonprod` will fail.
 
 ## CDK / Synth
 
