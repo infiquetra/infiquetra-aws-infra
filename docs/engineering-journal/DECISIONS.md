@@ -25,6 +25,23 @@
 
 ---
 
+## 2026-05-15
+
+### Create CAMPPS staging as a separate CDK-managed AWS account
+
+**Decision.** Create `campps-staging` as its own AWS account under `Apps / CAMPPS / Staging`, managed by CDK from creation forward. This keeps staging blast radius, billing, SCP inheritance, and GitHub environment trust separate from both `campps-dev` and `campps-prod`.
+
+**Rejected alternatives.**
+- Reuse `campps-dev` for staging: fastest path, but it blends developer iteration with release rehearsals and makes promotion failures harder to isolate.
+- Create a staging OU now but delay account creation: preserves the tree shape, but leaves service workflows and SSO assignments with another placeholder to revisit.
+- Put staging inside `NonProd`: simpler SCP attachment, but it hides staging's promotion role and makes GitHub environment mapping less explicit.
+
+**Implementation.** `OrganizationStack` creates the staging OU and `campps-staging` account target. `SSOStack` grants CAMPPS developers access to the staging account. Deploy-role generation adds staging as a first-class environment after the account ID is available.
+
+**Revisit when.** Reconsider a separate staging account if CAMPPS stays single-service and low-risk long enough that account overhead materially exceeds the isolation value, or if AWS Organizations account quota/cost governance makes another account operationally expensive.
+
+**Commit.** Implementation commits `cde7a7f`, `d8ce8c7`, `bda2f8d`, `2787a8b`, and `97cb51a`.
+
 ## 2026-05-06
 
 ### Use SSO for human CAMPPS access and per-repository OIDC roles for service deployments
