@@ -2,7 +2,7 @@
 
 ## Context
 
-CAMPPS development will start from `../campps-blueprint` and move into multiple deployable repositories. Each service or client repository should own its code, IaC, and isolated data stores. The first deployable work is likely a full vertical app slice driven by blueprint context packs.
+CAMPPS development will start from `../campps-context-library` and move into multiple deployable repositories. Each service or client repository should own its code, IaC, and isolated data stores. The first deployable work is likely a full vertical app slice driven by blueprint context packs.
 
 The AWS organization foundation is already in place: `campps-dev` lives under `Apps/CAMPPS/NonProd`, and `campps-prod` lives under `Apps/CAMPPS/Production`. The remaining risk is access and release flow. Human access still uses direct legacy `AdministratorAccess` assignments, and the current GitHub Actions role in this infrastructure repo has broad management-account permissions and org-wide GitHub trust.
 
