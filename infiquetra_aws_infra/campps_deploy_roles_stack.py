@@ -638,6 +638,18 @@ class CamppsDeployRolesStack(Stack):
                     resources=["*"],
                     conditions={"StringLike": {"ssm:Name": f"/{scoped_path}/*"}},
                 ),
+                iam.PolicyStatement(
+                    sid="PlatformSsmParameterPathRead",
+                    actions=["ssm:GetParametersByPath"],
+                    resources=[
+                        self.format_arn(
+                            service="ssm",
+                            resource="parameter",
+                            resource_name=scoped_path,
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
             ],
         )
         data_policy = iam.ManagedPolicy(
