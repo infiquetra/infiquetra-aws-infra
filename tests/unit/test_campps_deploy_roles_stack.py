@@ -872,9 +872,11 @@ def test_platform_foundation_can_read_platform_ssm_namespace_by_path() -> None:
 
     get_by_path = statements_for_action(template, "ssm:getparametersbypath")
     assert get_by_path
+    resources = [str(statement.get("Resource")) for statement in get_by_path]
+    assert any("campps/platform/nonprod" in resource for resource in resources)
+    assert any("campps/platform/nonprod/*" in resource for resource in resources)
     for statement in get_by_path:
         resource = str(statement.get("Resource"))
-        assert "campps/platform/nonprod/*" in resource, statement
         assert "campps/identity-access/nonprod" not in resource, statement
         assert "campps/contracts/nonprod" not in resource, statement
         assert statement.get("Resource") != "*", statement
