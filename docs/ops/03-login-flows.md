@@ -122,7 +122,7 @@ CAMPPS service repositories do not use the management-account `infiquetra-aws-in
 | `nonprod` | `477152411873` campps-nonprod | `repo:infiquetra/<service-repo>:environment:nonprod` |
 | `production` | `431643435299` campps-prod | `repo:infiquetra/<service-repo>:environment:production` |
 
-The first registered service is `infiquetra/campps-tenant-setup-service`, which gets `campps-tenant-setup-nonprod-gha-deploy-role` and `campps-tenant-setup-production-gha-deploy-role` when `app_campps_bootstrap.py` is deployed. Those workload roles exclude Organizations, SSO Admin, SSO, and IdentityStore permissions.
+The active service registry covers existing service repositories: `infiquetra/campps-platform`, `infiquetra/campps-contracts`, and `infiquetra/campps-identity-access`. Each active service gets `campps-<service>-nonprod-gha-deploy-role` and `campps-<service>-production-gha-deploy-role` when `app_campps_bootstrap.py` is deployed. Those workload roles exclude Organizations, SSO Admin, SSO, and IdentityStore permissions.
 
 ## Programmatic access to other accounts
 
