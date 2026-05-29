@@ -166,8 +166,11 @@ Do not deploy these stacks casually. They create write-capable deploy identities
 2. Confirm the target GitHub repository has matching environments:
 
    ```bash
-   gh api repos/infiquetra/campps-tenant-setup-service/environments \
-     --jq '.environments[].name'
+   for repo in campps-platform campps-contracts campps-identity-access; do
+     echo "$repo"
+     gh api "repos/infiquetra/${repo}/environments" \
+       --jq '.environments[].name'
+   done
    ```
 
    Expected before relying on OIDC deploys: `nonprod`, `staging`, and `production` exist. Staging should be manual or scheduled; production should require manual approval.
@@ -256,7 +259,7 @@ Currently configured on `main`:
 
 | Setting | State |
 |---|---|
-| Required reviews | 1 (admin can bypass with `--admin` on `gh pr merge`) |
+| Required reviews | 0 |
 | Required status checks | All four PR validation jobs (code-quality, security-scan, cdk-synthesis, validation-summary) |
 | Allow squash merge | Yes (preferred) |
 | Allow merge commits | Yes |

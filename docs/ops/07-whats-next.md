@@ -45,7 +45,7 @@ Start with the first CAMPPS service slice and deploy the simplest useful version
 
 - A Lambda function behind API Gateway
 - A small service-owned database or parameter set
-- A GitHub Actions nonprod deploy that assumes `campps-tenant-setup-nonprod-gha-deploy-role`
+- A GitHub Actions nonprod deploy that assumes an active service role such as `campps-platform-nonprod-gha-deploy-role`
 
 This forces you to:
 - Use the `CAMPPSDeveloper` target profile for local nonprod debugging

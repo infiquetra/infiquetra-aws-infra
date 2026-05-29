@@ -150,7 +150,7 @@ The old broad workload policies were intentionally removed from the CDK target. 
 | `CamppsNonProdDeployRolesStack` | `477152411873` campps-nonprod | `nonprod` | `campps-<service>-nonprod-gha-deploy-role` |
 | `CamppsProductionDeployRolesStack` | `431643435299` campps-prod | `production` | `campps-<service>-production-gha-deploy-role` |
 
-Each service is registered in `infiquetra_aws_infra/campps_service_registry.py`. The first registered service is `infiquetra/campps-tenant-setup-service`, which creates `campps-tenant-setup-<environment>-gha-deploy-role` and `campps-tenant-setup-<environment>-gha-deploy-policy`.
+Each deployable service is registered in `infiquetra_aws_infra/campps_service_registry.py`. The active registry covers existing service repositories: `infiquetra/campps-platform`, `infiquetra/campps-contracts`, and `infiquetra/campps-identity-access`. The missing tenant setup repo is intentionally deferred until it exists. Each active service creates `campps-<service>-<environment>-gha-deploy-role` and `campps-<service>-<environment>-gha-deploy-policy`.
 
 Trust is exact to the repository and GitHub environment:
 
