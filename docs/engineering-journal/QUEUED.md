@@ -25,23 +25,14 @@
 
 ## P2
 
-### Allow CAMPPS platform deploy role to verify platform SSM namespace directly
-
-**Status:** not-started
-**Why:** `campps-platform` nonprod deploys now verify the six-parameter platform SSM contract after CDK deploy. The deploy workflow currently falls back to CloudFormation-managed `AWS::SSM::Parameter` resources because `campps-platform-nonprod-gha-deploy-role` lacks direct `ssm:GetParametersByPath` on `/campps/platform/nonprod/*`. The fallback proves the stack-managed parameter set, but a direct SSM read would also catch unmanaged drift under the live namespace.
-**Effort:** S (add one IAM action to the platform-foundation deploy policy, extend the existing deploy-role unit test, deploy nonprod role update)
-**Worth it when:** Before relying on platform deploy verification as the primary drift signal for downstream service readiness.
-**Related items:** `infiquetra_aws_infra/campps_deploy_roles_stack.py`, `tests/unit/test_campps_deploy_roles_stack.py`, `campps-platform` deploy run `26642073259`.
-**Notes:** Add `ssm:GetParametersByPath` beside the existing `ssm:GetParameter` / `ssm:GetParameters` grants for `campps/platform/<env>/*`. Keep the `campps-platform` workflow fallback in place for defense in depth.
-
 ### Bootstrap CAMPPS workload deploy roles before first service repo release
 
-**Status:** not-started
-**Why:** The registry-generated deploy roles are now defined in source, but service repositories cannot deploy through GitHub Actions until `CamppsNonProdDeployRolesStack` and `CamppsProductionDeployRolesStack` are explicitly preflighted and deployed into `campps-nonprod` and `campps-prod`.
-**Effort:** M (verify target account CDK bootstrap state, review synthesized IAM, deploy nonprod first, then production)
-**Worth it when:** The first CAMPPS service repo is ready to run nonprod deployment through GitHub Actions.
-**Related items:** `app_campps_bootstrap.py`, `infiquetra_aws_infra/campps_service_registry.py`, `infiquetra_aws_infra/campps_deploy_roles_stack.py`.
-**Notes:** Deployment requires explicit approval. Confirm GitHub environments `nonprod` and `production` exist in the service repo before relying on the OIDC `environment:` subject.
+**Status:** in-progress (nonprod deployed; production pending)
+**Why:** The registry-generated deploy roles are deployed in `campps-nonprod` for the active service repositories, but production deploy roles are still pending until the production profile/approval path is confirmed and `CamppsProductionDeployRolesStack` is deployed into `campps-prod`.
+**Effort:** S remaining (production preflight, diff review, deploy, and output verification)
+**Worth it when:** Before the first CAMPPS service repo production deployment through GitHub Actions.
+**Related items:** `app_campps_bootstrap.py`, `infiquetra_aws_infra/campps_service_registry.py`, `infiquetra_aws_infra/campps_deploy_roles_stack.py`, PRs [#131](https://github.com/infiquetra/infiquetra-aws-infra/pull/131) and [#132](https://github.com/infiquetra/infiquetra-aws-infra/pull/132).
+**Notes:** Nonprod shipped on 2026-05-29 from main `d69badd`: `CamppsNonProdDeployRolesStack` reached `UPDATE_COMPLETE` and outputs exist for `campps-platform`, `campps-contracts`, and `campps-identity-access`. `campps-platform` nonprod workflow run [26657306997](https://github.com/infiquetra/campps-platform/actions/runs/26657306997) verified the platform SSM contract through direct `ssm:GetParametersByPath`. Production remains paused because the runbook names `campps-prod-breakglass`, while the local AWS config currently exposes `campps-prod`; confirm the intended production profile before deploying. `tenant-setup` remains deferred until the repository exists.
 
 ### Migrate human access off legacy direct `AdministratorAccess` assignments
 

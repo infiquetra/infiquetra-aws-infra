@@ -26,6 +26,19 @@
 
 ---
 
+## 2026-05-29
+
+### CAMPPS platform deploy role direct SSM namespace verification — SHIPPED 2026-05-29
+
+Granted the `campps-platform` deploy role direct recursive read access to the platform SSM namespace so the nonprod deploy workflow can verify `/campps/platform/nonprod` through live Parameter Store reads instead of the CloudFormation-resource fallback. The first implementation added `ssm:GetParametersByPath` for child parameters; validation showed AWS authorizes the call against the base path ARN too, so the follow-up added a read-only base-path grant.
+
+The same change set deferred the missing `infiquetra/campps-tenant-setup` repository from the active CAMPPS service registry, leaving deploy-role bootstrap coverage on existing repos: `campps-platform`, `campps-contracts`, and `campps-identity-access`.
+
+**Commits:** PR [#131](https://github.com/infiquetra/infiquetra-aws-infra/pull/131) merged as `40af094`; follow-up PR [#132](https://github.com/infiquetra/infiquetra-aws-infra/pull/132) merged as `d69badd`.
+**Validation:** `CamppsNonProdDeployRolesStack` reached `UPDATE_COMPLETE` in account `477152411873`. Deployed policy `campps-platform-nonprod-gha-runtime-policy` version `v3` includes `ssm:GetParametersByPath` on both `arn:aws:ssm:us-east-1:477152411873:parameter/campps/platform/nonprod/*` and `arn:aws:ssm:us-east-1:477152411873:parameter/campps/platform/nonprod`. `campps-platform` workflow run [26657306997](https://github.com/infiquetra/campps-platform/actions/runs/26657306997) passed `verify SSM platform contract` without the previous SSM `AccessDeniedException` fallback.
+
+---
+
 ## 2026-05-02
 
 ### CAMPPS account migration into CDK-managed OU tree — SHIPPED 2026-05-02
