@@ -618,6 +618,7 @@ class CamppsDeployRolesStack(Stack):
                         "ssm:DeleteParameter",
                         "ssm:GetParameter",
                         "ssm:GetParameters",
+                        "ssm:GetParametersByPath",
                         "ssm:ListTagsForResource",
                         "ssm:PutParameter",
                         "ssm:RemoveTagsFromResource",

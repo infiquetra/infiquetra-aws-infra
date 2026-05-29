@@ -24,8 +24,8 @@ DEPLOY_ENVIRONMENTS: tuple[DeployEnvironment, ...] = (
 def synth_template(target_environment: DeployEnvironment = "nonprod") -> Template:
     return synth_template_for_repositories(
         ServiceRepository(
-            name="tenant-setup",
-            repository="infiquetra/campps-tenant-setup",
+            name="identity-access",
+            repository="infiquetra/campps-identity-access",
         ),
         target_environment=target_environment,
     )
@@ -83,7 +83,7 @@ def assert_deploy_role_trust(
         string_equals["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com"
     )
     assert string_equals["token.actions.githubusercontent.com:sub"] == (
-        f"repo:infiquetra/campps-tenant-setup:environment:{target_environment}"
+        f"repo:infiquetra/campps-identity-access:environment:{target_environment}"
     )
 
     principal = statement["Principal"]
@@ -138,12 +138,8 @@ def managed_policy_document_sizes(template: Template) -> dict[str, int]:
     }
 
 
-def test_default_registry_includes_option_b_services() -> None:
+def test_default_registry_includes_current_service_repositories() -> None:
     assert (
-        ServiceRepository(
-            name="tenant-setup",
-            repository="infiquetra/campps-tenant-setup",
-        ),
         ServiceRepository(
             name="platform",
             repository="infiquetra/campps-platform",
@@ -166,14 +162,14 @@ def test_deploy_role_uses_service_and_environment_name() -> None:
 
     template.has_resource_properties(
         "AWS::IAM::Role",
-        {"RoleName": "campps-tenant-setup-nonprod-gha-deploy-role"},
+        {"RoleName": "campps-identity-access-nonprod-gha-deploy-role"},
     )
 
 
 PROFILE_REPRESENTATIVE_REPOSITORIES: tuple[ServiceRepository, ...] = (
     ServiceRepository(
-        name="tenant-setup",
-        repository="infiquetra/campps-tenant-setup",
+        name="identity-access",
+        repository="infiquetra/campps-identity-access",
     ),
     ServiceRepository(
         name="platform",
@@ -218,7 +214,7 @@ def test_deploy_role_trust_is_exact_repo_and_environment() -> None:
 
     assert_deploy_role_trust(
         template,
-        role_name="campps-tenant-setup-nonprod-gha-deploy-role",
+        role_name="campps-identity-access-nonprod-gha-deploy-role",
         target_environment="nonprod",
     )
 
@@ -228,11 +224,11 @@ def test_production_role_uses_production_environment_subject() -> None:
 
     template.has_resource_properties(
         "AWS::IAM::Role",
-        {"RoleName": "campps-tenant-setup-production-gha-deploy-role"},
+        {"RoleName": "campps-identity-access-production-gha-deploy-role"},
     )
     assert_deploy_role_trust(
         template,
-        role_name="campps-tenant-setup-production-gha-deploy-role",
+        role_name="campps-identity-access-production-gha-deploy-role",
         target_environment="production",
     )
 
@@ -242,11 +238,11 @@ def test_staging_role_uses_staging_environment_subject() -> None:
 
     template.has_resource_properties(
         "AWS::IAM::Role",
-        {"RoleName": "campps-tenant-setup-staging-gha-deploy-role"},
+        {"RoleName": "campps-identity-access-staging-gha-deploy-role"},
     )
     assert_deploy_role_trust(
         template,
-        role_name="campps-tenant-setup-staging-gha-deploy-role",
+        role_name="campps-identity-access-staging-gha-deploy-role",
         target_environment="staging",
     )
 
@@ -403,7 +399,7 @@ def test_api_gateway_write_actions_are_tag_constrained() -> None:
             conditions = statement.get("Condition", {})
             string_equals = conditions.get("StringEquals", {})
             if string_equals == {
-                "aws:RequestTag/Service": "tenant-setup",
+                "aws:RequestTag/Service": "identity-access",
                 "aws:RequestTag/Environment": "nonprod",
             }:
                 create_statements.append(statement)
@@ -416,7 +412,7 @@ def test_api_gateway_write_actions_are_tag_constrained() -> None:
                 continue
 
             if string_equals == {
-                "aws:ResourceTag/Service": "tenant-setup",
+                "aws:ResourceTag/Service": "identity-access",
                 "aws:ResourceTag/Environment": "nonprod",
             }:
                 steady_state_statements.append(statement)
@@ -453,16 +449,16 @@ def test_app_permissions_boundary_is_created_for_service_roles() -> None:
 
     template.has_resource_properties(
         "AWS::IAM::ManagedPolicy",
-        {"ManagedPolicyName": ("campps-tenant-setup-nonprod-permissions-boundary")},
+        {"ManagedPolicyName": ("campps-identity-access-nonprod-permissions-boundary")},
     )
 
 
 def test_iam_mutation_cannot_target_deploy_identity_resources() -> None:
     template = synth_template()
     deploy_identity_fragments = (
-        "campps-tenant-setup-nonprod-gha-deploy-role",
-        "campps-tenant-setup-nonprod-gha-deploy-policy",
-        "campps-tenant-setup-nonprod-permissions-boundary",
+        "campps-identity-access-nonprod-gha-deploy-role",
+        "campps-identity-access-nonprod-gha-deploy-policy",
+        "campps-identity-access-nonprod-permissions-boundary",
     )
     iam_mutation_actions = {
         "iam:attachrolepolicy",
@@ -510,7 +506,7 @@ def test_app_roles_require_permissions_boundary() -> None:
                 [
                     "arn:",
                     {"Ref": "AWS::Partition"},
-                    ":iam::477152411873:role/campps-tenant-setup-nonprod-app-*",
+                    ":iam::477152411873:role/campps-identity-access-nonprod-app-*",
                 ],
             ]
         }
@@ -524,7 +520,7 @@ def test_app_roles_require_permissions_boundary() -> None:
                     "AWS::IAM::ManagedPolicy"
                 ).items()
                 if policy["Properties"].get("ManagedPolicyName")
-                == "campps-tenant-setup-nonprod-permissions-boundary"
+                == "campps-identity-access-nonprod-permissions-boundary"
             )
         }
 
@@ -570,7 +566,7 @@ def test_attach_role_policy_is_limited_to_service_app_policies() -> None:
                 [
                     "arn:",
                     {"Ref": "AWS::Partition"},
-                    ":iam::477152411873:policy/campps-tenant-setup-nonprod-app-*",
+                    ":iam::477152411873:policy/campps-identity-access-nonprod-app-*",
                 ],
             ]
         }
@@ -692,7 +688,7 @@ def statements_for_action(template: Template, action_name: str) -> list[dict[str
 def test_every_campps_profile_includes_codeartifact_consume_grant() -> None:
     profiles = (
         ServiceRepository(
-            name="tenant-setup", repository="infiquetra/campps-tenant-setup"
+            name="identity-access", repository="infiquetra/campps-identity-access"
         ),
         ServiceRepository(
             name="platform",
@@ -847,6 +843,7 @@ def test_platform_foundation_split_preserves_key_abilities() -> None:
     assert "codeartifact:createrepository" in actions
     assert "cloudwatch:putdashboard" in actions
     assert "logs:createloggroup" in actions
+    assert "ssm:getparametersbypath" in actions
 
     ssm_put = statements_for_action(template, "ssm:putparameter")
     assert ssm_put
@@ -862,6 +859,25 @@ def test_platform_foundation_split_preserves_key_abilities() -> None:
         in statement.get("Condition", {}).get("StringEquals", {})
         for statement in create_role
     )
+
+
+def test_platform_foundation_can_read_platform_ssm_namespace_by_path() -> None:
+    template = synth_template_for_repositories(
+        ServiceRepository(
+            name="platform",
+            repository="infiquetra/campps-platform",
+            deploy_profile="platform-foundation",
+        )
+    )
+
+    get_by_path = statements_for_action(template, "ssm:getparametersbypath")
+    assert get_by_path
+    for statement in get_by_path:
+        resource = str(statement.get("Resource"))
+        assert "campps/platform/nonprod/*" in resource, statement
+        assert "campps/identity-access/nonprod" not in resource, statement
+        assert "campps/contracts/nonprod" not in resource, statement
+        assert statement.get("Resource") != "*", statement
 
 
 def test_codeartifact_publish_policy_fits_iam_size_limit() -> None:
