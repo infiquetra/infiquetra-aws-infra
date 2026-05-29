@@ -25,6 +25,15 @@
 
 ## P2
 
+### Allow CAMPPS platform deploy role to verify platform SSM namespace directly
+
+**Status:** not-started
+**Why:** `campps-platform` nonprod deploys now verify the six-parameter platform SSM contract after CDK deploy. The deploy workflow currently falls back to CloudFormation-managed `AWS::SSM::Parameter` resources because `campps-platform-nonprod-gha-deploy-role` lacks direct `ssm:GetParametersByPath` on `/campps/platform/nonprod/*`. The fallback proves the stack-managed parameter set, but a direct SSM read would also catch unmanaged drift under the live namespace.
+**Effort:** S (add one IAM action to the platform-foundation deploy policy, extend the existing deploy-role unit test, deploy nonprod role update)
+**Worth it when:** Before relying on platform deploy verification as the primary drift signal for downstream service readiness.
+**Related items:** `infiquetra_aws_infra/campps_deploy_roles_stack.py`, `tests/unit/test_campps_deploy_roles_stack.py`, `campps-platform` deploy run `26642073259`.
+**Notes:** Add `ssm:GetParametersByPath` beside the existing `ssm:GetParameter` / `ssm:GetParameters` grants for `campps/platform/<env>/*`. Keep the `campps-platform` workflow fallback in place for defense in depth.
+
 ### Bootstrap CAMPPS workload deploy roles before first service repo release
 
 **Status:** not-started
