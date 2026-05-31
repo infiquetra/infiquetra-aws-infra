@@ -69,18 +69,18 @@
 
 **Status:** not-started
 **Why:** Mirrors home-lab's `tests/unit/test_no_legacy_artifacts.py` pattern. Prevents an inattentive cleanup commit from removing the engineering-journal files. Cost-of-loss: months of accumulated context.
-**Effort:** M (this repo doesn't currently have a `tests/` directory; would need to set up pytest + a single test file + wire into CI's code-quality reusable workflow)
+**Effort:** S (pytest configuration and `tests/unit/` already exist; remaining work is one guard test plus CI wiring if the guard should block PRs)
 **Worth it when:** The four files are non-trivially populated (currently each has 4–5 entries; cost of loss is moderate but not severe). Defer until the files contain at least 20+ entries each, or until a near-miss happens.
 **Related items:** None.
-**Notes:** Test logic is trivial: assert each of the four core paths exists. Most of the effort is the pytest scaffolding.
+**Notes:** Test logic is trivial: assert each of the four core paths exists. The old pytest scaffolding concern is gone; CI currently runs ruff, mypy, and CDK synthesis, but not `uv run pytest`.
 
 ### Bump `core_admin_permission_set` `session_duration` from PT4H to PT12H in `sso_stack.py`
 
 **Status:** not-started
-**Why:** `AdministratorAccess` was bumped to PT12H out-of-band on 2026-04-25. The CDK-managed admin-equivalent set (`CoreAdministrator`, line 48–55 of `infiquetra_aws_infra/sso_stack.py`) is at PT4H. Inconsistency between the legacy and CDK-managed admin sets means migrating off the legacy set (P2 item above) is currently a downgrade.
+**Why:** `AdministratorAccess` was bumped to PT12H out-of-band on 2026-04-25. The CDK-managed admin-equivalent set (`CoreAdministrator` in `infiquetra_aws_infra/sso_stack.py`) is at PT4H. Inconsistency between the legacy and CDK-managed admin sets means migrating off the legacy set (P2 item above) is currently a downgrade.
 **Effort:** S (one-line CDK edit + deploy)
 **Worth it when:** Doing the P2 migration off legacy `AdministratorAccess`. Bundling these two changes into one PR makes the migration a true lateral move rather than a session-duration regression.
 **Related items:** P2 — Migrate off legacy AdministratorAccess.
-**Notes:** Same reasoning could apply to `media_admin_permission_set`, `apps_admin_permission_set`, `consulting_admin_permission_set` (all at PT4H). Decide whether to bump only `CoreAdministrator` or all admin-tier sets.
+**Notes:** Same reasoning could apply to `media_admin_permission_set`, `apps_admin_permission_set`, `campps_prod_breakglass_permission_set`, and `consulting_admin_permission_set` (all at PT4H). Decide whether to bump only `CoreAdministrator` or all admin-tier sets.
 
 ---

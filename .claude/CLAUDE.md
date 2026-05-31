@@ -84,7 +84,7 @@ The infrastructure is organized into two primary CDK stacks:
    - Creates AWS SSO (Identity Center) permission sets
    - Depends on OrganizationStack
    - SSO Instance ARN: `arn:aws:sso:::instance/ssoins-7223f05fc9da6e24`
-   - Permission sets: CoreAdministrator, SecurityAuditor, BillingManager, MediaDeveloper/Administrator, AppsDeveloper/Administrator, CamppssDeveloper, ConsultingDeveloper/Administrator, ReadOnlyAccess
+   - Permission sets: CoreAdministrator, SecurityAuditor, BillingManager, MediaDeveloper/Administrator, AppsDeveloper/Administrator, CAMPPSDeveloper, ConsultingDeveloper/Administrator, ReadOnlyAccess
 
 ### CDK Application Entry Point
 
@@ -211,9 +211,8 @@ The CI/CD pipeline is modular and reusable, built with:
 - **GitHub Secret**: `AWS_DEPLOY_ROLE_ARN`
 - **Trust Policy Restrictions**:
   - Repository: `infiquetra/infiquetra-aws-infra`
-  - Branches: `main`, `develop`
-  - Pull requests targeting `main`
-  - Organization members only
+  - Exact repository: `infiquetra/infiquetra-aws-infra`
+  - Exact branch subject: `repo:infiquetra/infiquetra-aws-infra:ref:refs/heads/main`
 
 ### Composite Actions
 
@@ -539,8 +538,8 @@ pre-commit autoupdate
 │   ├── github_oidc_bootstrap/    # Bootstrap stack implementation
 │   └── tests/                    # Bootstrap tests (88% coverage)
 ├── .github/workflows/            # CI/CD pipelines
-│   ├── ci.yml                   # Pull request validation
-│   └── cd.yml                   # Deployment pipeline
+│   ├── pull-request-validation.yml
+│   └── deploy-infrastructure.yml
 ├── .claude/                     # Claude Code configuration
 ├── app.py                       # Main CDK app entry point
 ├── cdk.json                     # CDK configuration
