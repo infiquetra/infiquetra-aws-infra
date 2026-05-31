@@ -42,3 +42,7 @@ cdk.context.json
 .remember/
 .claude/worktrees/
 .superpowers/
+
+# Antigravity session state
+.antigravitycli/
+

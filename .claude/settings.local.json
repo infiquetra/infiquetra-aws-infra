@@ -42,5 +42,9 @@
     ],
     "deny": [],
     "ask": []
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "/Users/jefcox/.claude/statusline-command.sh"
   }
 }
