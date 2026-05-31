@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Antigravity, Claude Code (claude.ai/code), and other agentic AI coding assistants when working with code in this repository.
 
 ## Repository Overview
 
@@ -23,7 +23,7 @@ Living documentation at [`docs/engineering-journal/`](../docs/engineering-journa
 | [audits/](../docs/engineering-journal/audits/) | Dated deep-dive audits — frozen snapshots of cross-source analysis |
 | [narratives/](../docs/engineering-journal/narratives/) | Self-contained, longer-form companion docs (design walkthroughs, post-incident write-ups, inventory snapshots) — readable cold by an outside reader |
 
-**Maintenance rules (Claude: follow these without being asked):**
+**Maintenance rules (Antigravity/Claude: follow these without being asked):**
 
 1. **After a deploy, CDK refactor, or AWS API failure** that produces a surprising
    result, a confirmed bug, or a non-obvious mechanism worth remembering
@@ -60,7 +60,7 @@ Living documentation at [`docs/engineering-journal/`](../docs/engineering-journa
 spelling out its format. New entries use these subheaders where applicable:
 **Context / Evidence / Mechanism / Fix (or queued) / Validation / What surprised /
 Generalizable rule / Refs**. Not every entry needs every subheader, but the
-**Generalizable rule** line is the highest-value field — without it, future-Claude
+**Generalizable rule** line is the highest-value field — without it, future-Antigravity/Claude
 has to re-derive the lesson from the evidence each time.
 
 **Don't wait to be asked.** When any of these triggers fire in a session, update
