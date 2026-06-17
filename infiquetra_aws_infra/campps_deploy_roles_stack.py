@@ -838,6 +838,44 @@ class CamppsDeployRolesStack(Stack):
         )
         return (core_policy, runtime_policy, data_policy)
 
+    def _shared_platform_ssm_read_statements(
+        self, *, target_environment: DeployEnvironment
+    ) -> list[iam.PolicyStatement]:
+        """Allow service deploy workflows to read shared platform discovery params."""
+        platform_path = f"campps/platform/{target_environment}"
+        return [
+            iam.PolicyStatement(
+                sid="SharedPlatformSsmParameterReads",
+                actions=["ssm:GetParameter", "ssm:GetParameters"],
+                resources=[
+                    self.format_arn(
+                        service="ssm",
+                        resource="parameter",
+                        resource_name=f"{platform_path}/*",
+                        arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                    )
+                ],
+            ),
+            iam.PolicyStatement(
+                sid="SharedPlatformSsmParameterPathRead",
+                actions=["ssm:GetParametersByPath"],
+                resources=[
+                    self.format_arn(
+                        service="ssm",
+                        resource="parameter",
+                        resource_name=platform_path,
+                        arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                    ),
+                    self.format_arn(
+                        service="ssm",
+                        resource="parameter",
+                        resource_name=f"{platform_path}/*",
+                        arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                    ),
+                ],
+            ),
+        ]
+
     def _create_serverless_api_deploy_policies(
         self,
         *,
@@ -1407,6 +1445,9 @@ class CamppsDeployRolesStack(Stack):
                                 arn_format=ArnFormat.SLASH_RESOURCE_NAME,
                             )
                         ],
+                    ),
+                    *self._shared_platform_ssm_read_statements(
+                        target_environment=target_environment
                     ),
                     iam.PolicyStatement(
                         sid="CdkBootstrapVersion",
