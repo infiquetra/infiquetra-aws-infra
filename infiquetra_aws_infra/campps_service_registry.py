@@ -47,4 +47,8 @@ CAMPPS_SERVICE_REPOSITORIES: tuple[ServiceRepository, ...] = (
         name="identity-access",
         repository="infiquetra/campps-identity-access",
     ),
+    ServiceRepository(
+        name="tenant-setup",
+        repository="infiquetra/campps-tenant-setup",
+    ),
 )

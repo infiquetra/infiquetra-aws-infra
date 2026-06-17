@@ -154,6 +154,10 @@ def test_default_registry_includes_current_service_repositories() -> None:
             name="identity-access",
             repository="infiquetra/campps-identity-access",
         ),
+        ServiceRepository(
+            name="tenant-setup",
+            repository="infiquetra/campps-tenant-setup",
+        ),
     ) == CAMPPS_SERVICE_REPOSITORIES
 
 
