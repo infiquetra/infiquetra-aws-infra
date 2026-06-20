@@ -267,6 +267,11 @@ PROFILE_REPRESENTATIVE_REPOSITORIES: tuple[ServiceRepository, ...] = (
         repository="infiquetra/campps-contracts",
         deploy_profile="codeartifact-publish",
     ),
+    ServiceRepository(
+        name="web-app",
+        repository="infiquetra/campps-web-app",
+        deploy_profile="web-app",
+    ),
 )
 
 IAM_MANAGED_POLICY_SIZE_LIMIT = 6144
@@ -1236,5 +1241,14 @@ def test_known_deploy_profiles_do_not_raise() -> None:
             deploy_profile="web-app",
         ),
     ):
-        # Should synthesize without raising.
-        synth_template_for_repositories(service)
+        # Each known profile must synthesize *and* actually mint a deploy role
+        # plus its managed deploy policy — not merely fail to raise.
+        template = synth_template_for_repositories(service)
+        template.has_resource_properties(
+            "AWS::IAM::Role",
+            {"RoleName": service.role_name("nonprod")},
+        )
+        template.has_resource_properties(
+            "AWS::IAM::ManagedPolicy",
+            {"ManagedPolicyName": service.policy_name("nonprod")},
+        )
