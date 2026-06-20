@@ -85,4 +85,15 @@ CAMPPS_SERVICE_REPOSITORIES: tuple[ServiceRepository, ...] = (
         repository="infiquetra/campps-web-app",
         deploy_profile="web-app",
     ),
+    # E2E deploy fixture (campps-platform#24), NOT a product service. A throwaway
+    # canary that exercises the real serverless-api tag-promotion + OIDC deploy
+    # path for the C0.3 [E2E] gate (campps-platform#17). Scoped nonprod-only
+    # (KTD2) so the registry-driven loop never mints a staging/production role
+    # for it; uses the default serverless-api profile (KTD4). The aws-infra unit
+    # suite excludes it from the product-set assertions via FIXTURE_SERVICE_NAMES.
+    ServiceRepository(
+        name="e2e-canary",
+        repository="infiquetra/campps-e2e-canary",
+        environments=("nonprod",),
+    ),
 )
