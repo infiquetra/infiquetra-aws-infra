@@ -64,8 +64,23 @@ status: PR-ready (pending review gate)
 - `cdk synth --app "python3 app_campps_bootstrap.py"` → synthesizes all 3 envs × 11 services
   (SYNTH_OK).
 
+## Code-review gate (Phase 5) — PASS
+
+- **Deep review** at `REVIEWED_SHA=cfb2a04`: a 5-lens adversarial workflow (IAM least-privilege /
+  built-vs-planned / guard+registry correctness / test false-confidence / OIDC trust), 5 agents,
+  ~352k tokens. Verdict **PASS — no P0/P1 (no P2)**; 6 P3 notes. Agents empirically validated
+  non-vacuity (injected `lambda:CreateFunction` → the no-backend-actions test failed as expected;
+  confirmed the `ValueError` guard fires at synth time).
+- **Acted on 2 P3 notes** (test hardening, commit `d66a087`, production code unchanged): added `web-app`
+  to `PROFILE_REPRESENTATIVE_REPOSITORIES` (now asserts web-app's `iam:PassRole`/`AssumeRole` scope +
+  size across all envs) and strengthened `test_known_deploy_profiles_do_not_raise` to assert each
+  profile mints a role + policy.
+- **Focused delta re-review** at `REVIEWED_SHA=d66a087`: PASS, no P0/P1/P2; production byte-identical to
+  `cfb2a04`; 43 tests green. Remaining P3 notes are documented-provisional (web-app static-site scope,
+  CloudFront `*` create-class, inert generic boundary) — tracked as KTD3 revisit follow-ups, not defects.
+
 ## Next step
 
-Run the Phase-5 deep code-review gate (IAM least-privilege focus), then offer to open the PR
-(`infiquetra-aws-infra#134` + `#135`). U4 (nonprod apply + role-existence/trust verification) is
-**out of `/work` scope** — it routes to `/deploy` + `/qa` after merge (destination `nonprod-deploy`).
+PR-ready. Offer to open the PR (`infiquetra-aws-infra#134` + `#135`) under operator confirmation. U4
+(nonprod apply + role-existence/trust verification) is **out of `/work` scope** — it routes to
+`/deploy` + `/qa` after merge (destination `nonprod-deploy`).
