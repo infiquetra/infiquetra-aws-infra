@@ -10,62 +10,11 @@ AWS CDK infrastructure as code for Infiquetra LLC's multi-business organizationa
 **AWS Region**: us-east-1
 **AWS Profile**: infiquetra-root
 
-## 📓 Engineering journal — AUTO-MAINTAIN
+## 📓 Engineering journal — auto-maintain
 
-Living documentation at [`docs/engineering-journal/`](docs/engineering-journal/) — pattern adopted from the `infiquetra/home-lab` engineering journal. The directory IS the engineering journal; the files inside are its sections.
+Living journal at [`docs/engineering-journal/`](docs/engineering-journal/) (`LEARNINGS.md` / `DECISIONS.md` / `QUEUED.md` / `ARCHIVE.md` / `narratives/`). Follow the [shared engineering-journal practice](https://github.com/infiquetra/infiquetra-sdlc/blob/main/docs/process/engineering-journal.md) for the full pattern, and maintain it without being asked — capture durable learnings and decisions in the same commit that ships the change.
 
-| File | Purpose |
-|------|---------|
-| [LEARNINGS.md](docs/engineering-journal/LEARNINGS.md) | Empirical findings + mechanisms + fixes + validations |
-| [DECISIONS.md](docs/engineering-journal/DECISIONS.md) | Architecture decisions (ADR-style) with rationale + revisit conditions |
-| [QUEUED.md](docs/engineering-journal/QUEUED.md) | Future-work items by priority with "worth it when" triggers |
-| [ARCHIVE.md](docs/engineering-journal/ARCHIVE.md) | Shipped + rejected + superseded items |
-| [audits/](docs/engineering-journal/audits/) | Dated deep-dive audits — frozen snapshots of cross-source analysis |
-| [narratives/](docs/engineering-journal/narratives/) | Self-contained, longer-form companion docs (design walkthroughs, post-incident write-ups, inventory snapshots) — readable cold by an outside reader |
-
-**Maintenance rules (Antigravity/Codex: follow these without being asked):**
-
-1. **After a deploy, CDK refactor, or AWS API failure** that produces a surprising
-   result, a confirmed bug, or a non-obvious mechanism worth remembering
-   → add a dated entry to `LEARNINGS.md`. Include the evidence (workflow run ID,
-   commit, AWS error code) and the **mechanism** (why it happened, not just what),
-   and a **Generalizable rule** line stripping the lesson from the specific incident.
-
-2. **After committing an architectural or pipeline-design decision** (pick A over B,
-   flip a flag, change a permission scope, add/remove a workflow stage)
-   → add an entry to `DECISIONS.md` with rationale + rejected alternatives +
-   "revisit when" condition. Include the commit hash or PR number.
-
-3. **Whenever a promising idea surfaces but we don't build it right now**
-   → add to `QUEUED.md` with priority (P0/P1/P2/P3/Maybe), concrete "worth it when"
-   trigger, and rough effort estimate. Don't skip — these items are easy to lose.
-
-4. **When a QUEUED item ships** → move its entry to `ARCHIVE.md` as SHIPPED with
-   the commit hash + date. Remove from QUEUED.md.
-
-5. **When a QUEUED item is rejected** → move to `ARCHIVE.md` as REJECTED with the
-   reason + under what conditions we'd revisit. Remove from QUEUED.md.
-
-6. **When a prior LEARNING or DECISION is invalidated** → update the original
-   entry with the correction AND move the pre-correction version to `ARCHIVE.md`
-   as SUPERSEDED. Never silently overwrite history.
-
-7. **When something needs a longer write-up than fits in an entry**
-   (full design narrative, multi-page post-mortem, inventory snapshot for forensics)
-   → create `docs/engineering-journal/narratives/YYYY-MM-DD-short-slug.md` and link
-   to it from the relevant LEARNINGS / DECISIONS entry. The four core files stay
-   scannable; long-form companion lives next door.
-
-**Entry format.** Each of the four core files has a block-quote intro at the top
-spelling out its format. New entries use these subheaders where applicable:
-**Context / Evidence / Mechanism / Fix (or queued) / Validation / What surprised /
-Generalizable rule / Refs**. Not every entry needs every subheader, but the
-**Generalizable rule** line is the highest-value field — without it, future-Antigravity/Codex
-has to re-derive the lesson from the evidence each time.
-
-**Don't wait to be asked.** When any of these triggers fire in a session, update
-the files as part of the same commit that ships the change. The whole point of
-these files is that they maintain themselves.
+Repo-specific signals worth a `LEARNINGS.md` entry: CDK/CloudFormation synth surprises, IAM/permission-boundary gotchas, and multi-account/region deploy findings.
 
 ## Core Architecture
 
