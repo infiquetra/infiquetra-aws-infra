@@ -191,6 +191,16 @@ CANONICAL_SERVICE_REPOSITORIES: tuple[ServiceRepository, ...] = (
         repository="infiquetra/campps-web-app",
         deploy_profile="web-app",
     ),
+    # Byte-for-byte mirror of the campps-platform#24 E2E deploy fixture in
+    # CAMPPS_SERVICE_REPOSITORIES. NOT a product service: nonprod-only (KTD2),
+    # default serverless-api profile (KTD4). It is excluded from the product-set
+    # assertions below via FIXTURE_SERVICE_NAMES, but kept in this exact-equality
+    # mirror so any unexpected registry drift still fails the suite.
+    ServiceRepository(
+        name="e2e-canary",
+        repository="infiquetra/campps-e2e-canary",
+        environments=("nonprod",),
+    ),
 )
 
 # The 10 deployable backends are all serverless-api except the two
@@ -208,6 +218,14 @@ EXPECTED_SERVERLESS_API_BACKENDS = frozenset(
     }
 )
 
+# Registered repositories that are E2E/deploy fixtures rather than product
+# services. They are deliberately excluded from the product-set assertions
+# (backend count, three-environment coverage, serverless-profile set) and are
+# asserted separately for their fixture-specific scoping. See campps-platform#24
+# KTD3: name-based exclusion is cheapest-correct for a single fixture; promote to
+# a typed marker on ServiceRepository when a second fixture appears.
+FIXTURE_SERVICE_NAMES = frozenset({"e2e-canary"})
+
 
 def test_registry_membership_equals_canonical_set() -> None:
     assert CAMPPS_SERVICE_REPOSITORIES == CANONICAL_SERVICE_REPOSITORIES
@@ -218,6 +236,7 @@ def test_registry_has_ten_backends_plus_web_app() -> None:
         service
         for service in CAMPPS_SERVICE_REPOSITORIES
         if service.deploy_profile != "web-app"
+        and service.name not in FIXTURE_SERVICE_NAMES
     ]
     web_apps = [
         service
@@ -231,7 +250,19 @@ def test_registry_has_ten_backends_plus_web_app() -> None:
 
 def test_every_service_repository_targets_all_three_environments() -> None:
     for service in CAMPPS_SERVICE_REPOSITORIES:
+        if service.name in FIXTURE_SERVICE_NAMES:
+            continue
         assert service.environments == ("nonprod", "staging", "production"), service
+
+
+def test_e2e_canary_fixture_is_nonprod_only() -> None:
+    canary = next(
+        service
+        for service in CAMPPS_SERVICE_REPOSITORIES
+        if service.name == "e2e-canary"
+    )
+    assert canary.environments == ("nonprod",), canary
+    assert canary.deploy_profile == "serverless-api", canary
 
 
 def test_serverless_api_backends_use_default_profile() -> None:
@@ -239,6 +270,7 @@ def test_serverless_api_backends_use_default_profile() -> None:
         service.name
         for service in CAMPPS_SERVICE_REPOSITORIES
         if service.deploy_profile == "serverless-api"
+        and service.name not in FIXTURE_SERVICE_NAMES
     }
     assert serverless_backends == EXPECTED_SERVERLESS_API_BACKENDS
 
@@ -1096,6 +1128,52 @@ def test_full_registry_synthesizes_a_role_for_each_in_scope_service() -> None:
                 "AWS::IAM::Role",
                 {"RoleName": service.role_name(environment)},
             )
+
+
+# --- campps-platform#24: the E2E canary fixture mints a nonprod-only role ------
+
+
+def test_e2e_canary_mints_nonprod_role_with_scoped_trust() -> None:
+    canary = next(
+        service
+        for service in CANONICAL_SERVICE_REPOSITORIES
+        if service.name == "e2e-canary"
+    )
+    template = synth_template_for_repositories(canary, target_environment="nonprod")
+
+    role_name = canary.role_name("nonprod")
+    template.has_resource_properties("AWS::IAM::Role", {"RoleName": role_name})
+    role = find_deploy_role(template, role_name)
+    statement = get_assume_role_statement(role)
+    assert (
+        statement["Condition"]["StringEquals"][
+            "token.actions.githubusercontent.com:sub"
+        ]
+        == "repo:infiquetra/campps-e2e-canary:environment:nonprod"
+    )
+
+
+def test_e2e_canary_role_absent_from_staging_and_production() -> None:
+    # KTD2 env-gating: even when the whole registry is synthesized for the higher
+    # environments, the nonprod-only canary must mint no staging/production role.
+    canary = next(
+        service
+        for service in CANONICAL_SERVICE_REPOSITORIES
+        if service.name == "e2e-canary"
+    )
+    higher_envs: tuple[DeployEnvironment, ...] = ("staging", "production")
+    for environment in higher_envs:
+        template = synth_template_for_repositories(
+            *CANONICAL_SERVICE_REPOSITORIES, target_environment=environment
+        )
+        role_names = {
+            role.get("Properties", {}).get("RoleName")
+            for role in template.find_resources("AWS::IAM::Role").values()
+        }
+        assert canary.role_name(environment) not in role_names, (
+            environment,
+            sorted(name for name in role_names if name),
+        )
 
 
 # --- U2: web-app gets a least-privilege static-site profile --------------------
