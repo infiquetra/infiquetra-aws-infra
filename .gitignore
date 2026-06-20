@@ -41,6 +41,7 @@ cdk.context.json
 # Claude session state
 .remember/
 .claude/worktrees/
+.claude/saga/
 .superpowers/
 
 # Antigravity session state
