@@ -28,6 +28,44 @@
 
 ---
 
+## 2026-06-20
+
+### Registry-driven OIDC role minting is purely additive; provisioned-with-trust ≠ assume-proven
+
+**Context.** C0.3 registered 6 new CAMPPS backend services + `campps-web-app` in
+`CAMPPS_SERVICE_REPOSITORIES`, letting the registry-driven `CamppsDeployRolesStack` auto-mint a
+per-service, per-env OIDC deploy role + managed policies + permissions boundary for each. The roles were
+applied to nonprod (`477152411873`) via the privileged `app_campps_bootstrap.py` path.
+
+**Evidence.** PR [#137](https://github.com/infiquetra/infiquetra-aws-infra/pull/137) (`0a69c19`).
+`cdk deploy CamppsNonProdDeployRolesStack` → `UPDATE_COMPLETE` in 81.8s with a **40-resource additive
+diff (0 modify, 0 delete)**. R5 verified live via `aws iam get-role` — all 7 new roles
+(`campps-{coppa-consent,registration,payments,health-forms,activities-achievements,staff-management,web-app}-nonprod-gha-deploy-role`)
+exist with trust subject `repo:infiquetra/campps-<svc>:environment:nonprod`, aud `sts.amazonaws.com`. A
+5-lens adversarial code review (0 P0/P1/P2) empirically confirmed the web-app least-privilege scope (S3
+`campps-web-app-nonprod-*` + CloudFront only, zero backend grants) and that the unknown-profile
+`ValueError` fires at synth time.
+
+**Mechanism.** Each registry entry maps to a fresh, independently-named IAM construct set; expanding the
+registry only *creates* resources for the new entries and never re-shapes the existing ones, so a
+registry-expansion CloudFormation diff is bounded to creation. That makes the blast radius of adding a
+service near-zero for already-deployed services — the failure mode of an additive deploy is "new role
+missing/mis-trusted", never "existing role mutated".
+
+**What surprised.** Closing #134/#135 felt like end-to-end completion, but it is **not**: a deploy role
+existing with the correct env-scoped trust policy proves *provisioning*, not that a live GitHub Actions
+job can actually assume it. The 6 new repos are bare scaffolds with no deploy workflow to mint an OIDC
+token, so the live-assume leg is unproven until each service's first real deploy (the C0.3-S5 E2E).
+
+**Generalizable rule.** Treat OIDC deploy-role delivery as two distinct gates: (1) *provisioned +
+trust-correct* — verifiable now from `iam get-role`; (2) *assume-proven* — only verifiable when a real
+workflow in the trusted repo/environment exchanges a token. Never report (1) as if it were (2). And prefer
+registry-driven minting for fan-out role provisioning precisely because its diffs stay additive — the
+review burden is "are the new entries scoped right", not "did this perturb the 4 live roles".
+
+**Refs.** DECISIONS 2026-06-20 (C0.3); recurrence of LEARNINGS 2026-06-17 (workload deploy-role stack is
+outside CD — see QUEUED "Wire the CAMPPS bootstrap app into a guarded CD path").
+
 ## 2026-06-17
 
 ### CAMPPS service role policy fixes require the workload deploy-role stack
