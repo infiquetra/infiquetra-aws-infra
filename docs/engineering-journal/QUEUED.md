@@ -25,6 +25,15 @@
 
 ## P2
 
+### Wire the CAMPPS bootstrap app into a guarded CD path (or a drift-check)
+
+**Status:** not-started
+**Why:** The `app_campps_bootstrap.py` stacks (`CamppsNonProdDeployRolesStack` et al.) are **not** deployed by any workflow — `deploy-infrastructure.yml` only deploys the management `app.py` (org/SSO). So a registry/role change merges green to `main` and silently does **nothing** in the workload accounts until a human remembers to run a separate privileged `cdk deploy`. This gap has now bitten **two** threads: C0.1 (2026-06-17, role policy fix) and C0.3 (2026-06-20, 7 new roles). Each time, "merged + CI green" read as done while the roles were absent from AWS. A guarded CD path (or at minimum a CI drift-check that flags undeployed bootstrap-app changes) would close the recurring "merge ≠ deployed" trap.
+**Effort:** M (design the OIDC/identity for a privileged-but-scoped bootstrap deploy — the stack mints the very OIDC roles it would need, so it can't self-bootstrap; likely a dedicated approval-gated workflow assuming an AdministratorAccess-class role per workload account, or a lighter drift-only check first).
+**Worth it when:** The next time a CAMPPS workload-role change is expected (e.g. staging/production role rollout, or the next service registration) — or sooner if the manual step is forgotten and causes a silent no-op deploy.
+**Related items:** `app_campps_bootstrap.py`, `infiquetra_aws_infra/campps_deploy_roles_stack.py`, `.github/workflows/deploy-infrastructure.yml`. LEARNINGS 2026-06-17 + 2026-06-20 (the recurrence); DECISIONS 2026-06-20 (C0.3, KTD6 chicken-and-egg).
+**Notes:** Start with the cheaper drift-check (flag when `cdk diff` on the bootstrap app is non-empty against deployed state) before building full auto-deploy — auto-deploying privileged role stacks on every merge has its own blast-radius risk, so a flag-not-apply signal may be the right first increment.
+
 ### Bootstrap CAMPPS workload deploy roles before first service repo release
 
 **Status:** in-progress (nonprod deployed; production pending)

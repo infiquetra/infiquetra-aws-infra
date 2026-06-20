@@ -27,7 +27,7 @@
 
 ## 2026-06-20
 
-### C0.3 — register all CAMPPS services + add a `web-app` deploy profile (planned)
+### C0.3 — register all CAMPPS services + add a `web-app` deploy profile
 
 **Decision.** Register the 6 missing CAMPPS backend services in `CAMPPS_SERVICE_REPOSITORIES`
 (`coppa-consent`, `registration`, `payments`, `health-forms`, `activities-achievements`,
@@ -54,7 +54,11 @@ only; staging/production deferred to a reviewer-gated `/deploy`.
 the `web-app` profile's least-privilege scope (the profile is shipped **provisional** because the web-app
 is an empty scaffold today with no settled deploy target).
 
-**Commit.** PR pending (infiquetra-aws-infra#134 + #135; parent campps-platform#10).
+**Commit.** PR [#137](https://github.com/infiquetra/infiquetra-aws-infra/pull/137) squash-merged as
+`0a69c19` (2026-06-20). Deployed to nonprod `477152411873` via `app_campps_bootstrap.py`
+(`CamppsNonProdDeployRolesStack`, additive-only: 40 adds / 0 modify-delete); R5 verified live — all 7 new
+roles exist with env-scoped trust `repo:infiquetra/campps-<svc>:environment:nonprod`.
+infiquetra-aws-infra#134 + #135 (both CLOSED 2026-06-20); parent campps-platform#10.
 
 ## 2026-05-16
 
