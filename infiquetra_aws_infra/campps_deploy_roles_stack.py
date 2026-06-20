@@ -252,15 +252,27 @@ class CamppsDeployRolesStack(Stack):
 
         ``serverless-api`` and ``platform-foundation`` each return a split set
         of managed policies to stay under the IAM managed-policy size limit.
-        The ``codeartifact-publish`` profile returns a single managed policy.
+        The ``codeartifact-publish`` and ``web-app`` profiles each return a
+        single managed policy.
+
+        Every recognized profile is matched explicitly; an unknown profile
+        raises rather than falling back to ``serverless-api``, so a typo can
+        never silently mint an over-privileged serverless-api role.
         """
-        if service_repository.deploy_profile == "platform-foundation":
+        profile = service_repository.deploy_profile
+        if profile == "serverless-api":
+            return self._create_serverless_api_deploy_policies(
+                service_repository=service_repository,
+                target_environment=target_environment,
+                permissions_boundary=permissions_boundary,
+            )
+        if profile == "platform-foundation":
             return self._create_platform_foundation_deploy_policies(
                 service_repository=service_repository,
                 target_environment=target_environment,
                 permissions_boundary=permissions_boundary,
             )
-        if service_repository.deploy_profile == "codeartifact-publish":
+        if profile == "codeartifact-publish":
             return (
                 self._create_codeartifact_publish_deploy_policy(
                     service_repository=service_repository,
@@ -268,11 +280,15 @@ class CamppsDeployRolesStack(Stack):
                     permissions_boundary=permissions_boundary,
                 ),
             )
-        return self._create_serverless_api_deploy_policies(
-            service_repository=service_repository,
-            target_environment=target_environment,
-            permissions_boundary=permissions_boundary,
-        )
+        if profile == "web-app":
+            return (
+                self._create_web_app_deploy_policy(
+                    service_repository=service_repository,
+                    target_environment=target_environment,
+                    permissions_boundary=permissions_boundary,
+                ),
+            )
+        raise ValueError(f"unknown deploy_profile: {profile!r}")
 
     def _codeartifact_domain_arn(self) -> str:
         return str(
@@ -485,6 +501,96 @@ class CamppsDeployRolesStack(Stack):
                         self._codeartifact_repository_arn(),
                         self._codeartifact_package_arn(),
                     ],
+                ),
+            ],
+        )
+
+    def _create_web_app_deploy_policy(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+        permissions_boundary: iam.ManagedPolicy,
+    ) -> iam.ManagedPolicy:
+        """Least-privilege static-site (S3 + CloudFront) deploy policy.
+
+        PROVISIONAL (KTD3): ``campps-web-app`` is an empty scaffold today with
+        no settled deploy target, so this profile is scoped to the standard
+        static-site pattern — the shared CloudFormation + CDK-bootstrap
+        baseline, S3 object/bucket ops on the service's own
+        ``campps-web-app-<env>-*`` buckets, and CloudFront distribution +
+        invalidation + origin-access-control management. It deliberately grants
+        **no** Lambda / DynamoDB / API Gateway / EventBridge / SQS / Secrets
+        Manager actions. Revisit and tighten when the real web-app CDK stack
+        lands (it may be Amplify or differ). See
+        docs/plans/2026-06-20-c0-3-aws-infra-service-registry-oidc-plan.md.
+
+        CloudFront create-class actions
+        (``CreateDistribution``/``CreateOriginAccessControl``) do not support
+        resource-level IAM scoping, so they are granted on ``*``; everything
+        that can be scoped is pinned to this account's distributions.
+        """
+        prefix = f"campps-{service_repository.name}-{target_environment}"
+        site_bucket_arn = f"arn:aws:s3:::{prefix}-*"
+        distribution_arn = self.format_arn(
+            service="cloudfront",
+            region="",
+            resource="distribution",
+            resource_name="*",
+            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+        )
+        return iam.ManagedPolicy(
+            self,
+            f"{self._logical_id_prefix(service_repository.name)}DeployPolicy",
+            managed_policy_name=service_repository.policy_name(target_environment),
+            description=(
+                f"Static-site (S3 + CloudFront) deployment permissions for "
+                f"{service_repository.repository} {target_environment} "
+                f"(provisional)"
+            ),
+            statements=[
+                *self._cloudformation_baseline_statements(prefix=prefix),
+                iam.PolicyStatement(
+                    sid="StaticSiteBucket",
+                    actions=[
+                        "s3:CreateBucket",
+                        "s3:DeleteObject",
+                        "s3:GetBucketLocation",
+                        "s3:GetBucketPolicy",
+                        "s3:GetBucketWebsite",
+                        "s3:GetEncryptionConfiguration",
+                        "s3:GetObject",
+                        "s3:ListBucket",
+                        "s3:PutBucketPolicy",
+                        "s3:PutBucketWebsite",
+                        "s3:PutEncryptionConfiguration",
+                        "s3:PutObject",
+                    ],
+                    resources=[site_bucket_arn, f"{site_bucket_arn}/*"],
+                ),
+                iam.PolicyStatement(
+                    sid="CloudFrontDistributionManagement",
+                    actions=[
+                        "cloudfront:CreateInvalidation",
+                        "cloudfront:GetDistribution",
+                        "cloudfront:GetDistributionConfig",
+                        "cloudfront:TagResource",
+                        "cloudfront:UntagResource",
+                        "cloudfront:UpdateDistribution",
+                    ],
+                    resources=[distribution_arn],
+                ),
+                iam.PolicyStatement(
+                    sid="CloudFrontCreateAndOriginAccessControl",
+                    actions=[
+                        "cloudfront:CreateDistribution",
+                        "cloudfront:CreateDistributionWithTags",
+                        "cloudfront:CreateOriginAccessControl",
+                        "cloudfront:GetOriginAccessControl",
+                    ],
+                    # CloudFront create-class actions have no resource-level
+                    # IAM support; "*" is the AWS-documented requirement here.
+                    resources=["*"],
                 ),
             ],
         )

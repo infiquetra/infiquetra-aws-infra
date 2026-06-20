@@ -4,6 +4,7 @@ import json
 from collections.abc import Iterable
 from typing import Any
 
+import pytest
 from aws_cdk import App, Environment
 from aws_cdk.assertions import Template
 
@@ -138,27 +139,108 @@ def managed_policy_document_sizes(template: Template) -> dict[str, int]:
     }
 
 
-def test_default_registry_includes_current_service_repositories() -> None:
-    assert (
-        ServiceRepository(
-            name="platform",
-            repository="infiquetra/campps-platform",
-            deploy_profile="platform-foundation",
-        ),
-        ServiceRepository(
-            name="contracts",
-            repository="infiquetra/campps-contracts",
-            deploy_profile="codeartifact-publish",
-        ),
-        ServiceRepository(
-            name="identity-access",
-            repository="infiquetra/campps-identity-access",
-        ),
-        ServiceRepository(
-            name="tenant-setup",
-            repository="infiquetra/campps-tenant-setup",
-        ),
-    ) == CAMPPS_SERVICE_REPOSITORIES
+# The canonical CAMPPS deployable set, grounded in campps-context-library
+# phase-1a-build-program.md (KTD1): 10 serverless-api backends + the web-app
+# frontend. Membership equality is asserted exactly so adding/removing a
+# service is a deliberate, reviewed change.
+CANONICAL_SERVICE_REPOSITORIES: tuple[ServiceRepository, ...] = (
+    ServiceRepository(
+        name="platform",
+        repository="infiquetra/campps-platform",
+        deploy_profile="platform-foundation",
+    ),
+    ServiceRepository(
+        name="contracts",
+        repository="infiquetra/campps-contracts",
+        deploy_profile="codeartifact-publish",
+    ),
+    ServiceRepository(
+        name="identity-access",
+        repository="infiquetra/campps-identity-access",
+    ),
+    ServiceRepository(
+        name="tenant-setup",
+        repository="infiquetra/campps-tenant-setup",
+    ),
+    ServiceRepository(
+        name="coppa-consent",
+        repository="infiquetra/campps-coppa-consent",
+    ),
+    ServiceRepository(
+        name="registration",
+        repository="infiquetra/campps-registration",
+    ),
+    ServiceRepository(
+        name="payments",
+        repository="infiquetra/campps-payments",
+    ),
+    ServiceRepository(
+        name="health-forms",
+        repository="infiquetra/campps-health-forms",
+    ),
+    ServiceRepository(
+        name="activities-achievements",
+        repository="infiquetra/campps-activities-achievements",
+    ),
+    ServiceRepository(
+        name="staff-management",
+        repository="infiquetra/campps-staff-management",
+    ),
+    ServiceRepository(
+        name="web-app",
+        repository="infiquetra/campps-web-app",
+        deploy_profile="web-app",
+    ),
+)
+
+# The 10 deployable backends are all serverless-api except the two
+# special-profile services (platform, contracts).
+EXPECTED_SERVERLESS_API_BACKENDS = frozenset(
+    {
+        "identity-access",
+        "tenant-setup",
+        "coppa-consent",
+        "registration",
+        "payments",
+        "health-forms",
+        "activities-achievements",
+        "staff-management",
+    }
+)
+
+
+def test_registry_membership_equals_canonical_set() -> None:
+    assert CAMPPS_SERVICE_REPOSITORIES == CANONICAL_SERVICE_REPOSITORIES
+
+
+def test_registry_has_ten_backends_plus_web_app() -> None:
+    backends = [
+        service
+        for service in CAMPPS_SERVICE_REPOSITORIES
+        if service.deploy_profile != "web-app"
+    ]
+    web_apps = [
+        service
+        for service in CAMPPS_SERVICE_REPOSITORIES
+        if service.deploy_profile == "web-app"
+    ]
+
+    assert len(backends) == 10, [service.name for service in backends]
+    assert [service.name for service in web_apps] == ["web-app"]
+
+
+def test_every_service_repository_targets_all_three_environments() -> None:
+    for service in CAMPPS_SERVICE_REPOSITORIES:
+        assert service.environments == ("nonprod", "staging", "production"), service
+
+
+def test_serverless_api_backends_use_default_profile() -> None:
+    serverless_backends = {
+        service.name
+        for service in CAMPPS_SERVICE_REPOSITORIES
+        if service.deploy_profile == "serverless-api"
+    }
+    assert serverless_backends == EXPECTED_SERVERLESS_API_BACKENDS
 
 
 def test_deploy_role_uses_service_and_environment_name() -> None:
@@ -184,6 +266,11 @@ PROFILE_REPRESENTATIVE_REPOSITORIES: tuple[ServiceRepository, ...] = (
         name="contracts",
         repository="infiquetra/campps-contracts",
         deploy_profile="codeartifact-publish",
+    ),
+    ServiceRepository(
+        name="web-app",
+        repository="infiquetra/campps-web-app",
+        deploy_profile="web-app",
     ),
 )
 
@@ -949,3 +1036,219 @@ def test_codeartifact_publish_role_can_publish_package_versions() -> None:
     actions = {action.lower() for action in collect_actions(template)}
     assert "sts:getservicebearertoken" in actions
     assert "codeartifact:getauthorizationtoken" in actions
+
+
+# --- U1: every registered service mints a scoped, env-bound deploy role -------
+
+NEW_BACKEND_SERVICES: tuple[ServiceRepository, ...] = tuple(
+    service
+    for service in CANONICAL_SERVICE_REPOSITORIES
+    if service.name in EXPECTED_SERVERLESS_API_BACKENDS
+)
+
+
+def find_managed_policy(template: Template, policy_name: str) -> dict[str, Any]:
+    policies = template.find_resources("AWS::IAM::ManagedPolicy")
+    matching = [
+        policy
+        for policy in policies.values()
+        if policy.get("Properties", {}).get("ManagedPolicyName") == policy_name
+    ]
+    assert len(matching) == 1, (policy_name, list(policies))
+    return dict(matching[0])
+
+
+def test_every_serverless_backend_mints_role_and_boundary_per_environment() -> None:
+    for service in NEW_BACKEND_SERVICES:
+        for environment in DEPLOY_ENVIRONMENTS:
+            template = synth_template_for_repositories(
+                service, target_environment=environment
+            )
+
+            template.has_resource_properties(
+                "AWS::IAM::Role",
+                {"RoleName": service.role_name(environment)},
+            )
+            template.has_resource_properties(
+                "AWS::IAM::ManagedPolicy",
+                {"ManagedPolicyName": service.permissions_boundary_name(environment)},
+            )
+            # Trust is pinned to the exact repo + environment OIDC subject.
+            role = find_deploy_role(template, service.role_name(environment))
+            statement = get_assume_role_statement(role)
+            assert statement["Condition"]["StringEquals"][
+                "token.actions.githubusercontent.com:sub"
+            ] == (f"repo:{service.repository}:environment:{environment}"), (
+                service.name,
+                environment,
+            )
+
+
+def test_full_registry_synthesizes_a_role_for_each_in_scope_service() -> None:
+    for environment in DEPLOY_ENVIRONMENTS:
+        template = synth_template_for_repositories(
+            *CANONICAL_SERVICE_REPOSITORIES, target_environment=environment
+        )
+        for service in CANONICAL_SERVICE_REPOSITORIES:
+            if environment not in service.environments:
+                continue
+            template.has_resource_properties(
+                "AWS::IAM::Role",
+                {"RoleName": service.role_name(environment)},
+            )
+
+
+# --- U2: web-app gets a least-privilege static-site profile --------------------
+
+WEB_APP_SERVICE = ServiceRepository(
+    name="web-app",
+    repository="infiquetra/campps-web-app",
+    deploy_profile="web-app",
+)
+
+WEB_APP_FORBIDDEN_BACKEND_SERVICES = (
+    "lambda",
+    "dynamodb",
+    "apigateway",
+    "events",
+    "sqs",
+    "secretsmanager",
+)
+
+
+def web_app_deploy_policy_document(template: Template) -> dict[str, Any]:
+    policy = find_managed_policy(template, WEB_APP_SERVICE.policy_name("nonprod"))
+    return dict(policy["Properties"]["PolicyDocument"])
+
+
+def test_web_app_role_exists_with_env_scoped_trust() -> None:
+    for environment in DEPLOY_ENVIRONMENTS:
+        template = synth_template_for_repositories(
+            WEB_APP_SERVICE, target_environment=environment
+        )
+
+        role_name = f"campps-web-app-{environment}-gha-deploy-role"
+        template.has_resource_properties("AWS::IAM::Role", {"RoleName": role_name})
+        role = find_deploy_role(template, role_name)
+        statement = get_assume_role_statement(role)
+        assert statement["Condition"]["StringEquals"][
+            "token.actions.githubusercontent.com:sub"
+        ] == (f"repo:infiquetra/campps-web-app:environment:{environment}"), environment
+
+
+def test_web_app_policy_grants_pinned_static_site_actions() -> None:
+    template = synth_template_for_repositories(WEB_APP_SERVICE)
+    document = web_app_deploy_policy_document(template)
+
+    actions = {
+        action.lower()
+        for statement in document["Statement"]
+        for action in normalize_actions(statement.get("Action", []))
+    }
+    # The static-site write paths the plan pins.
+    assert "s3:putobject" in actions
+    assert "s3:createbucket" in actions
+    assert "s3:putbucketwebsite" in actions
+    assert "cloudfront:createinvalidation" in actions
+    assert "cloudfront:createdistribution" in actions
+    assert "cloudfront:createoriginaccesscontrol" in actions
+
+
+def test_web_app_s3_actions_are_scoped_to_service_buckets() -> None:
+    template = synth_template_for_repositories(WEB_APP_SERVICE)
+    document = web_app_deploy_policy_document(template)
+
+    s3_statements = [
+        statement
+        for statement in document["Statement"]
+        if any(
+            action.lower().startswith("s3:")
+            for action in normalize_actions(statement.get("Action", []))
+        )
+        # Skip the shared CDK-assets baseline statement (cdk-hnb659fds bucket).
+        and statement.get("Sid") == "StaticSiteBucket"
+    ]
+    assert s3_statements
+    for statement in s3_statements:
+        resources = tuple(normalize_resources(statement.get("Resource", [])))
+        assert resources, statement
+        for resource in resources:
+            assert resource.startswith("arn:aws:s3:::campps-web-app-nonprod-*"), (
+                resource
+            )
+            assert resource != "*"
+
+
+def test_web_app_policy_grants_no_backend_service_actions() -> None:
+    template = synth_template_for_repositories(WEB_APP_SERVICE)
+    document = web_app_deploy_policy_document(template)
+
+    granted_services = {
+        action.split(":", maxsplit=1)[0].lower()
+        for statement in document["Statement"]
+        for action in normalize_actions(statement.get("Action", []))
+    }
+    for forbidden in WEB_APP_FORBIDDEN_BACKEND_SERVICES:
+        assert forbidden not in granted_services, (forbidden, sorted(granted_services))
+
+
+def test_web_app_policy_fits_iam_size_limit() -> None:
+    for environment in DEPLOY_ENVIRONMENTS:
+        template = synth_template_for_repositories(
+            WEB_APP_SERVICE, target_environment=environment
+        )
+        sizes = managed_policy_document_sizes(template)
+        deploy_policy_sizes = {
+            name: size
+            for name, size in sizes.items()
+            if name.startswith("campps-web-app-") and "permissions-boundary" not in name
+        }
+        assert deploy_policy_sizes
+        for name, size in deploy_policy_sizes.items():
+            assert size < IAM_MANAGED_POLICY_SIZE_LIMIT, (name, size, environment)
+
+
+# --- U3: an unrecognized deploy profile is a hard error, not a silent default --
+
+
+def test_unknown_deploy_profile_raises() -> None:
+    with pytest.raises(ValueError, match="unknown deploy_profile"):
+        synth_template_for_repositories(
+            ServiceRepository(
+                name="bogus",
+                repository="infiquetra/campps-bogus",
+                deploy_profile="not-a-real-profile",
+            )
+        )
+
+
+def test_known_deploy_profiles_do_not_raise() -> None:
+    for service in (
+        ServiceRepository(name="a", repository="infiquetra/campps-a"),
+        ServiceRepository(
+            name="b",
+            repository="infiquetra/campps-b",
+            deploy_profile="platform-foundation",
+        ),
+        ServiceRepository(
+            name="c",
+            repository="infiquetra/campps-c",
+            deploy_profile="codeartifact-publish",
+        ),
+        ServiceRepository(
+            name="d",
+            repository="infiquetra/campps-d",
+            deploy_profile="web-app",
+        ),
+    ):
+        # Each known profile must synthesize *and* actually mint a deploy role
+        # plus its managed deploy policy — not merely fail to raise.
+        template = synth_template_for_repositories(service)
+        template.has_resource_properties(
+            "AWS::IAM::Role",
+            {"RoleName": service.role_name("nonprod")},
+        )
+        template.has_resource_properties(
+            "AWS::IAM::ManagedPolicy",
+            {"ManagedPolicyName": service.policy_name("nonprod")},
+        )

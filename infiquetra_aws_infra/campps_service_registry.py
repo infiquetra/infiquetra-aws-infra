@@ -51,4 +51,38 @@ CAMPPS_SERVICE_REPOSITORIES: tuple[ServiceRepository, ...] = (
         name="tenant-setup",
         repository="infiquetra/campps-tenant-setup",
     ),
+    ServiceRepository(
+        name="coppa-consent",
+        repository="infiquetra/campps-coppa-consent",
+    ),
+    ServiceRepository(
+        name="registration",
+        repository="infiquetra/campps-registration",
+    ),
+    ServiceRepository(
+        name="payments",
+        repository="infiquetra/campps-payments",
+    ),
+    ServiceRepository(
+        name="health-forms",
+        repository="infiquetra/campps-health-forms",
+    ),
+    ServiceRepository(
+        name="activities-achievements",
+        repository="infiquetra/campps-activities-achievements",
+    ),
+    ServiceRepository(
+        name="staff-management",
+        repository="infiquetra/campps-staff-management",
+    ),
+    # Provisional: campps-web-app is an empty scaffold today with no settled
+    # deploy target. The web-app profile is scoped to the standard static-site
+    # pattern (S3 + CloudFront) and MUST be revisited when the real web-app CDK
+    # stack lands (it may be Amplify or differ). See KTD3 in
+    # docs/plans/2026-06-20-c0-3-aws-infra-service-registry-oidc-plan.md.
+    ServiceRepository(
+        name="web-app",
+        repository="infiquetra/campps-web-app",
+        deploy_profile="web-app",
+    ),
 )

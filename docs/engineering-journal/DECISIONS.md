@@ -25,6 +25,37 @@
 
 ---
 
+## 2026-06-20
+
+### C0.3 — register all CAMPPS services + add a `web-app` deploy profile (planned)
+
+**Decision.** Register the 6 missing CAMPPS backend services in `CAMPPS_SERVICE_REPOSITORIES`
+(`coppa-consent`, `registration`, `payments`, `health-forms`, `activities-achievements`,
+`staff-management` — all `serverless-api`, all 3 envs) so the registry-driven deploy-roles stack
+auto-mints their per-service OIDC roles (S4 rides on S3 — no new role code for backends). Add a new,
+dedicated `web-app` deploy profile (static-site: S3 + CloudFront + invalidation + CDK-bootstrap baseline)
+for `campps-web-app` instead of the default serverless-api, and make `_create_deploy_policies()` raise on
+any unrecognized profile. Canonical service set sourced from `campps-context-library`
+phase-1a-build-program.md, not the conflicting "7 vs 10" card text. Deploy to nonprod (`477152411873`)
+only; staging/production deferred to a reviewer-gated `/deploy`.
+
+**Rejected alternatives.**
+- Register `campps-web-app` as `serverless-api` — gives a Flutter Web static client Lambda/DynamoDB/API-GW
+  grants it never uses (overprivileged). Rejected.
+- Fully defer `campps-web-app` — cleaner, but operator chose to include it provisionally now.
+- Keep the silent serverless-api fallback for unknown profiles — a latent footgun; replaced with a guard.
+- Trust the cards' literal "7 service repos" — contradicted by the build program (10 backends + web-app).
+
+**Implementation.** Plan: `docs/plans/2026-06-20-c0-3-aws-infra-service-registry-oidc-plan.md`. Touches
+`infiquetra_aws_infra/campps_service_registry.py`, `infiquetra_aws_infra/campps_deploy_roles_stack.py`,
+`tests/unit/test_campps_deploy_roles_stack.py`.
+
+**Revisit when.** `campps-web-app`'s real CDK stack lands — confirm S3+CloudFront vs Amplify and tighten
+the `web-app` profile's least-privilege scope (the profile is shipped **provisional** because the web-app
+is an empty scaffold today with no settled deploy target).
+
+**Commit.** PR pending (infiquetra-aws-infra#134 + #135; parent campps-platform#10).
+
 ## 2026-05-16
 
 ### Rename the CAMPPS nonprod account nickname from `campps-dev` to `campps-nonprod`
