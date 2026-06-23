@@ -25,6 +25,25 @@
 
 ---
 
+## 2026-06-23
+
+### Cross-service deploy-role grant for the scope-origination seam proof (tenant-setup nonprod only)
+
+**Decision.** Add a single narrowly-scoped managed policy (`campps-tenant-setup-nonprod-gha-seam-proof-policy`) to the tenant-setup nonprod deploy role, granting `events:PutEvents` on the shared platform bus (`campps-platform-nonprod`) and `dynamodb:GetItem` on identity-access's table (`campps-identity-access-nonprod`). This unblocks the deploy-gated integration test `tests/integration/test_scope_origination_seam_deployed.py` (campps-tenant-setup PR #67), which proves the producer → bus → consumer seam end-to-end against real deployed infrastructure. The grant is implemented as a standalone method `_create_scope_seam_proof_policy` that returns `None` for every service/environment combination except `tenant-setup` + `nonprod`, so the guard is co-located with the grant and easy to audit.
+
+**Rejected alternatives.**
+- Dedicated seam-proof IAM role: adds OIDC trust configuration, a second role ARN to thread through CI, and operational complexity — disproportionate for a two-action grant that runs in a single lane.
+- Broadening the permissions boundary: the boundary governs app-role creation, not the deploy role itself; touching it for a deploy-time test concern mixes two distinct scopes.
+- Granting staging/production as well: the proof only runs in the nonprod lane; granting production/staging deploy roles read into identity-access's table would be speculative privilege with no corresponding test gate.
+
+**Implementation.** `infiquetra_aws_infra/campps_deploy_roles_stack.py` — method `_create_scope_seam_proof_policy`; `tests/unit/test_campps_deploy_roles_stack.py` — one positive test + three negative tests.
+
+**Revisit when.** The seam proof is extended to staging or production lanes (at that point, extend the guard condition and add corresponding tests); or the proof is retired (remove the method and its call site).
+
+**Commit.** PR feat/l1-a-seam-proof-deploy-grant / campps-tenant-setup PR #67.
+
+---
+
 ## 2026-06-20
 
 ### C0.3 — register all CAMPPS services + add a `web-app` deploy profile
