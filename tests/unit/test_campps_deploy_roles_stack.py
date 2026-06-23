@@ -1330,3 +1330,98 @@ def test_known_deploy_profiles_do_not_raise() -> None:
             "AWS::IAM::ManagedPolicy",
             {"ManagedPolicyName": service.policy_name("nonprod")},
         )
+
+
+# --- campps-tenant-setup PR #67: scope-origination seam proof grant --------
+#
+# The nonprod deploy role for tenant-setup needs two cross-service permissions
+# to run tests/integration/test_scope_origination_seam_deployed.py:
+#   - events:PutEvents on the shared platform bus (campps-platform-nonprod)
+#   - dynamodb:GetItem on identity-access's table (campps-identity-access-nonprod)
+#
+# The grant is scoped to tenant-setup + nonprod only.
+
+TENANT_SETUP_REPO = ServiceRepository(
+    name="tenant-setup",
+    repository="infiquetra/campps-tenant-setup",
+)
+
+SEAM_PROOF_POLICY_NAME = "campps-tenant-setup-nonprod-gha-seam-proof-policy"
+
+
+def test_tenant_setup_nonprod_deploy_role_has_seam_proof_policy() -> None:
+    """Positive: tenant-setup nonprod role is attached to the seam proof policy
+    and that policy contains exactly the two scoped cross-service grants."""
+    template = synth_template_for_repositories(
+        TENANT_SETUP_REPO, target_environment="nonprod"
+    )
+
+    # The policy must exist with the expected name.
+    policy = find_managed_policy(template, SEAM_PROOF_POLICY_NAME)
+    document = policy["Properties"]["PolicyDocument"]
+
+    statements_by_sid = {
+        stmt["Sid"]: stmt for stmt in document["Statement"] if "Sid" in stmt
+    }
+
+    # ScopeSeamProducerEmit: events:PutEvents on the platform bus.
+    assert "ScopeSeamProducerEmit" in statements_by_sid, statements_by_sid.keys()
+    producer_stmt = statements_by_sid["ScopeSeamProducerEmit"]
+    assert set(normalize_actions(producer_stmt["Action"])) == {"events:PutEvents"}
+    producer_resources = str(producer_stmt["Resource"])
+    assert "event-bus/campps-platform-nonprod" in producer_resources, producer_resources
+
+    # ScopeSeamConsumerReadback: dynamodb:GetItem on identity-access's table.
+    assert "ScopeSeamConsumerReadback" in statements_by_sid, statements_by_sid.keys()
+    consumer_stmt = statements_by_sid["ScopeSeamConsumerReadback"]
+    assert set(normalize_actions(consumer_stmt["Action"])) == {"dynamodb:GetItem"}
+    consumer_resources = str(consumer_stmt["Resource"])
+    assert "table/campps-identity-access-nonprod" in consumer_resources, (
+        consumer_resources
+    )
+
+
+def test_tenant_setup_staging_has_no_seam_proof_policy() -> None:
+    """Negative: no seam-proof policy is synthesized for tenant-setup staging."""
+    template = synth_template_for_repositories(
+        TENANT_SETUP_REPO, target_environment="staging"
+    )
+    policy_names = {
+        policy.get("Properties", {}).get("ManagedPolicyName")
+        for policy in template.find_resources("AWS::IAM::ManagedPolicy").values()
+    }
+    assert not any(
+        name is not None and "gha-seam-proof-policy" in name for name in policy_names
+    ), f"Unexpected seam-proof policy in staging: {policy_names}"
+
+
+def test_tenant_setup_production_has_no_seam_proof_policy() -> None:
+    """Negative: no seam-proof policy is synthesized for tenant-setup production."""
+    template = synth_template_for_repositories(
+        TENANT_SETUP_REPO, target_environment="production"
+    )
+    policy_names = {
+        policy.get("Properties", {}).get("ManagedPolicyName")
+        for policy in template.find_resources("AWS::IAM::ManagedPolicy").values()
+    }
+    assert not any(
+        name is not None and "gha-seam-proof-policy" in name for name in policy_names
+    ), f"Unexpected seam-proof policy in production: {policy_names}"
+
+
+def test_identity_access_nonprod_has_no_seam_proof_policy() -> None:
+    """Negative: no seam-proof policy is synthesized for identity-access nonprod."""
+    template = synth_template_for_repositories(
+        ServiceRepository(
+            name="identity-access",
+            repository="infiquetra/campps-identity-access",
+        ),
+        target_environment="nonprod",
+    )
+    policy_names = {
+        policy.get("Properties", {}).get("ManagedPolicyName")
+        for policy in template.find_resources("AWS::IAM::ManagedPolicy").values()
+    }
+    assert not any(
+        name is not None and "gha-seam-proof-policy" in name for name in policy_names
+    ), f"Unexpected seam-proof policy for identity-access: {policy_names}"

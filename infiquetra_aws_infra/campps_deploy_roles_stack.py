@@ -67,6 +67,13 @@ class CamppsDeployRolesStack(Stack):
             for deploy_policy in deploy_policies:
                 deploy_role.add_managed_policy(deploy_policy)
 
+            seam_proof_policy = self._create_scope_seam_proof_policy(
+                service_repository=service_repository,
+                target_environment=target_environment,
+            )
+            if seam_proof_policy is not None:
+                deploy_role.add_managed_policy(seam_proof_policy)
+
             CfnOutput(
                 self,
                 f"{self._logical_id_prefix(service_repository.name)}DeployRoleArn",
@@ -1581,6 +1588,69 @@ class CamppsDeployRolesStack(Stack):
                     ),
                 ],
             ),
+        )
+
+    def _create_scope_seam_proof_policy(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+    ) -> iam.ManagedPolicy | None:
+        """Cross-service grant for the deploy-gated scope-origination seam proof.
+
+        campps-tenant-setup's nonprod deploy lane runs
+        ``tests/integration/test_scope_origination_seam_deployed.py`` (PR #67):
+        it emits a real ``CampDefinitionChanged`` to the shared platform bus and
+        reads back the ``ResourceScope`` row that identity-access projects,
+        proving the producer -> bus -> consumer seam end-to-end against deployed
+        infrastructure. The deploy role needs ``events:PutEvents`` on the platform
+        bus and ``dynamodb:GetItem`` on identity's table to run that proof.
+
+        Scoped to tenant-setup + nonprod only: the proof runs only in the nonprod
+        lane, and granting a staging/production deploy role read access into
+        identity's table would be speculative privilege. Extend per environment
+        only when those lanes also run the proof.
+        """
+        if service_repository.name != "tenant-setup" or target_environment != "nonprod":
+            return None
+        return iam.ManagedPolicy(
+            self,
+            f"{self._logical_id_prefix(service_repository.name)}ScopeSeamProofPolicy",
+            managed_policy_name=(
+                f"campps-{service_repository.name}-{target_environment}"
+                "-gha-seam-proof-policy"
+            ),
+            description=(
+                "Cross-service deploy-gated scope-origination seam proof grant "
+                f"for {service_repository.repository} {target_environment} "
+                "(campps-tenant-setup PR #67)"
+            ),
+            statements=[
+                iam.PolicyStatement(
+                    sid="ScopeSeamProducerEmit",
+                    actions=["events:PutEvents"],
+                    resources=[
+                        self.format_arn(
+                            service="events",
+                            resource="event-bus",
+                            resource_name=f"campps-platform-{target_environment}",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="ScopeSeamConsumerReadback",
+                    actions=["dynamodb:GetItem"],
+                    resources=[
+                        self.format_arn(
+                            service="dynamodb",
+                            resource="table",
+                            resource_name=f"campps-identity-access-{target_environment}",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+            ],
         )
 
     @staticmethod
