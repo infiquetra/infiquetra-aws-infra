@@ -343,8 +343,16 @@ class CamppsDeployRolesStack(Stack):
             ),
             iam.PolicyStatement(
                 sid="CodeArtifactConsumeRead",
-                actions=["codeartifact:ReadFromRepository"],
-                resources=[self._codeartifact_repository_arn()],
+                actions=[
+                    "codeartifact:DescribePackageVersion",
+                    "codeartifact:GetPackageVersionAsset",
+                    "codeartifact:ListPackageVersionAssets",
+                    "codeartifact:ReadFromRepository",
+                ],
+                resources=[
+                    self._codeartifact_repository_arn(),
+                    self._codeartifact_package_arn(),
+                ],
             ),
             iam.PolicyStatement(
                 sid="CodeArtifactBearerToken",
@@ -557,6 +565,7 @@ class CamppsDeployRolesStack(Stack):
             ),
             statements=[
                 *self._cloudformation_baseline_statements(prefix=prefix),
+                *self._codeartifact_consume_statements(),
                 iam.PolicyStatement(
                     sid="StaticSiteBucket",
                     actions=[

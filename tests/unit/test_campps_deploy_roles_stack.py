@@ -1070,6 +1070,30 @@ def test_codeartifact_publish_role_can_publish_package_versions() -> None:
     assert "codeartifact:getauthorizationtoken" in actions
 
 
+def test_web_app_role_can_fetch_pinned_contract_assets() -> None:
+    template = synth_template_for_repositories(
+        ServiceRepository(
+            name="web-app",
+            repository="infiquetra/campps-web-app",
+            deploy_profile="web-app",
+        )
+    )
+
+    asset_reads = statements_for_action(
+        template,
+        "codeartifact:getpackageversionasset",
+    )
+    assert asset_reads
+    assert any(
+        ":package/infiquetra/campps/*" in str(statement.get("Resource"))
+        for statement in asset_reads
+    )
+
+    actions = {action.lower() for action in collect_actions(template)}
+    assert "sts:getservicebearertoken" in actions
+    assert "codeartifact:getauthorizationtoken" in actions
+
+
 # --- U1: every registered service mints a scoped, env-bound deploy role -------
 
 NEW_BACKEND_SERVICES: tuple[ServiceRepository, ...] = tuple(
