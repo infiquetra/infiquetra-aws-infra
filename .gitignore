@@ -47,3 +47,6 @@ cdk.context.json
 # Antigravity session state
 .antigravitycli/
 
+.serena
+.neuralmind
+graphify-out
