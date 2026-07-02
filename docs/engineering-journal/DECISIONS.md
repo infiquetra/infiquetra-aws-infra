@@ -40,7 +40,7 @@
 
 **Revisit when.** The e2e canary proof runs in staging/production, the readback shape needs a different DynamoDB operation, or a second fixture needs a similar grant and the helper pattern should become a small reusable optional-policy registry.
 
-**Commit.** Branch `fix/e2e-canary-identity-scope-readback`, implementation commit `ac0b543`.
+**Commit.** PR #142, branch `fix/e2e-canary-identity-scope-readback`, implementation commit `ac0b543`; nonprod deploy completed for `CamppsNonProdDeployRolesStack` and IAM simulation returned `allowed`.
 
 ---
 
