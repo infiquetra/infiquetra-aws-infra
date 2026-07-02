@@ -74,6 +74,15 @@ class CamppsDeployRolesStack(Stack):
             if seam_proof_policy is not None:
                 deploy_role.add_managed_policy(seam_proof_policy)
 
+            identity_scope_readback_policy = (
+                self._create_e2e_canary_identity_scope_readback_policy(
+                    service_repository=service_repository,
+                    target_environment=target_environment,
+                )
+            )
+            if identity_scope_readback_policy is not None:
+                deploy_role.add_managed_policy(identity_scope_readback_policy)
+
             CfnOutput(
                 self,
                 f"{self._logical_id_prefix(service_repository.name)}DeployRoleArn",
@@ -1649,6 +1658,45 @@ class CamppsDeployRolesStack(Stack):
                 ),
                 iam.PolicyStatement(
                     sid="ScopeSeamConsumerReadback",
+                    actions=["dynamodb:GetItem"],
+                    resources=[
+                        self.format_arn(
+                            service="dynamodb",
+                            resource="table",
+                            resource_name=f"campps-identity-access-{target_environment}",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+            ],
+        )
+
+    def _create_e2e_canary_identity_scope_readback_policy(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+    ) -> iam.ManagedPolicy | None:
+        """Nonprod-only readback grant for the e2e canary identity-scope proof."""
+        if service_repository.name != "e2e-canary" or target_environment != "nonprod":
+            return None
+        return iam.ManagedPolicy(
+            self,
+            (
+                f"{self._logical_id_prefix(service_repository.name)}"
+                "IdentityScopeReadbackPolicy"
+            ),
+            managed_policy_name=(
+                f"campps-{service_repository.name}-{target_environment}"
+                "-gha-identity-scope-readback-policy"
+            ),
+            description=(
+                "Identity scope readback grant for "
+                f"{service_repository.repository} {target_environment}"
+            ),
+            statements=[
+                iam.PolicyStatement(
+                    sid="IdentityScopeReadback",
                     actions=["dynamodb:GetItem"],
                     resources=[
                         self.format_arn(

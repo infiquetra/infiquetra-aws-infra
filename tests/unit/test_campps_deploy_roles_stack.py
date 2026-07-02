@@ -1104,14 +1104,30 @@ NEW_BACKEND_SERVICES: tuple[ServiceRepository, ...] = tuple(
 
 
 def find_managed_policy(template: Template, policy_name: str) -> dict[str, Any]:
+    return find_managed_policy_with_logical_id(template, policy_name)[1]
+
+
+def find_managed_policy_with_logical_id(
+    template: Template, policy_name: str
+) -> tuple[str, dict[str, Any]]:
     policies = template.find_resources("AWS::IAM::ManagedPolicy")
     matching = [
-        policy
-        for policy in policies.values()
+        (logical_id, policy)
+        for logical_id, policy in policies.items()
         if policy.get("Properties", {}).get("ManagedPolicyName") == policy_name
     ]
     assert len(matching) == 1, (policy_name, list(policies))
-    return dict(matching[0])
+    logical_id, policy = matching[0]
+    return logical_id, dict(policy)
+
+
+def managed_policy_names(template: Template) -> set[str]:
+    names: set[str] = set()
+    for policy in template.find_resources("AWS::IAM::ManagedPolicy").values():
+        name = policy.get("Properties", {}).get("ManagedPolicyName")
+        if isinstance(name, str):
+            names.add(name)
+    return names
 
 
 def test_every_serverless_backend_mints_role_and_boundary_per_environment() -> None:
@@ -1370,7 +1386,29 @@ TENANT_SETUP_REPO = ServiceRepository(
     repository="infiquetra/campps-tenant-setup",
 )
 
+E2E_CANARY_REPO = ServiceRepository(
+    name="e2e-canary",
+    repository="infiquetra/campps-e2e-canary",
+    environments=("nonprod",),
+)
+
+E2E_CANARY_ALL_ENVIRONMENTS_REPO = ServiceRepository(
+    name="e2e-canary",
+    repository="infiquetra/campps-e2e-canary",
+)
+
 SEAM_PROOF_POLICY_NAME = "campps-tenant-setup-nonprod-gha-seam-proof-policy"
+IDENTITY_SCOPE_READBACK_POLICY_NAME = (
+    "campps-e2e-canary-nonprod-gha-identity-scope-readback-policy"
+)
+IDENTITY_SCOPE_READBACK_POLICY_SUFFIX = "-gha-identity-scope-readback-policy"
+
+
+def assert_no_identity_scope_readback_policy(template: Template) -> None:
+    policy_names = managed_policy_names(template)
+    assert not any(
+        name.endswith(IDENTITY_SCOPE_READBACK_POLICY_SUFFIX) for name in policy_names
+    ), f"Unexpected identity-scope readback policy: {policy_names}"
 
 
 def test_tenant_setup_nonprod_deploy_role_has_seam_proof_policy() -> None:
@@ -1386,6 +1424,10 @@ def test_tenant_setup_nonprod_deploy_role_has_seam_proof_policy() -> None:
 
     statements_by_sid = {
         stmt["Sid"]: stmt for stmt in document["Statement"] if "Sid" in stmt
+    }
+    assert set(statements_by_sid) == {
+        "ScopeSeamProducerEmit",
+        "ScopeSeamConsumerReadback",
     }
 
     # ScopeSeamProducerEmit: events:PutEvents on the platform bus.
@@ -1449,3 +1491,98 @@ def test_identity_access_nonprod_has_no_seam_proof_policy() -> None:
     assert not any(
         name is not None and "gha-seam-proof-policy" in name for name in policy_names
     ), f"Unexpected seam-proof policy for identity-access: {policy_names}"
+
+
+# --- e2e-canary identity-scope readback grant -------------------------------
+#
+# The nonprod deploy role for e2e-canary needs a single cross-service permission
+# to run tenant-config-publish-and-scope:
+#   - dynamodb:GetItem on identity-access's table (campps-identity-access-nonprod)
+#
+# The grant is scoped to e2e-canary + nonprod only.
+
+
+def test_e2e_canary_nonprod_deploy_role_has_identity_scope_readback_policy() -> None:
+    """Positive: e2e-canary nonprod role can read exactly one identity table."""
+    template = synth_template_for_repositories(
+        E2E_CANARY_REPO, target_environment="nonprod"
+    )
+
+    policy_logical_id, policy = find_managed_policy_with_logical_id(
+        template, IDENTITY_SCOPE_READBACK_POLICY_NAME
+    )
+    document = policy["Properties"]["PolicyDocument"]
+    statements = document["Statement"]
+
+    assert len(statements) == 1, statements
+    statement = statements[0]
+    assert statement["Sid"] == "IdentityScopeReadback"
+    assert set(normalize_actions(statement["Action"])) == {"dynamodb:GetItem"}
+
+    resources = str(statement["Resource"])
+    assert "table/campps-identity-access-nonprod" in resources, resources
+    assert "campps-identity-access-staging" not in resources
+    assert "campps-identity-access-production" not in resources
+    assert "*" not in resources
+
+    role = find_deploy_role(template, E2E_CANARY_REPO.role_name("nonprod"))
+    managed_policy_arns = role["Properties"]["ManagedPolicyArns"]
+    assert {"Ref": policy_logical_id} in managed_policy_arns
+
+
+def test_e2e_canary_real_registry_has_no_higher_environment_readback_policy() -> None:
+    """Negative: the real registry mints no e2e-canary higher-env role or policy."""
+    higher_envs: tuple[DeployEnvironment, ...] = ("staging", "production")
+    for environment in higher_envs:
+        template = synth_template_for_repositories(
+            *CANONICAL_SERVICE_REPOSITORIES,
+            target_environment=environment,
+        )
+        role_names = {
+            role.get("Properties", {}).get("RoleName")
+            for role in template.find_resources("AWS::IAM::Role").values()
+        }
+
+        assert E2E_CANARY_REPO.role_name(environment) not in role_names, (
+            environment,
+            sorted(name for name in role_names if name),
+        )
+        assert_no_identity_scope_readback_policy(template)
+
+
+def test_e2e_canary_higher_environment_helper_guard_returns_no_policy() -> None:
+    """Negative: even an all-env canary test fixture gets no higher-env policy."""
+    higher_envs: tuple[DeployEnvironment, ...] = ("staging", "production")
+    for environment in higher_envs:
+        template = synth_template_for_repositories(
+            E2E_CANARY_ALL_ENVIRONMENTS_REPO,
+            target_environment=environment,
+        )
+
+        template.has_resource_properties(
+            "AWS::IAM::Role",
+            {"RoleName": E2E_CANARY_ALL_ENVIRONMENTS_REPO.role_name(environment)},
+        )
+        assert_no_identity_scope_readback_policy(template)
+
+
+def test_unrelated_nonprod_services_have_no_identity_scope_readback_policy() -> None:
+    """Negative: the e2e canary readback grant does not leak to other services."""
+    unrelated_services = (
+        TENANT_SETUP_REPO,
+        ServiceRepository(
+            name="identity-access",
+            repository="infiquetra/campps-identity-access",
+        ),
+        ServiceRepository(
+            name="registration",
+            repository="infiquetra/campps-registration",
+        ),
+    )
+
+    for service_repository in unrelated_services:
+        template = synth_template_for_repositories(
+            service_repository,
+            target_environment="nonprod",
+        )
+        assert_no_identity_scope_readback_policy(template)
