@@ -25,6 +25,25 @@
 
 ---
 
+## 2026-07-02
+
+### E2E canary identity-scope readback grant (nonprod only)
+
+**Decision.** Plan a single narrowly-scoped managed policy for `campps-e2e-canary-nonprod-gha-deploy-role`, granting only `dynamodb:GetItem` on `campps-identity-access-nonprod`. The grant should be implemented as a standalone optional helper in `CamppsDeployRolesStack`, gated to `e2e-canary` + `nonprod`, mirroring the tenant-setup seam-proof helper instead of broadening the shared `serverless-api` deploy policy.
+
+**Rejected alternatives.**
+- Add the grant to the shared serverless deploy profile: would give unrelated services identity-access table readback.
+- Add `Query`, `Scan`, batch reads, or table wildcards: unnecessary for the live proof, which requires one `GetItem` against the identity-access nonprod table.
+- Add staging or production grants: speculative privilege with no matching e2e-canary lane or live proof requirement.
+
+**Implementation.** Plan: `docs/plans/2026-07-02-e2e-canary-identity-scope-readback-iam-plan.md`. Expected code surfaces: `infiquetra_aws_infra/campps_deploy_roles_stack.py` and `tests/unit/test_campps_deploy_roles_stack.py`.
+
+**Revisit when.** The e2e canary proof runs in staging/production, the readback shape needs a different DynamoDB operation, or a second fixture needs a similar grant and the helper pattern should become a small reusable optional-policy registry.
+
+**Commit.** Planned; implementation pending.
+
+---
+
 ## 2026-06-23
 
 ### Cross-service deploy-role grant for the scope-origination seam proof (tenant-setup nonprod only)
