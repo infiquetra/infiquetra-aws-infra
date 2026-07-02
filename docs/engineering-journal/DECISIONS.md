@@ -36,11 +36,11 @@
 - Add `Query`, `Scan`, batch reads, or table wildcards: unnecessary for the live proof, which requires one `GetItem` against the identity-access nonprod table.
 - Add staging or production grants: speculative privilege with no matching e2e-canary lane or live proof requirement.
 
-**Implementation.** Plan: `docs/plans/2026-07-02-e2e-canary-identity-scope-readback-iam-plan.md`. Expected code surfaces: `infiquetra_aws_infra/campps_deploy_roles_stack.py` and `tests/unit/test_campps_deploy_roles_stack.py`.
+**Implementation.** `infiquetra_aws_infra/campps_deploy_roles_stack.py` — method `_create_e2e_canary_identity_scope_readback_policy`; `tests/unit/test_campps_deploy_roles_stack.py` — positive role/policy attachment test plus higher-environment, helper-guard, unrelated-service, and tenant-setup regression coverage. Plan: `docs/plans/2026-07-02-e2e-canary-identity-scope-readback-iam-plan.md`.
 
 **Revisit when.** The e2e canary proof runs in staging/production, the readback shape needs a different DynamoDB operation, or a second fixture needs a similar grant and the helper pattern should become a small reusable optional-policy registry.
 
-**Commit.** Planned; implementation pending.
+**Commit.** Branch `fix/e2e-canary-identity-scope-readback`, implementation commit `ac0b543`.
 
 ---
 
