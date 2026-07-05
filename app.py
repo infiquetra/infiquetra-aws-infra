@@ -4,6 +4,7 @@ import os
 import aws_cdk as cdk
 from dotenv import load_dotenv
 
+from infiquetra_aws_infra.home_lab_dns_stack import HomeLabDnsStack
 from infiquetra_aws_infra.organization_stack import OrganizationStack
 from infiquetra_aws_infra.sso_stack import SSOStack
 
@@ -34,6 +35,14 @@ sso_stack = SSOStack(
     description="AWS SSO configuration for Infiquetra LLC",
     # Make SSO stack depend on organization stack
     organization_stack=organization_stack,
+)
+
+# Route 53 DDNS principal for home-lab public webhook ingress.
+HomeLabDnsStack(
+    app,
+    "InfiquetraHomeLabDnsStack",
+    env=env,
+    description="Least-privilege Route 53 DDNS IAM for home-lab ingress",
 )
 
 app.synth()

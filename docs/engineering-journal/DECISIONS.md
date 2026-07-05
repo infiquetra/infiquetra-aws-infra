@@ -25,6 +25,54 @@
 
 ---
 
+## 2026-07-05
+
+### Parent-zone ACME access is scoped to one webhook TXT record
+
+**Decision.** Attach a CloudFormation-managed inline policy to the existing
+`letsencrypt-route53` IAM user that permits `route53:ChangeResourceRecordSets`
+only for the `TXT` record `_acme-challenge.webhooks.infiquetra.com` in the
+`infiquetra.com` hosted zone.
+
+**Rejected alternatives.**
+- Reuse the Olympus-zone-only policy: rejected because DNS-01 for
+  `webhooks.infiquetra.com` must write in the parent hosted zone.
+- Grant broad parent-zone certbot access: rejected because certbot needs only
+  the ACME challenge name for the webhook ingress certificate.
+- Move the certbot user fully into this stack: deferred because the existing
+  user and key already back the live webhook TLS role.
+
+**Implementation.** `HomeLabDnsStack` attaches
+`home-lab-webhook-certbot-route53` to `letsencrypt-route53`, and
+`tests/unit/test_home_lab_dns_stack.py` pins the TXT-record scope.
+
+**Revisit when.** More parent-zone hostnames use the same edge certificate, or
+ACME moves to another credential mechanism.
+
+### Home-lab DDNS IAM owns permission, not live A record values
+
+**Decision.** Add a dedicated `HomeLabDnsStack` that creates the
+`home-lab-route53-ddns` IAM user and a least-privilege Route 53 policy for the
+home-lab webhook records. The stack does not create access keys and does not
+own the mutable A record values.
+
+**Rejected alternatives.**
+- CloudFormation-owned A records: rejected because a later deploy could revert
+  a residential WAN IP back to a stale literal.
+- CloudFormation-created access keys: rejected because the secret access key
+  would become stack output/state material.
+- Broad Route 53 access: rejected because the updater needs only A-record
+  UPSERTs for the webhook ingress names plus `GetChange` and record readback.
+
+**Implementation.** `infiquetra_aws_infra/home_lab_dns_stack.py` adds the
+policy, `app.py` synthesizes `InfiquetraHomeLabDnsStack`, and
+`tests/unit/test_home_lab_dns_stack.py` pins the no-access-key and
+record-scope invariants.
+
+**Revisit when.** The webhook edge moves fully to AWS ingress, the home-lab no
+longer needs residential DDNS, or the updater can use a short-lived role
+instead of a vaulted IAM user key.
+
 ## 2026-07-02
 
 ### E2E canary identity-scope readback grant (nonprod only)
