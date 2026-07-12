@@ -25,6 +25,42 @@
 
 ---
 
+## 2026-07-11
+
+### Give the protected nonprod E2E proof its own two-read role
+
+**Decision.** Create a dedicated one-hour GitHub OIDC role for
+`campps-e2e-canary`'s protected `nonprod` Environment. Its single managed policy
+permits only `secretsmanager:GetSecretValue` on the canonical WorkOS API-key
+secret's exact six-character generated-suffix pattern and `dynamodb:GetItem` on
+the exact Identity Access nonprod scope table.
+
+**Rejected alternatives.**
+- Add the provider secret to the existing deploy role: rejected because the
+  live proof needs no CloudFormation, IAM, CDK, or application deployment
+  authority.
+- Reuse the existing identity-scope readback policy: rejected because it is
+  attached to the broad deploy role and cannot establish a two-read runtime
+  boundary.
+- Add `kms:Decrypt`: rejected because live inventory confirms the secret uses
+  the default Secrets Manager key. A customer-managed key would require
+  re-planning instead of widening this role.
+- Create staging or production equivalents: rejected because no corresponding
+  protected live-proof lane exists.
+
+**Implementation.**
+`infiquetra_aws_infra/campps_deploy_roles_stack.py` creates the guarded role,
+policy, and `CamppsE2eCanaryLiveProofRoleArn` output. Focused assertions in
+`tests/unit/test_campps_deploy_roles_stack.py` pin trust, session length,
+actions, resources, attachment isolation, environment/repository guards, and
+stable synthesis.
+
+**Revisit when.** The live proof moves to another environment, the canonical
+secret uses a customer-managed key, the proof requires an additional AWS API,
+or GitHub supports an independently reviewed private-repository Environment.
+
+**Commit.** Pending on branch `feat/e2e-live-proof-role`.
+
 ## 2026-07-05
 
 ### Parent-zone ACME access is scoped to one webhook TXT record
