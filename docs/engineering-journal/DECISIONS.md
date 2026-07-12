@@ -59,7 +59,13 @@ stable synthesis.
 secret uses a customer-managed key, the proof requires an additional AWS API,
 or GitHub supports an independently reviewed private-repository Environment.
 
-**Commit.** Pending on branch `feat/e2e-live-proof-role`.
+**Commit.** PR #143; source commit `e739fd4`, squash merge `cb9cdcd`.
+`CamppsNonProdDeployRolesStack` reached `UPDATE_COMPLETE` in account
+`477152411873`. Live readback confirmed the exact role trust and one attached
+two-read policy; IAM simulation allowed only the canonical secret read and
+scope-table `GetItem` while denying sibling/higher-environment, write, query,
+CloudFormation, role-pass, and KMS cases. The existing deploy role did not
+receive the live-proof policy.
 
 ## 2026-07-05
 
