@@ -83,6 +83,22 @@ class CamppsDeployRolesStack(Stack):
             if identity_scope_readback_policy is not None:
                 deploy_role.add_managed_policy(identity_scope_readback_policy)
 
+            live_proof_role = self._create_e2e_canary_live_proof_role(
+                oidc_provider=oidc_provider,
+                service_repository=service_repository,
+                target_environment=target_environment,
+            )
+            if live_proof_role is not None:
+                CfnOutput(
+                    self,
+                    "CamppsE2eCanaryLiveProofRoleArn",
+                    value=live_proof_role.role_arn,
+                    description=(
+                        "Nonprod live-proof role ARN for "
+                        f"{service_repository.repository}"
+                    ),
+                )
+
             CfnOutput(
                 self,
                 f"{self._logical_id_prefix(service_repository.name)}DeployRoleArn",
@@ -1709,6 +1725,78 @@ class CamppsDeployRolesStack(Stack):
                 ),
             ],
         )
+
+    def _create_e2e_canary_live_proof_role(
+        self,
+        *,
+        oidc_provider: iam.CfnOIDCProvider,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+    ) -> iam.Role | None:
+        """Create the two-read nonprod role used by the protected live proof."""
+        if service_repository.name != "e2e-canary" or target_environment != "nonprod":
+            return None
+
+        role = iam.Role(
+            self,
+            "E2eCanaryLiveProofRole",
+            role_name="campps-e2e-canary-nonprod-gha-live-proof-role",
+            assumed_by=iam.FederatedPrincipal(
+                federated=oidc_provider.attr_arn,
+                conditions={
+                    "StringEquals": {
+                        f"{GITHUB_OIDC_HOST}:aud": GITHUB_OIDC_AUDIENCE,
+                        f"{GITHUB_OIDC_HOST}:sub": (
+                            "repo:infiquetra/campps-e2e-canary:environment:nonprod"
+                        ),
+                    }
+                },
+                assume_role_action="sts:AssumeRoleWithWebIdentity",
+            ),
+            max_session_duration=Duration.hours(1),
+            description=(
+                "Read-only credential and identity-scope access for the protected "
+                "campps-e2e-canary nonprod live proof"
+            ),
+        )
+        policy = iam.ManagedPolicy(
+            self,
+            "E2eCanaryLiveProofPolicy",
+            managed_policy_name="campps-e2e-canary-nonprod-gha-live-proof-policy",
+            description=(
+                "Two-read policy for the protected campps-e2e-canary nonprod live proof"
+            ),
+            statements=[
+                iam.PolicyStatement(
+                    sid="WorkOsProviderSecretRead",
+                    actions=["secretsmanager:GetSecretValue"],
+                    resources=[
+                        self.format_arn(
+                            service="secretsmanager",
+                            resource="secret",
+                            resource_name=(
+                                "campps/identity-access/nonprod/workos/api-key-??????"
+                            ),
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="IdentityScopeReadback",
+                    actions=["dynamodb:GetItem"],
+                    resources=[
+                        self.format_arn(
+                            service="dynamodb",
+                            resource="table",
+                            resource_name="campps-identity-access-nonprod",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+            ],
+        )
+        role.add_managed_policy(policy)
+        return role
 
     @staticmethod
     def _logical_id_prefix(service_name: str) -> str:

@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Iterable
+from fnmatch import fnmatchcase
 from typing import Any
 
 import pytest
@@ -1402,6 +1403,9 @@ IDENTITY_SCOPE_READBACK_POLICY_NAME = (
     "campps-e2e-canary-nonprod-gha-identity-scope-readback-policy"
 )
 IDENTITY_SCOPE_READBACK_POLICY_SUFFIX = "-gha-identity-scope-readback-policy"
+LIVE_PROOF_ROLE_NAME = "campps-e2e-canary-nonprod-gha-live-proof-role"
+LIVE_PROOF_POLICY_NAME = "campps-e2e-canary-nonprod-gha-live-proof-policy"
+LIVE_PROOF_POLICY_SUFFIX = "-gha-live-proof-policy"
 
 
 def assert_no_identity_scope_readback_policy(template: Template) -> None:
@@ -1409,6 +1413,21 @@ def assert_no_identity_scope_readback_policy(template: Template) -> None:
     assert not any(
         name.endswith(IDENTITY_SCOPE_READBACK_POLICY_SUFFIX) for name in policy_names
     ), f"Unexpected identity-scope readback policy: {policy_names}"
+
+
+def assert_no_live_proof_resources(template: Template) -> None:
+    role_names = {
+        role.get("Properties", {}).get("RoleName")
+        for role in template.find_resources("AWS::IAM::Role").values()
+    }
+    policy_names = managed_policy_names(template)
+    outputs = template.to_json().get("Outputs", {})
+
+    assert LIVE_PROOF_ROLE_NAME not in role_names, role_names
+    assert not any(name.endswith(LIVE_PROOF_POLICY_SUFFIX) for name in policy_names), (
+        policy_names
+    )
+    assert "CamppsE2eCanaryLiveProofRoleArn" not in outputs, outputs
 
 
 def test_tenant_setup_nonprod_deploy_role_has_seam_proof_policy() -> None:
@@ -1586,3 +1605,167 @@ def test_unrelated_nonprod_services_have_no_identity_scope_readback_policy() -> 
             target_environment="nonprod",
         )
         assert_no_identity_scope_readback_policy(template)
+
+
+# --- e2e-canary dedicated live-proof role ----------------------------------
+
+
+def test_e2e_canary_nonprod_has_dedicated_two_read_live_proof_role() -> None:
+    template = synth_template_for_repositories(
+        E2E_CANARY_REPO, target_environment="nonprod"
+    )
+
+    policy_logical_id, policy = find_managed_policy_with_logical_id(
+        template, LIVE_PROOF_POLICY_NAME
+    )
+    statements = policy["Properties"]["PolicyDocument"]["Statement"]
+    statements_by_sid = {statement["Sid"]: statement for statement in statements}
+
+    assert set(statements_by_sid) == {
+        "WorkOsProviderSecretRead",
+        "IdentityScopeReadback",
+    }
+    assert set(
+        normalize_actions(statements_by_sid["WorkOsProviderSecretRead"]["Action"])
+    ) == {"secretsmanager:GetSecretValue"}
+    secret_resource = str(statements_by_sid["WorkOsProviderSecretRead"]["Resource"])
+    assert (
+        "secretsmanager:us-east-1:477152411873:secret:"
+        "campps/identity-access/nonprod/workos/api-key-??????"
+    ) in secret_resource
+    assert set(
+        normalize_actions(statements_by_sid["IdentityScopeReadback"]["Action"])
+    ) == {"dynamodb:GetItem"}
+    scope_resource = str(statements_by_sid["IdentityScopeReadback"]["Resource"])
+    assert (
+        "dynamodb:us-east-1:477152411873:table/campps-identity-access-nonprod"
+    ) in scope_resource
+
+    role = find_deploy_role(template, LIVE_PROOF_ROLE_NAME)
+    assert role["Properties"]["MaxSessionDuration"] == 3600
+    assert role["Properties"]["ManagedPolicyArns"] == [{"Ref": policy_logical_id}]
+
+    trust = get_assume_role_statement(role)
+    assert trust["Condition"]["StringEquals"] == {
+        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+        "token.actions.githubusercontent.com:sub": (
+            "repo:infiquetra/campps-e2e-canary:environment:nonprod"
+        ),
+    }
+
+    outputs = template.to_json()["Outputs"]
+    output_get_att = outputs["CamppsE2eCanaryLiveProofRoleArn"]["Value"]["Fn::GetAtt"]
+    assert output_get_att[0].startswith("E2eCanaryLiveProofRole")
+    assert output_get_att[1] == "Arn"
+
+
+def test_live_proof_policy_has_no_widened_actions_or_resources() -> None:
+    template = synth_template_for_repositories(
+        E2E_CANARY_REPO, target_environment="nonprod"
+    )
+    _, policy = find_managed_policy_with_logical_id(template, LIVE_PROOF_POLICY_NAME)
+    statements = policy["Properties"]["PolicyDocument"]["Statement"]
+
+    actions = {
+        action
+        for statement in statements
+        for action in normalize_actions(statement["Action"])
+    }
+    resources = {
+        resource
+        for statement in statements
+        for resource in normalize_resources(statement["Resource"])
+    }
+
+    assert actions == {"secretsmanager:GetSecretValue", "dynamodb:GetItem"}
+    assert "*" not in actions
+    assert "*" not in resources
+    assert not any(action.startswith("kms:") for action in actions)
+    assert not any(
+        action in {"dynamodb:Query", "dynamodb:Scan", "dynamodb:PutItem"}
+        for action in actions
+    )
+    assert not any(
+        "staging" in resource or "production" in resource for resource in resources
+    )
+
+
+def test_live_proof_secret_pattern_has_exact_generated_suffix_width() -> None:
+    template = synth_template_for_repositories(
+        E2E_CANARY_REPO, target_environment="nonprod"
+    )
+    _, policy = find_managed_policy_with_logical_id(template, LIVE_PROOF_POLICY_NAME)
+    statement = next(
+        statement
+        for statement in policy["Properties"]["PolicyDocument"]["Statement"]
+        if statement["Sid"] == "WorkOsProviderSecretRead"
+    )
+    resource = str(statement["Resource"])
+    resource_pattern = "campps/identity-access/nonprod/workos/api-key-??????"
+
+    assert resource_pattern in resource
+    assert resource.count("?") == 6
+    assert "/api-key-*" not in resource
+    assert "/api-key-copy-" not in resource
+    assert "/api-key-old-" not in resource
+    assert fnmatchcase(
+        "campps/identity-access/nonprod/workos/api-key-Ab12xy",
+        resource_pattern,
+    )
+    for forbidden_name in (
+        "campps/identity-access/nonprod/workos/api-key-copy-Ab12xy",
+        "campps/identity-access/nonprod/workos/api-key-old-Ab12xy",
+        "campps/identity-access/nonprod/workos/api-key-Ab12x",
+        "campps/identity-access/nonprod/workos/api-key-Ab12xyz",
+        "campps/identity-access/staging/workos/api-key-Ab12xy",
+    ):
+        assert not fnmatchcase(forbidden_name, resource_pattern)
+
+
+def test_live_proof_policy_is_not_attached_to_existing_deploy_role() -> None:
+    template = synth_template_for_repositories(
+        E2E_CANARY_REPO, target_environment="nonprod"
+    )
+    live_policy_logical_id, _ = find_managed_policy_with_logical_id(
+        template, LIVE_PROOF_POLICY_NAME
+    )
+    deploy_role = find_deploy_role(template, E2E_CANARY_REPO.role_name("nonprod"))
+
+    assert {"Ref": live_policy_logical_id} not in deploy_role["Properties"][
+        "ManagedPolicyArns"
+    ]
+    assert find_managed_policy(template, IDENTITY_SCOPE_READBACK_POLICY_NAME)
+
+
+def test_live_proof_resources_are_nonprod_e2e_canary_only() -> None:
+    higher_environments: tuple[DeployEnvironment, ...] = ("staging", "production")
+    for environment in higher_environments:
+        higher_template = synth_template_for_repositories(
+            E2E_CANARY_ALL_ENVIRONMENTS_REPO,
+            target_environment=environment,
+        )
+        assert_no_live_proof_resources(higher_template)
+
+    for unrelated_service in (
+        TENANT_SETUP_REPO,
+        ServiceRepository(
+            name="identity-access",
+            repository="infiquetra/campps-identity-access",
+        ),
+    ):
+        unrelated_template = synth_template_for_repositories(
+            unrelated_service,
+            target_environment="nonprod",
+        )
+        assert_no_live_proof_resources(unrelated_template)
+
+
+def test_live_proof_synth_is_stable() -> None:
+    first = synth_template_for_repositories(
+        E2E_CANARY_REPO, target_environment="nonprod"
+    ).to_json()
+    second = synth_template_for_repositories(
+        E2E_CANARY_REPO, target_environment="nonprod"
+    ).to_json()
+
+    assert first == second
