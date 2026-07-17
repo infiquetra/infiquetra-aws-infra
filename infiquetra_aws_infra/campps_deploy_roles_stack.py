@@ -1404,13 +1404,40 @@ class CamppsDeployRolesStack(Stack):
                             "dynamodb:UpdateTimeToLive",
                         ],
                         resources=[
+                            # Services name their base table exactly
+                            # `{prefix}` (no component suffix); the `-*`
+                            # pattern alone excludes it.
+                            self.format_arn(
+                                service="dynamodb",
+                                resource="table",
+                                resource_name=prefix,
+                                arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                            ),
                             self.format_arn(
                                 service="dynamodb",
                                 resource="table",
                                 resource_name=f"{prefix}-*",
                                 arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                            ),
+                        ],
+                    ),
+                    iam.PolicyStatement(
+                        sid="PlatformKmsDescribe",
+                        actions=["kms:DescribeKey"],
+                        resources=[
+                            self.format_arn(
+                                service="kms",
+                                resource="key",
+                                resource_name="*",
+                                arn_format=ArnFormat.SLASH_RESOURCE_NAME,
                             )
                         ],
+                        conditions={
+                            "StringEquals": {
+                                "aws:ResourceTag/Service": "platform",
+                                "aws:ResourceTag/Environment": target_environment,
+                            }
+                        },
                     ),
                     iam.PolicyStatement(
                         sid="EventBridgeRules",
