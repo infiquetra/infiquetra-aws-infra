@@ -28,6 +28,41 @@
 
 ---
 
+## 2026-07-17
+
+### A `stack/<prefix>-*/*` ARN pattern excludes the exact-named base stack — and CDK deploys mask the gap
+
+**Context.** CAMPPS service repos name their base CloudFormation stack exactly `campps-<service>-<env>`
+(no component suffix). Both `CloudFormationDeployments` statements in `campps_deploy_roles_stack.py`
+scoped stack ARNs to `stack/campps-<service>-<env>-*/*` only — the `-*` requires at least one character
+after the hyphen, so the base stack never matched.
+
+**Evidence.** `campps-coppa-consent` deploy-nonprod run
+[29560099118](https://github.com/infiquetra/campps-coppa-consent/actions/runs/29560099118): four prior
+CDK deploys succeeded, then the "Export deployed endpoint" step failed `AccessDenied` on
+`cloudformation:DescribeStacks` for `stack/campps-coppa-consent-nonprod/...`. Fixed in PR
+[#145](https://github.com/infiquetra/infiquetra-aws-infra/pull/145) (`2ee8b9d`);
+`CamppsNonProdDeployRolesStack` deployed `UPDATE_COMPLETE` in 55.7s with a purely additive diff;
+`iam simulate-principal-policy` then returned `allowed` for both coppa-consent and registration roles
+on their exact base-stack ARNs (registration carried the identical latent gap, unexercised only because
+its workflow had no endpoint-export step yet).
+
+**Mechanism.** Two credential paths hit the same policy differently: `cdk deploy` assumes the
+`cdk-hnb659fds-*` bootstrap roles (their own permissions), so the GHA role's CloudFormation scope is
+never exercised during a deploy — but any *direct* CLI call in a workflow step (`aws cloudformation
+describe-stacks`) runs as the GHA role itself and needs the stack ARN to match. The suffixed wildcard
+silently excluded the one stack every service actually creates.
+
+**Fix.** Added the exact `stack/<prefix>/*` ARN alongside the suffixed pattern in both the shared
+`_cloudformation_baseline_statements` and the serverless-api deploy policy. Deployed via the
+`app_campps_bootstrap.py` path (per the 2026-06-17 rule below — the foundation workflow never applies
+workload role changes; this entry is a second recurrence of that trap).
+
+**Generalizable rule.** When scoping IAM to CloudFormation stacks, always grant both `stack/<name>/*`
+and `stack/<name>-*/*` — a hyphenated wildcard is not a prefix match. And treat "CDK deploy succeeds"
+as zero evidence that the deploy role can read the stack directly: bootstrap-role assumption and
+direct-call authorization are separate paths through the same policy.
+
 ## 2026-06-20
 
 ### Registry-driven OIDC role minting is purely additive; provisioned-with-trust ≠ assume-proven
