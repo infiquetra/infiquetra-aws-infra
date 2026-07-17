@@ -444,6 +444,14 @@ class CamppsDeployRolesStack(Stack):
                     "cloudformation:UpdateStack",
                 ],
                 resources=[
+                    # Services name their base stack exactly `{prefix}` (no
+                    # component suffix); the `-*` pattern alone excludes it.
+                    self.format_arn(
+                        service="cloudformation",
+                        resource="stack",
+                        resource_name=f"{prefix}/*",
+                        arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                    ),
                     self.format_arn(
                         service="cloudformation",
                         resource="stack",
@@ -1065,6 +1073,15 @@ class CamppsDeployRolesStack(Stack):
                             "cloudformation:UpdateStack",
                         ],
                         resources=[
+                            # Services name their base stack exactly
+                            # `{prefix}` (no component suffix); the `-*`
+                            # pattern alone excludes it.
+                            self.format_arn(
+                                service="cloudformation",
+                                resource="stack",
+                                resource_name=f"{prefix}/*",
+                                arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                            ),
                             self.format_arn(
                                 service="cloudformation",
                                 resource="stack",
