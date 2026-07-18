@@ -1837,6 +1837,30 @@ class CamppsDeployRolesStack(Stack):
                         )
                     ],
                 ),
+                # Payments-emitter harness (campps-context-library#39): the
+                # run_live-guarded canary lane emits the three payments contract
+                # events (PaymentSucceeded / PaymentFailed / RefundIssued) onto the
+                # shared platform bus so registration's payments-event consumer
+                # (C2.7b) and the [E2E] combine slice stop being producer-blocked.
+                # Scoped to Source=campps.payments only -- the canary cannot spoof
+                # any other producer's events. Nonprod bus only (staging/prod are
+                # separate accounts and untouched). See the approved seed-payload
+                # doc, section 1 (IAM delta).
+                iam.PolicyStatement(
+                    sid="PaymentsEmitterPutEvents",
+                    actions=["events:PutEvents"],
+                    resources=[
+                        self.format_arn(
+                            service="events",
+                            resource="event-bus",
+                            resource_name="campps-platform-nonprod",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                    conditions={
+                        "StringEquals": {"events:source": "campps.payments"},
+                    },
+                ),
             ],
         )
         role.add_managed_policy(policy)
