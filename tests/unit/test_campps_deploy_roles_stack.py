@@ -1624,6 +1624,7 @@ def test_e2e_canary_nonprod_has_dedicated_two_read_live_proof_role() -> None:
     assert set(statements_by_sid) == {
         "WorkOsProviderSecretRead",
         "IdentityScopeReadback",
+        "PaymentsEmitterPutEvents",
     }
     assert set(
         normalize_actions(statements_by_sid["WorkOsProviderSecretRead"]["Action"])
@@ -1640,6 +1641,16 @@ def test_e2e_canary_nonprod_has_dedicated_two_read_live_proof_role() -> None:
     assert (
         "dynamodb:us-east-1:477152411873:table/campps-identity-access-nonprod"
     ) in scope_resource
+
+    emitter_statement = statements_by_sid["PaymentsEmitterPutEvents"]
+    assert set(normalize_actions(emitter_statement["Action"])) == {"events:PutEvents"}
+    emitter_resource = str(emitter_statement["Resource"])
+    assert (
+        "events:us-east-1:477152411873:event-bus/campps-platform-nonprod"
+    ) in emitter_resource
+    assert emitter_statement["Condition"] == {
+        "StringEquals": {"events:source": "campps.payments"}
+    }
 
     role = find_deploy_role(template, LIVE_PROOF_ROLE_NAME)
     assert role["Properties"]["MaxSessionDuration"] == 3600
@@ -1677,7 +1688,11 @@ def test_live_proof_policy_has_no_widened_actions_or_resources() -> None:
         for resource in normalize_resources(statement["Resource"])
     }
 
-    assert actions == {"secretsmanager:GetSecretValue", "dynamodb:GetItem"}
+    assert actions == {
+        "secretsmanager:GetSecretValue",
+        "dynamodb:GetItem",
+        "events:PutEvents",
+    }
     assert "*" not in actions
     assert "*" not in resources
     assert not any(action.startswith("kms:") for action in actions)
@@ -1685,6 +1700,17 @@ def test_live_proof_policy_has_no_widened_actions_or_resources() -> None:
         action in {"dynamodb:Query", "dynamodb:Scan", "dynamodb:PutItem"}
         for action in actions
     )
+    # The one write action (events:PutEvents) must be source-scoped, never a bare
+    # bus grant, so the canary cannot spoof another producer's events.
+    put_events_statements = [
+        statement
+        for statement in statements
+        if "events:PutEvents" in normalize_actions(statement["Action"])
+    ]
+    assert len(put_events_statements) == 1
+    assert put_events_statements[0]["Condition"] == {
+        "StringEquals": {"events:source": "campps.payments"}
+    }
     assert not any(
         "staging" in resource or "production" in resource for resource in resources
     )
