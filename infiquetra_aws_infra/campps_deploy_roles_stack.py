@@ -1777,7 +1777,7 @@ class CamppsDeployRolesStack(Stack):
         service_repository: ServiceRepository,
         target_environment: DeployEnvironment,
     ) -> iam.Role | None:
-        """Create the two-read nonprod role used by the protected live proof."""
+        """Create the least-privilege nonprod role used by the protected live proof."""
         if service_repository.name != "e2e-canary" or target_environment != "nonprod":
             return None
 
@@ -1808,7 +1808,8 @@ class CamppsDeployRolesStack(Stack):
             "E2eCanaryLiveProofPolicy",
             managed_policy_name="campps-e2e-canary-nonprod-gha-live-proof-policy",
             description=(
-                "Two-read policy for the protected campps-e2e-canary nonprod live proof"
+                "Least-privilege policy for the protected campps-e2e-canary "
+                "nonprod live proof"
             ),
             statements=[
                 iam.PolicyStatement(
@@ -1860,6 +1861,24 @@ class CamppsDeployRolesStack(Stack):
                     conditions={
                         "StringEquals": {"events:source": "campps.payments"},
                     },
+                ),
+                # Waitlist extended-legs live proof (registration#40): the canary
+                # verifies SessionCapacity counter handoff (confirmed -> pending
+                # promotion, no open-capacity blip), strict FIFO offer order, and
+                # the 48-hour offer window by reading exact-keyed items from the
+                # registration table. GetItem only -- no Query/Scan, no writes;
+                # offer aging stays an operator-run update outside this role.
+                iam.PolicyStatement(
+                    sid="RegistrationCounterReadback",
+                    actions=["dynamodb:GetItem"],
+                    resources=[
+                        self.format_arn(
+                            service="dynamodb",
+                            resource="table",
+                            resource_name="campps-registration-nonprod",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
                 ),
             ],
         )
