@@ -1807,9 +1807,13 @@ class CamppsDeployRolesStack(Stack):
             self,
             "E2eCanaryLiveProofPolicy",
             managed_policy_name="campps-e2e-canary-nonprod-gha-live-proof-policy",
+            # Deployed description is frozen: AWS::IAM::ManagedPolicy replaces
+            # the resource on a Description change, and the pinned
+            # managed_policy_name makes create-before-delete collide (409
+            # AlreadyExists -> UPDATE_ROLLBACK_COMPLETE). Statement changes
+            # update in place; the description cannot without a rename.
             description=(
-                "Least-privilege policy for the protected campps-e2e-canary "
-                "nonprod live proof"
+                "Two-read policy for the protected campps-e2e-canary nonprod live proof"
             ),
             statements=[
                 iam.PolicyStatement(
