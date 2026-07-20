@@ -1625,6 +1625,7 @@ def test_e2e_canary_nonprod_has_dedicated_two_read_live_proof_role() -> None:
         "WorkOsProviderSecretRead",
         "IdentityScopeReadback",
         "PaymentsEmitterPutEvents",
+        "RegistrationCounterReadback",
     }
     assert set(
         normalize_actions(statements_by_sid["WorkOsProviderSecretRead"]["Action"])
@@ -1641,6 +1642,13 @@ def test_e2e_canary_nonprod_has_dedicated_two_read_live_proof_role() -> None:
     assert (
         "dynamodb:us-east-1:477152411873:table/campps-identity-access-nonprod"
     ) in scope_resource
+
+    counter_statement = statements_by_sid["RegistrationCounterReadback"]
+    assert set(normalize_actions(counter_statement["Action"])) == {"dynamodb:GetItem"}
+    counter_resource = str(counter_statement["Resource"])
+    assert (
+        "dynamodb:us-east-1:477152411873:table/campps-registration-nonprod"
+    ) in counter_resource
 
     emitter_statement = statements_by_sid["PaymentsEmitterPutEvents"]
     assert set(normalize_actions(emitter_statement["Action"])) == {"events:PutEvents"}
