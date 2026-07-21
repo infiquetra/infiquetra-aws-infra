@@ -1626,6 +1626,7 @@ def test_e2e_canary_nonprod_has_dedicated_two_read_live_proof_role() -> None:
         "IdentityScopeReadback",
         "PaymentsEmitterPutEvents",
         "RegistrationCounterReadback",
+        "RegistrationTableKeyDecrypt",
     }
     assert set(
         normalize_actions(statements_by_sid["WorkOsProviderSecretRead"]["Action"])
@@ -1649,6 +1650,15 @@ def test_e2e_canary_nonprod_has_dedicated_two_read_live_proof_role() -> None:
     assert (
         "dynamodb:us-east-1:477152411873:table/campps-registration-nonprod"
     ) in counter_resource
+
+    key_statement = statements_by_sid["RegistrationTableKeyDecrypt"]
+    assert set(normalize_actions(key_statement["Action"])) == {"kms:Decrypt"}
+    assert key_statement["Condition"] == {
+        "StringEquals": {"kms:ViaService": "dynamodb.us-east-1.amazonaws.com"},
+        "ForAnyValue:StringEquals": {
+            "kms:ResourceAliases": "alias/campps-platform-nonprod-pii"
+        },
+    }
 
     emitter_statement = statements_by_sid["PaymentsEmitterPutEvents"]
     assert set(normalize_actions(emitter_statement["Action"])) == {"events:PutEvents"}
@@ -1700,14 +1710,34 @@ def test_live_proof_policy_has_no_widened_actions_or_resources() -> None:
         "secretsmanager:GetSecretValue",
         "dynamodb:GetItem",
         "events:PutEvents",
+        "kms:Decrypt",
     }
     assert "*" not in actions
-    assert "*" not in resources
-    assert not any(action.startswith("kms:") for action in actions)
     assert not any(
         action in {"dynamodb:Query", "dynamodb:Scan", "dynamodb:PutItem"}
         for action in actions
     )
+    # kms:Decrypt is the sole kms action, and the only statement allowed a "*"
+    # resource: KMS grants cannot name an alias in Resource, so the statement
+    # is pinned by the alias condition instead and must never work outside a
+    # DynamoDB read (ViaService) or against any key but the platform PII alias.
+    assert {action for action in actions if action.startswith("kms:")} == {
+        "kms:Decrypt"
+    }
+    star_statements = [
+        statement
+        for statement in statements
+        if "*" in normalize_resources(statement["Resource"])
+    ]
+    assert [statement["Sid"] for statement in star_statements] == [
+        "RegistrationTableKeyDecrypt"
+    ]
+    assert star_statements[0]["Condition"] == {
+        "StringEquals": {"kms:ViaService": "dynamodb.us-east-1.amazonaws.com"},
+        "ForAnyValue:StringEquals": {
+            "kms:ResourceAliases": "alias/campps-platform-nonprod-pii"
+        },
+    }
     # The one write action (events:PutEvents) must be source-scoped, never a bare
     # bus grant, so the canary cannot spoof another producer's events.
     put_events_statements = [

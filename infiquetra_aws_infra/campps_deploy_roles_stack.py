@@ -1884,6 +1884,27 @@ class CamppsDeployRolesStack(Stack):
                         )
                     ],
                 ),
+                # The registration table is SSE-encrypted with the shared
+                # customer-managed platform PII key, so the GetItem above dies
+                # with kms:Decrypt AccessDenied without this. Pinned by alias
+                # (survives key rotation/recreation, no hardcoded key UUID) and
+                # by ViaService so the grant works only through DynamoDB reads,
+                # never as a direct kms:Decrypt call.
+                iam.PolicyStatement(
+                    sid="RegistrationTableKeyDecrypt",
+                    actions=["kms:Decrypt"],
+                    resources=["*"],
+                    conditions={
+                        "StringEquals": {
+                            "kms:ViaService": "dynamodb.us-east-1.amazonaws.com",
+                        },
+                        # kms:ResourceAliases is multivalued -- a plain
+                        # StringEquals never matches; ForAnyValue is required.
+                        "ForAnyValue:StringEquals": {
+                            "kms:ResourceAliases": "alias/campps-platform-nonprod-pii",
+                        },
+                    },
+                ),
             ],
         )
         role.add_managed_policy(policy)
