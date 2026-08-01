@@ -27,6 +27,55 @@
 
 ## 2026-08-01
 
+### Grant the tenant.read denial gate by literal tenant id, wildcarding only the API id
+
+**Decision.** `campps-tenant-setup-nonprod-gha-tenant-read-deny-gate-policy` grants
+`execute-api:Invoke` on
+`arn:aws:execute-api:us-east-1:<acct>:*/nonprod/GET/tenants/tenant-out-of-scope-golive`
+— exact stage, exact method, and a path terminating in the literal out-of-scope
+tenant the gate reads. Only the API id is wildcarded. This stack deliberately
+holds no service's API id, and the privilege being wildcarded is "GET one tenant
+that does not exist", which is worth nothing on any API in the account.
+
+The gate it enables signs as the deploy role, which is in identity-access's
+`SERVICE_PRINCIPAL_ALLOWLIST` with `authorization:evaluate` and no
+`subject_actions` — so its denial proves those two lists stay separate rather than
+merely proving strangers are refused.
+
+**Rejected alternatives.**
+- *Wildcard the path (`GET/tenants/*`)*: an `execute-api` ARN wildcard matches
+  across `/`, so this also grants `/tenants/{id}/seed-runs`, `/camps`, `/sessions`
+  and every sibling. It reads like a one-route change and is not one. A unit test
+  (`test_tenant_read_deny_gate_grant_cannot_reach_sub_resources`) fails if a
+  trailing `*` is ever added; verified by mutation.
+- *Resolve the API id from SSM*: `/campps/services/tenant-setup/nonprod/api-url`
+  exists, but it is a URL and a deferred CFN dynamic reference, so extracting the
+  id needs `Fn::Select`/`Fn::Split` gymnastics at synth. Not worth it to remove a
+  wildcard that costs nothing.
+- *Put the grant in campps-tenant-setup's own stack*: would give exact API ids via
+  `arn_for_execute_api` and keep it to one repo, but requires the deploy role to
+  attach a policy to itself — a privilege-escalation shape deploy policies should
+  refuse, not enable.
+- *Use the e2e-canary live-proof role instead*: verified it holds zero
+  `execute-api:Invoke` (policy v4: secretsmanager, two dynamodb GetItem, events,
+  kms), so it cannot invoke any API, and it is not in the allowlist either. It
+  fails both halves of what the gate needs.
+
+**Implementation.** `_create_tenant_read_deny_gate_policy`, gated to
+tenant-setup + nonprod (staging and production never hold an invoke grant they do
+not exercise). Constant `TENANT_READ_DENY_GATE_TENANT_ID` documents the
+cross-repo coupling to `CAMPPS_GOLIVE_OUT_OF_SCOPE_TENANT_ID` in
+campps-tenant-setup's deploy-nonprod workflow.
+
+**Revisit when.** The gate moves off a fixed tenant id; the route gains a real
+in-scope read the gate should also exercise; or a second service needs the same
+shape, at which point the tenant id should become a parameter rather than a
+module constant.
+
+**Commit.** See PR for SHA.
+
+## 2026-08-01
+
 ### Let Tenant Setup mint its nonprod test-user token without GitHub secrets
 
 **Decision.** Attach one nonprod-only managed policy to the existing Tenant

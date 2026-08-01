@@ -1475,6 +1475,100 @@ def test_tenant_setup_nonprod_deploy_role_has_seam_proof_policy() -> None:
     )
 
 
+# --- campps-tenant-setup go-live gate: tenant.read denial proof grant ------
+#
+# The nonprod deploy role signs GET /tenants/{tenantId} as itself and asserts a
+# typed 403 AUTHZ_DENIED. It is in identity-access's SERVICE_PRINCIPAL_ALLOWLIST
+# with authorization:evaluate but no subject_actions, so the deny proves those
+# two lists stay separate. Without the invoke grant the request dies at the
+# gateway and proves nothing.
+
+TENANT_READ_DENY_GATE_POLICY_NAME = (
+    "campps-tenant-setup-nonprod-gha-tenant-read-deny-gate-policy"
+)
+TENANT_READ_DENY_GATE_POLICY_SUFFIX = "-gha-tenant-read-deny-gate-policy"
+
+
+def assert_no_tenant_read_deny_gate_policy(template: Template) -> None:
+    policy_names = managed_policy_names(template)
+    assert not any(
+        name.endswith(TENANT_READ_DENY_GATE_POLICY_SUFFIX) for name in policy_names
+    ), f"Unexpected tenant.read deny gate policy: {policy_names}"
+
+
+def test_tenant_setup_nonprod_deploy_role_has_tenant_read_deny_gate_policy() -> None:
+    """Positive: the grant exists and carries exactly one scoped invoke."""
+    template = synth_template_for_repositories(
+        TENANT_SETUP_REPO, target_environment="nonprod"
+    )
+
+    policy = find_managed_policy(template, TENANT_READ_DENY_GATE_POLICY_NAME)
+    document = policy["Properties"]["PolicyDocument"]
+
+    statements_by_sid = {
+        stmt["Sid"]: stmt for stmt in document["Statement"] if "Sid" in stmt
+    }
+    assert set(statements_by_sid) == {"TenantReadDenyGateInvoke"}
+
+    statement = statements_by_sid["TenantReadDenyGateInvoke"]
+    assert set(normalize_actions(statement["Action"])) == {"execute-api:Invoke"}
+
+
+def test_tenant_read_deny_gate_grant_cannot_reach_sub_resources() -> None:
+    """The resource ARN must terminate in the literal tenant id.
+
+    This is the load-bearing assertion, not decoration. An ``execute-api`` ARN
+    wildcard matches across ``/``, so a trailing ``*`` on the path would silently
+    extend this grant to ``/tenants/{id}/seed-runs``, ``/camps``, ``/sessions``
+    and every other sibling — a one-character change that reads like a no-op and
+    is not one. Asserting only that the ARN "contains tenants" would pass on
+    exactly that mistake.
+    """
+    template = synth_template_for_repositories(
+        TENANT_SETUP_REPO, target_environment="nonprod"
+    )
+    policy = find_managed_policy(template, TENANT_READ_DENY_GATE_POLICY_NAME)
+    statement = policy["Properties"]["PolicyDocument"]["Statement"][0]
+    resource = str(statement["Resource"])
+
+    assert "nonprod/GET/tenants/tenant-out-of-scope-golive" in resource, resource
+    assert not resource.rstrip("'\"]} ").endswith("*"), (
+        "the path must end at the literal tenant id; a trailing wildcard spans "
+        f"'/' and would grant every sub-resource under it: {resource}"
+    )
+    # Method and stage stay exact — only the API id may be wildcarded.
+    assert "/GET/" in resource, resource
+
+
+def test_tenant_setup_staging_has_no_tenant_read_deny_gate_policy() -> None:
+    """Negative: staging never holds an invoke grant it does not exercise."""
+    assert_no_tenant_read_deny_gate_policy(
+        synth_template_for_repositories(TENANT_SETUP_REPO, target_environment="staging")
+    )
+
+
+def test_tenant_setup_production_has_no_tenant_read_deny_gate_policy() -> None:
+    """Negative: production never holds an invoke grant it does not exercise."""
+    assert_no_tenant_read_deny_gate_policy(
+        synth_template_for_repositories(
+            TENANT_SETUP_REPO, target_environment="production"
+        )
+    )
+
+
+def test_identity_access_nonprod_has_no_tenant_read_deny_gate_policy() -> None:
+    """Negative: the grant is tenant-setup's alone, not every nonprod service."""
+    assert_no_tenant_read_deny_gate_policy(
+        synth_template_for_repositories(
+            ServiceRepository(
+                name="identity-access",
+                repository="infiquetra/campps-identity-access",
+            ),
+            target_environment="nonprod",
+        )
+    )
+
+
 def test_tenant_setup_staging_has_no_seam_proof_policy() -> None:
     """Negative: no seam-proof policy is synthesized for tenant-setup staging."""
     template = synth_template_for_repositories(

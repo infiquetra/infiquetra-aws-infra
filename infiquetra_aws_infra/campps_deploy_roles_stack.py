@@ -24,6 +24,14 @@ GITHUB_OIDC_AUDIENCE = "sts.amazonaws.com"
 CODEARTIFACT_DOMAIN = "infiquetra"
 CODEARTIFACT_REPOSITORY = "campps"
 
+#: The out-of-scope tenant the campps-tenant-setup go-live gate reads to prove
+#: ``tenant.read`` is denied to a registered service principal that holds no
+#: ``subject_actions``. Must stay in step with
+#: ``CAMPPS_GOLIVE_OUT_OF_SCOPE_TENANT_ID`` in that repo's deploy-nonprod
+#: workflow. Deliberately a tenant that does not exist: the grant below names it
+#: literally, so wildcarding the API id costs nothing.
+TENANT_READ_DENY_GATE_TENANT_ID = "tenant-out-of-scope-golive"
+
 
 class CamppsDeployRolesStack(Stack):
     """Create per-service GitHub Actions deploy roles in a CAMPPS account."""
@@ -73,6 +81,13 @@ class CamppsDeployRolesStack(Stack):
             )
             if seam_proof_policy is not None:
                 deploy_role.add_managed_policy(seam_proof_policy)
+
+            tenant_read_deny_gate_policy = self._create_tenant_read_deny_gate_policy(
+                service_repository=service_repository,
+                target_environment=target_environment,
+            )
+            if tenant_read_deny_gate_policy is not None:
+                deploy_role.add_managed_policy(tenant_read_deny_gate_policy)
 
             e2e_credentials_policy = self._create_tenant_setup_e2e_credentials_policy(
                 service_repository=service_repository,
@@ -1731,6 +1746,80 @@ class CamppsDeployRolesStack(Stack):
                             service="dynamodb",
                             resource="table",
                             resource_name=f"campps-identity-access-{target_environment}",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+            ],
+        )
+
+    def _create_tenant_read_deny_gate_policy(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+    ) -> iam.ManagedPolicy | None:
+        """Invoke grant for the deploy-gated ``tenant.read`` denial proof.
+
+        campps-tenant-setup's nonprod deploy lane runs a go-live gate that signs
+        ``GET /tenants/{tenantId}`` with SigV4 as *this deploy role* and asserts a
+        typed ``403 AUTHZ_DENIED``. The point is not that a stranger is refused —
+        it is that a **registered** service caller is refused. This role is in
+        identity-access's ``SERVICE_PRINCIPAL_ALLOWLIST`` under ``tenant-setup``
+        with ``actions: ["authorization:evaluate"]`` and **no** ``subject_actions``,
+        so a deny here proves the registry keeps those two lists separate. Merging
+        them would let every registered caller read every peer's tenants,
+        tenant-wildcarded; this gate fails the deploy if that ever happens.
+
+        Without this grant the request never reaches the handler: API Gateway
+        rejects it at layer 1 with a bare ``{"message": ...}`` body, which the gate
+        deliberately treats as a failure rather than a pass, because a layer-1
+        rejection cannot demonstrate anything about layer-2 policy.
+
+        **Scoping.** Exact stage, exact method, and a path that terminates in the
+        literal out-of-scope tenant id the gate reads — no trailing wildcard, so
+        this cannot reach ``/seed-runs`` or any other sub-resource. The API id is
+        the one wildcard: this stack deliberately holds no service's API id, and
+        the privilege being wildcarded is "GET one tenant that does not exist",
+        which is worth nothing on any API in the account.
+
+        **Cross-repo coupling, stated on purpose.** The tenant id below must match
+        ``CAMPPS_GOLIVE_OUT_OF_SCOPE_TENANT_ID`` in campps-tenant-setup's
+        deploy-nonprod workflow (currently its default). If that value is changed
+        without changing this one, the gate fails loudly with a layer-1 gateway
+        rejection — the assertion is written to catch exactly that, so the coupling
+        cannot rot silently into a vacuous pass.
+
+        Scoped to tenant-setup + nonprod only: the gate runs only in the nonprod
+        lane, and a staging or production deploy role has no business holding an
+        invoke grant it never exercises.
+        """
+        if service_repository.name != "tenant-setup" or target_environment != "nonprod":
+            return None
+        return iam.ManagedPolicy(
+            self,
+            f"{self._logical_id_prefix(service_repository.name)}TenantReadDenyGatePolicy",
+            managed_policy_name=(
+                f"campps-{service_repository.name}-{target_environment}"
+                "-gha-tenant-read-deny-gate-policy"
+            ),
+            description=(
+                "Deploy-gated tenant.read denial proof grant for "
+                f"{service_repository.repository} {target_environment} "
+                "(campps-tenant-setup go-live gate)"
+            ),
+            statements=[
+                iam.PolicyStatement(
+                    sid="TenantReadDenyGateInvoke",
+                    actions=["execute-api:Invoke"],
+                    resources=[
+                        self.format_arn(
+                            service="execute-api",
+                            resource="*",
+                            resource_name=(
+                                f"{target_environment}/GET/tenants/"
+                                f"{TENANT_READ_DENY_GATE_TENANT_ID}"
+                            ),
                             arn_format=ArnFormat.SLASH_RESOURCE_NAME,
                         )
                     ],
