@@ -28,6 +28,27 @@
 
 ---
 
+## 2026-08-01
+
+### A stored user access token is configuration with a built-in failure date
+
+**Evidence.** Tenant Setup nonprod deploy run `30679686256` deployed the stack
+successfully, then every assisted-onboarding request failed authorization. The
+GitHub Environment actor-token secrets predated the run, while the canonical
+WorkOS test identity can mint a fresh token from Secrets Manager.
+
+**Mechanism.** A WorkOS user access token is intentionally short lived. Storing
+one as durable GitHub configuration makes a later deployment deterministically
+fail even though AWS deployment and the application revision are healthy.
+
+**Fix.** Give only the Tenant Setup nonprod deploy role read access to the
+canonical test-user bundle and referenced provider key. The repository's live
+tests mint and refresh tokens in process and never publish credential values to
+GitHub Actions environment files or logs.
+
+**Generalizable rule.** Store durable credential inputs behind a narrowly
+scoped runtime identity; mint short-lived bearer tokens at the moment of use.
+
 ## 2026-07-17
 
 ### A `stack/<prefix>-*/*` ARN pattern excludes the exact-named base stack — and CDK deploys mask the gap

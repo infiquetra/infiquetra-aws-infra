@@ -1399,6 +1399,8 @@ E2E_CANARY_ALL_ENVIRONMENTS_REPO = ServiceRepository(
 )
 
 SEAM_PROOF_POLICY_NAME = "campps-tenant-setup-nonprod-gha-seam-proof-policy"
+E2E_CREDENTIALS_POLICY_NAME = "campps-tenant-setup-nonprod-gha-e2e-credentials-policy"
+E2E_CREDENTIALS_POLICY_SUFFIX = "-gha-e2e-credentials-policy"
 IDENTITY_SCOPE_READBACK_POLICY_NAME = (
     "campps-e2e-canary-nonprod-gha-identity-scope-readback-policy"
 )
@@ -1413,6 +1415,13 @@ def assert_no_identity_scope_readback_policy(template: Template) -> None:
     assert not any(
         name.endswith(IDENTITY_SCOPE_READBACK_POLICY_SUFFIX) for name in policy_names
     ), f"Unexpected identity-scope readback policy: {policy_names}"
+
+
+def assert_no_tenant_setup_e2e_credentials_policy(template: Template) -> None:
+    policy_names = managed_policy_names(template)
+    assert not any(
+        name.endswith(E2E_CREDENTIALS_POLICY_SUFFIX) for name in policy_names
+    ), f"Unexpected Tenant Setup E2E credentials policy: {policy_names}"
 
 
 def assert_no_live_proof_resources(template: Template) -> None:
@@ -1510,6 +1519,57 @@ def test_identity_access_nonprod_has_no_seam_proof_policy() -> None:
     assert not any(
         name is not None and "gha-seam-proof-policy" in name for name in policy_names
     ), f"Unexpected seam-proof policy for identity-access: {policy_names}"
+
+
+def test_tenant_setup_nonprod_deploy_role_has_e2e_credentials_policy() -> None:
+    """The deploy gate can read only the two secrets needed to mint a token."""
+    template = synth_template_for_repositories(
+        TENANT_SETUP_REPO, target_environment="nonprod"
+    )
+    policy_logical_id, policy = find_managed_policy_with_logical_id(
+        template, E2E_CREDENTIALS_POLICY_NAME
+    )
+    statements = policy["Properties"]["PolicyDocument"]["Statement"]
+
+    assert len(statements) == 1, statements
+    statement = statements[0]
+    assert statement["Sid"] == "WorkOsTestUserCredentialRead"
+    assert set(normalize_actions(statement["Action"])) == {
+        "secretsmanager:GetSecretValue"
+    }
+    resources = tuple(normalize_resources(statement["Resource"]))
+    assert len(resources) == 2, resources
+    rendered_resources = str(resources)
+    assert "campps/e2e/nonprod/workos-test-user-??????" in rendered_resources
+    assert "campps/identity-access/nonprod/workos/api-key-??????" in rendered_resources
+    assert "campps/e2e/staging" not in rendered_resources
+    assert "campps/e2e/production" not in rendered_resources
+    assert "*" not in rendered_resources
+
+    role = find_deploy_role(template, TENANT_SETUP_REPO.role_name("nonprod"))
+    assert {"Ref": policy_logical_id} in role["Properties"]["ManagedPolicyArns"]
+
+
+def test_tenant_setup_higher_environments_have_no_e2e_credentials_policy() -> None:
+    """Staging and production must not receive nonprod test-user access."""
+    higher_environments: tuple[DeployEnvironment, ...] = ("staging", "production")
+    for environment in higher_environments:
+        template = synth_template_for_repositories(
+            TENANT_SETUP_REPO, target_environment=environment
+        )
+        assert_no_tenant_setup_e2e_credentials_policy(template)
+
+
+def test_unrelated_nonprod_service_has_no_tenant_setup_e2e_credentials_policy() -> None:
+    """The cross-service secret reads stay isolated to Tenant Setup."""
+    template = synth_template_for_repositories(
+        ServiceRepository(
+            name="identity-access",
+            repository="infiquetra/campps-identity-access",
+        ),
+        target_environment="nonprod",
+    )
+    assert_no_tenant_setup_e2e_credentials_policy(template)
 
 
 # --- e2e-canary identity-scope readback grant -------------------------------
