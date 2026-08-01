@@ -25,6 +25,32 @@
 
 ---
 
+## 2026-08-01
+
+### Let Tenant Setup mint its nonprod test-user token without GitHub secrets
+
+**Decision.** Attach one nonprod-only managed policy to the existing Tenant
+Setup GitHub deploy role. The policy grants only
+`secretsmanager:GetSecretValue` on the canonical WorkOS test-user bundle and
+the Identity Access WorkOS API-key secret, each constrained to Secrets
+Manager's exact six-character generated suffix. Tenant Setup can then mint a
+short-lived user token inside the test process rather than storing an expiring
+token in a GitHub Environment secret.
+
+**Rejected alternatives.** Broad access to the Identity Access or E2E secret
+namespaces would exceed the proof's needs. Reusing the E2E Canary live-proof
+role would cross repository trust boundaries. Keeping static access tokens in
+GitHub would preserve the expiry failure that caused this repair.
+
+**Implementation.** `campps_deploy_roles_stack.py` creates and attaches the
+guarded policy only for `tenant-setup` in `nonprod`; focused synthesis tests pin
+the action, two resource patterns, attachment, environment guard, and
+repository isolation.
+
+**Revisit when.** The proof moves to another environment, the bundle contract
+changes, or either secret moves to a customer-managed KMS key that requires an
+explicit decrypt grant.
+
 ## 2026-07-11
 
 ### Give the protected nonprod E2E proof its own two-read role
