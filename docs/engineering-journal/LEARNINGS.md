@@ -30,6 +30,26 @@
 
 ## 2026-08-01
 
+### A shared test-user path can bind the wrong authorization identity
+
+**Evidence.** A read-only live preflight found that Tenant Setup's three
+configured actor variables consistently identify one active WorkOS-backed
+person with a nonprod membership and role grant, but that person is not E2E
+Canary's retained test person.
+
+**Mechanism.** The original deploy-role policy assumed the repositories shared
+one test user because they shared a proposed secret name. Their authorization
+state proves otherwise: the user identifiers and CAMPPS person identifiers are
+distinct.
+
+**Fix.** Scope Tenant Setup's deploy role to
+`campps/tenant-setup/nonprod/workos-test-user`, while retaining only the exact
+Identity Access API-key read it needs to mint tokens.
+
+**Generalizable rule.** Share an identity credential only after verifying that
+every consumer expects the same provider subject and application person. A
+common secret name is not evidence of a common authorization identity.
+
 ### A stored user access token is configuration with a built-in failure date
 
 **Evidence.** Tenant Setup nonprod deploy run `30679686256` deployed the stack
@@ -41,8 +61,8 @@ WorkOS test identity can mint a fresh token from Secrets Manager.
 one as durable GitHub configuration makes a later deployment deterministically
 fail even though AWS deployment and the application revision are healthy.
 
-**Fix.** Give only the Tenant Setup nonprod deploy role read access to the
-canonical test-user bundle and referenced provider key. The repository's live
+**Fix.** Give only the Tenant Setup nonprod deploy role read access to its
+service-owned test-user bundle and referenced provider key. The repository's live
 tests mint and refresh tokens in process and never publish credential values to
 GitHub Actions environment files or logs.
 

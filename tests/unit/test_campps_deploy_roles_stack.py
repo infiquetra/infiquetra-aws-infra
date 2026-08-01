@@ -1540,10 +1540,10 @@ def test_tenant_setup_nonprod_deploy_role_has_e2e_credentials_policy() -> None:
     resources = tuple(normalize_resources(statement["Resource"]))
     assert len(resources) == 2, resources
     rendered_resources = str(resources)
-    assert "campps/e2e/nonprod/workos-test-user-??????" in rendered_resources
+    assert "campps/tenant-setup/nonprod/workos-test-user-??????" in rendered_resources
     assert "campps/identity-access/nonprod/workos/api-key-??????" in rendered_resources
-    assert "campps/e2e/staging" not in rendered_resources
-    assert "campps/e2e/production" not in rendered_resources
+    assert "campps/tenant-setup/staging" not in rendered_resources
+    assert "campps/tenant-setup/production" not in rendered_resources
     assert "*" not in rendered_resources
 
     role = find_deploy_role(template, TENANT_SETUP_REPO.role_name("nonprod"))

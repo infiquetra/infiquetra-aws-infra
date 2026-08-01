@@ -1788,7 +1788,7 @@ class CamppsDeployRolesStack(Stack):
             return None
 
         secret_names = (
-            "campps/e2e/nonprod/workos-test-user-??????",
+            "campps/tenant-setup/nonprod/workos-test-user-??????",
             "campps/identity-access/nonprod/workos/api-key-??????",
         )
         return iam.ManagedPolicy(
