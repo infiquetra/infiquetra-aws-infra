@@ -32,6 +32,18 @@ CODEARTIFACT_REPOSITORY = "campps"
 #: literally, so wildcarding the API id costs nothing.
 TENANT_READ_DENY_GATE_TENANT_ID = "tenant-out-of-scope-golive"
 
+#: Canary stack the campps-platform nonprod deploy role describes to read
+#: ``HealthUrl``. Pinned to the nonprod literal so a forgotten environment gate
+#: cannot name a staging or production stack. Cross-repo coupling: this is the
+#: construct id in campps-e2e-canary ``infra/app.py``.
+PLATFORM_E2E_CANARY_STACK_NAME = "campps-e2e-canary-nonprod"
+
+#: Explicit ``function_name`` of the canary health Lambda (campps-e2e-canary
+#: ``E2ECanaryStack``). The live Function URL is IAM-authed on this function.
+#: The function resource policy names the *canary* deploy role, not platform's,
+#: so the platform role needs an identity-based ``InvokeFunctionUrl`` grant.
+PLATFORM_E2E_CANARY_HEALTH_FUNCTION_NAME = "campps-e2e-canary-nonprod-health"
+
 
 class CamppsDeployRolesStack(Stack):
     """Create per-service GitHub Actions deploy roles in a CAMPPS account."""
@@ -104,6 +116,13 @@ class CamppsDeployRolesStack(Stack):
             )
             if identity_scope_readback_policy is not None:
                 deploy_role.add_managed_policy(identity_scope_readback_policy)
+
+            e2e_canary_health_policy = self._create_platform_e2e_canary_health_policy(
+                service_repository=service_repository,
+                target_environment=target_environment,
+            )
+            if e2e_canary_health_policy is not None:
+                deploy_role.add_managed_policy(e2e_canary_health_policy)
 
             live_proof_role = self._create_e2e_canary_live_proof_role(
                 oidc_provider=oidc_provider,
@@ -1860,6 +1879,74 @@ class CamppsDeployRolesStack(Stack):
                             resource="table",
                             resource_name=f"campps-identity-access-{target_environment}",
                             arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+            ],
+        )
+
+    def _create_platform_e2e_canary_health_policy(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+    ) -> iam.ManagedPolicy | None:
+        """Nonprod-only grant so campps-platform can probe the e2e canary.
+
+        campps-platform's enforced e2e gate describes
+        ``campps-e2e-canary-nonprod``, reads the ``HealthUrl`` output, then
+        SigV4-GETs the IAM-authenticated Function URL. Without this grant both
+        calls are ``implicitDeny``; the test catches ``ClientError`` and skips,
+        so the gate reports green while proving nothing (infiquetra-aws-infra
+        #156 / campps-platform #43).
+
+        The canary function's resource policy names
+        ``campps-e2e-canary-nonprod-gha-deploy-role``, not this role, so an
+        identity-based grant is required. Resource names are nonprod literals
+        so a forgotten environment check cannot name staging or production.
+
+        Scoped to platform + nonprod only. The registry name is ``platform``,
+        not ``campps-platform``.
+        """
+        if service_repository.name != "platform" or target_environment != "nonprod":
+            return None
+        return iam.ManagedPolicy(
+            self,
+            (
+                f"{self._logical_id_prefix(service_repository.name)}"
+                "E2eCanaryHealthPolicy"
+            ),
+            managed_policy_name=(
+                f"campps-{service_repository.name}-{target_environment}"
+                "-gha-e2e-canary-health-policy"
+            ),
+            description=(
+                "E2E canary HealthUrl describe+invoke grant for "
+                f"{service_repository.repository} {target_environment} "
+                "(infiquetra-aws-infra #156)"
+            ),
+            statements=[
+                iam.PolicyStatement(
+                    sid="E2eCanaryStackDescribe",
+                    actions=["cloudformation:DescribeStacks"],
+                    resources=[
+                        self.format_arn(
+                            service="cloudformation",
+                            resource="stack",
+                            resource_name=f"{PLATFORM_E2E_CANARY_STACK_NAME}/*",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="E2eCanaryHealthInvoke",
+                    actions=["lambda:InvokeFunctionUrl"],
+                    resources=[
+                        self.format_arn(
+                            service="lambda",
+                            resource="function",
+                            resource_name=PLATFORM_E2E_CANARY_HEALTH_FUNCTION_NAME,
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
                         )
                     ],
                 ),

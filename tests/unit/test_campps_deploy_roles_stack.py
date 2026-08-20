@@ -1,5 +1,6 @@
 """Unit tests for CAMPPS service deploy role generation."""
 
+import hashlib
 import json
 from collections.abc import Iterable
 from fnmatch import fnmatchcase
@@ -9,7 +10,11 @@ import pytest
 from aws_cdk import App, Environment
 from aws_cdk.assertions import Template
 
-from infiquetra_aws_infra.campps_deploy_roles_stack import CamppsDeployRolesStack
+from infiquetra_aws_infra.campps_deploy_roles_stack import (
+    PLATFORM_E2E_CANARY_HEALTH_FUNCTION_NAME,
+    PLATFORM_E2E_CANARY_STACK_NAME,
+    CamppsDeployRolesStack,
+)
 from infiquetra_aws_infra.campps_service_registry import (
     CAMPPS_SERVICE_REPOSITORIES,
     DeployEnvironment,
@@ -934,18 +939,16 @@ def test_platform_foundation_policy_is_split_under_iam_size_limit() -> None:
     )
 
     sizes = managed_policy_document_sizes(template)
-    deploy_policy_sizes = {
-        name: size
-        for name, size in sizes.items()
-        if name.startswith("campps-platform-nonprod-gha-")
-        and "permissions-boundary" not in name
-    }
-
-    assert set(deploy_policy_sizes) == {
+    split_names = {
         "campps-platform-nonprod-gha-deploy-policy",
         "campps-platform-nonprod-gha-runtime-policy",
         "campps-platform-nonprod-gha-data-policy",
-    }, deploy_policy_sizes
+    }
+    deploy_policy_sizes = {
+        name: size for name, size in sizes.items() if name in split_names
+    }
+
+    assert set(deploy_policy_sizes) == split_names, deploy_policy_sizes
     for name, size in deploy_policy_sizes.items():
         assert size < IAM_MANAGED_POLICY_SIZE_LIMIT, (name, size)
 
@@ -1987,3 +1990,250 @@ def test_live_proof_synth_is_stable() -> None:
     ).to_json()
 
     assert first == second
+
+
+# --- campps-platform e2e canary health probe grant (issue #156) -------------
+#
+# The nonprod deploy role for campps-platform must describe the canary stack
+# and invoke its IAM-authed Function URL. The grant is scoped to platform +
+# nonprod only. Resource ARNs are asserted literally so an actions-only test
+# cannot pass a "*" resource.
+
+PLATFORM_REPO = ServiceRepository(
+    name="platform",
+    repository="infiquetra/campps-platform",
+    deploy_profile="platform-foundation",
+)
+
+PLATFORM_E2E_CANARY_HEALTH_POLICY_NAME = (
+    "campps-platform-nonprod-gha-e2e-canary-health-policy"
+)
+PLATFORM_E2E_CANARY_HEALTH_POLICY_SUFFIX = "-gha-e2e-canary-health-policy"
+
+PLATFORM_NONPROD_BASE_POLICY_SHA256 = {
+    "campps-platform-nonprod-gha-deploy-policy": (
+        "181ab9fe22b80fe4e8a24e873ff22ceab9fd075706cf5e623cc3178c38809b0d"
+    ),
+    "campps-platform-nonprod-gha-runtime-policy": (
+        "0768e196d2442fa1c1908f586117183287f46ab0a487613aabcc9ac619e8d479"
+    ),
+    "campps-platform-nonprod-gha-data-policy": (
+        "28294f746d926f6bdec9ef1fcc9114291d98c19cd60e94368de88c49adcdc62b"
+    ),
+}
+
+# Frozen from origin/main at b6809bc via synth_template_for_repositories
+# against CANONICAL_SERVICE_REPOSITORIES. A new resource in staging or
+# production must change these.
+STAGING_FULL_REGISTRY_TEMPLATE_SHA256 = (
+    "5f141da66a6adcb0fd21aa3f6c2a0dd156212de918eee725109dc04e79b45978"
+)
+PRODUCTION_FULL_REGISTRY_TEMPLATE_SHA256 = (
+    "421203a765a201601d14777f69b474b9c34c8a52db0d9402609b251ae9b03cd2"
+)
+
+CANARY_STACK_ARN_FRAGMENT = (
+    f":cloudformation:us-east-1:477152411873:stack/{PLATFORM_E2E_CANARY_STACK_NAME}/*"
+)
+CANARY_FUNCTION_ARN_FRAGMENT = (
+    ":lambda:us-east-1:477152411873:function:"
+    f"{PLATFORM_E2E_CANARY_HEALTH_FUNCTION_NAME}"
+)
+
+
+def canonical_json_sha256(value: Any) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def flatten_cfn(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, separators=(",", ":"))
+
+
+def assert_no_platform_e2e_canary_health_policy(template: Template) -> None:
+    policy_names = managed_policy_names(template)
+    assert not any(
+        name.endswith(PLATFORM_E2E_CANARY_HEALTH_POLICY_SUFFIX) for name in policy_names
+    ), f"Unexpected e2e-canary health policy: {policy_names}"
+
+
+def _bare_deploy_roles_stack() -> CamppsDeployRolesStack:
+    app = App()
+    return CamppsDeployRolesStack(
+        app,
+        "BareCamppsDeployRolesStack",
+        target_environment="nonprod",
+        service_repositories=(),
+        env=Environment(account="477152411873", region="us-east-1"),
+    )
+
+
+def test_factory_returns_none_for_every_non_matching_service_and_environment() -> None:
+    """The gate is the product. A happy-path synth does not prove it.
+
+    If the environment check is deleted, this test must fail. Each pair gets
+    its own stack so a leak is ``is not None``, not a construct-id collision.
+    """
+    cases: list[tuple[ServiceRepository, DeployEnvironment]] = [
+        (service, environment)
+        for service in CAMPPS_SERVICE_REPOSITORIES
+        for environment in DEPLOY_ENVIRONMENTS
+        if not (service.name == "platform" and environment == "nonprod")
+    ]
+    cases.append(
+        (
+            ServiceRepository(
+                name="campps-platform",
+                repository="infiquetra/campps-platform",
+                deploy_profile="platform-foundation",
+            ),
+            "nonprod",
+        )
+    )
+
+    leaks: list[tuple[str, str]] = []
+    for index, (service, environment) in enumerate(cases):
+        app = App()
+        stack = CamppsDeployRolesStack(
+            app,
+            f"BareCamppsDeployRolesStack{index}",
+            target_environment="nonprod",
+            service_repositories=(),
+            env=Environment(account="477152411873", region="us-east-1"),
+        )
+        result = stack._create_platform_e2e_canary_health_policy(
+            service_repository=service,
+            target_environment=environment,
+        )
+        if result is not None:
+            leaks.append((service.name, environment))
+
+    assert leaks == [], f"factory leaked for {leaks}"
+
+
+def test_factory_returns_policy_for_platform_nonprod() -> None:
+    stack = _bare_deploy_roles_stack()
+    policy = stack._create_platform_e2e_canary_health_policy(
+        service_repository=PLATFORM_REPO,
+        target_environment="nonprod",
+    )
+    assert policy is not None
+
+
+def test_platform_nonprod_deploy_role_has_e2e_canary_health_policy() -> None:
+    """Positive: exact actions, exact ARNs, attached to the platform role."""
+    template = synth_template_for_repositories(
+        PLATFORM_REPO, target_environment="nonprod"
+    )
+    policy_logical_id, policy = find_managed_policy_with_logical_id(
+        template, PLATFORM_E2E_CANARY_HEALTH_POLICY_NAME
+    )
+    statements = policy["Properties"]["PolicyDocument"]["Statement"]
+    statements_by_sid = {stmt["Sid"]: stmt for stmt in statements if "Sid" in stmt}
+    assert set(statements_by_sid) == {
+        "E2eCanaryStackDescribe",
+        "E2eCanaryHealthInvoke",
+    }
+
+    describe = statements_by_sid["E2eCanaryStackDescribe"]
+    assert set(normalize_actions(describe["Action"])) == {
+        "cloudformation:DescribeStacks"
+    }
+    describe_rendered = flatten_cfn(describe["Resource"])
+    assert CANARY_STACK_ARN_FRAGMENT in describe_rendered, describe_rendered
+    assert describe_rendered.count("*") == 1, describe_rendered
+    assert f"{PLATFORM_E2E_CANARY_STACK_NAME}-*" not in describe_rendered
+    assert "*" not in json.dumps(describe["Action"])
+
+    invoke = statements_by_sid["E2eCanaryHealthInvoke"]
+    assert set(normalize_actions(invoke["Action"])) == {"lambda:InvokeFunctionUrl"}
+    invoke_rendered = flatten_cfn(invoke["Resource"])
+    assert CANARY_FUNCTION_ARN_FRAGMENT in invoke_rendered, invoke_rendered
+    assert "*" not in invoke_rendered, invoke_rendered
+    assert "*" not in json.dumps(invoke["Action"])
+
+    role = find_deploy_role(template, PLATFORM_REPO.role_name("nonprod"))
+    assert {"Ref": policy_logical_id} in role["Properties"]["ManagedPolicyArns"]
+    assert role["Properties"].get("Policies") is None
+
+
+def test_e2e_canary_health_policy_attached_to_exactly_one_role() -> None:
+    """Full registry: only campps-platform-nonprod-gha-deploy-role holds it."""
+    template = synth_template_for_repositories(
+        *CANONICAL_SERVICE_REPOSITORIES, target_environment="nonprod"
+    )
+    policy_logical_id, _ = find_managed_policy_with_logical_id(
+        template, PLATFORM_E2E_CANARY_HEALTH_POLICY_NAME
+    )
+    attached: list[str] = []
+    for role in template.find_resources("AWS::IAM::Role").values():
+        arns = role.get("Properties", {}).get("ManagedPolicyArns", [])
+        if {"Ref": policy_logical_id} in arns:
+            attached.append(str(role["Properties"]["RoleName"]))
+    assert attached == ["campps-platform-nonprod-gha-deploy-role"]
+
+
+def test_platform_staging_and_production_have_no_e2e_canary_health_policy() -> None:
+    """Negative: platform still mints higher-env roles, but not this policy."""
+    higher_environments: tuple[DeployEnvironment, ...] = ("staging", "production")
+    for environment in higher_environments:
+        template = synth_template_for_repositories(
+            PLATFORM_REPO, target_environment=environment
+        )
+        template.has_resource_properties(
+            "AWS::IAM::Role",
+            {"RoleName": PLATFORM_REPO.role_name(environment)},
+        )
+        assert_no_platform_e2e_canary_health_policy(template)
+
+
+def test_unrelated_nonprod_services_have_no_e2e_canary_health_policy() -> None:
+    unrelated = (
+        TENANT_SETUP_REPO,
+        E2E_CANARY_REPO,
+        ServiceRepository(
+            name="identity-access",
+            repository="infiquetra/campps-identity-access",
+        ),
+        ServiceRepository(
+            name="registration",
+            repository="infiquetra/campps-registration",
+        ),
+    )
+    for service_repository in unrelated:
+        template = synth_template_for_repositories(
+            service_repository, target_environment="nonprod"
+        )
+        assert_no_platform_e2e_canary_health_policy(template)
+
+
+def test_platform_nonprod_base_policies_are_unchanged() -> None:
+    """The grant must not land in data, runtime, or deploy policies."""
+    template = synth_template_for_repositories(
+        PLATFORM_REPO, target_environment="nonprod"
+    )
+    hashes: dict[str, str] = {}
+    for name in PLATFORM_NONPROD_BASE_POLICY_SHA256:
+        document = find_managed_policy(template, name)["Properties"]["PolicyDocument"]
+        rendered = json.dumps(document)
+        assert "InvokeFunctionUrl" not in rendered, name
+        assert PLATFORM_E2E_CANARY_STACK_NAME not in rendered, name
+        hashes[name] = canonical_json_sha256(document)
+    assert hashes == PLATFORM_NONPROD_BASE_POLICY_SHA256
+
+
+def test_staging_and_production_full_registry_synth_are_unchanged() -> None:
+    """Higher-environment synth must match the pre-change template freeze."""
+    expected: dict[DeployEnvironment, str] = {
+        "staging": STAGING_FULL_REGISTRY_TEMPLATE_SHA256,
+        "production": PRODUCTION_FULL_REGISTRY_TEMPLATE_SHA256,
+    }
+    for environment, digest in expected.items():
+        template = synth_template_for_repositories(
+            *CANONICAL_SERVICE_REPOSITORIES,
+            target_environment=environment,
+        )
+        assert_no_platform_e2e_canary_health_policy(template)
+        assert canonical_json_sha256(template.to_json()) == digest, environment
