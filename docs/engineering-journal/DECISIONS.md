@@ -25,6 +25,59 @@
 
 ---
 
+## 2026-08-20
+
+### Grant campps-platform's nonprod deploy role a dedicated e2e-canary health policy
+
+**Decision.** Attach one optional managed policy,
+`campps-platform-nonprod-gha-e2e-canary-health-policy`, to
+`campps-platform-nonprod-gha-deploy-role` only. The policy has two statements:
+`cloudformation:DescribeStacks` on
+`arn:aws:cloudformation:us-east-1:477152411873:stack/campps-e2e-canary-nonprod/*`
+and `lambda:InvokeFunctionUrl` on
+`arn:aws:lambda:us-east-1:477152411873:function:campps-e2e-canary-nonprod-health`.
+The helper `_create_platform_e2e_canary_health_policy` returns `None` unless
+`service_repository.name == "platform"` and `target_environment == "nonprod"`.
+Resource names are nonprod literals, not interpolated from the environment.
+
+This unblocks campps-platform's enforced e2e canary
+(`tests/e2e/test_cookiecutter_deploy.py`), which today skips on
+`DescribeStacks` `AccessDenied` and reports green while proving nothing
+(infiquetra-aws-infra #156 / campps-platform #43).
+
+**Rejected alternatives.**
+- *Widen `_create_platform_foundation_deploy_policies`:* would give every
+  future platform-foundation consumer the canary probe grant. The grant is one
+  live-proof lane, not a general deploy capability.
+- *One statement with both actions:* CloudFormation and Lambda ARNs cannot
+  share a resource list without over-granting one of them.
+- *Gate on `"campps-platform"`:* the registry name is `platform`; that gate
+  would always return `None`.
+- *Interpolate `{target_environment}` into the stack/function names:* a
+  forgotten environment check would then name staging/production canaries.
+- *Add `lambda:InvokeFunction`:* issue #156 names exactly two actions.
+  Unconditioned `InvokeFunction` would also allow `aws lambda invoke`. The
+  canary function's resource policy already emits both actions for a *different*
+  principal. Follow-up only if the live SigV4 GET 403s after this identity
+  grant is deployed.
+- *Staging or production grants:* the enforced canary runs in nonprod only.
+
+**Implementation.** `infiquetra_aws_infra/campps_deploy_roles_stack.py` —
+`_create_platform_e2e_canary_health_policy`. Tests in
+`tests/unit/test_campps_deploy_roles_stack.py` call the factory for every
+non-matching service/environment pair, assert the exact ARNs, assert attachment
+to exactly one role, and hash-freeze the three existing platform nonprod
+policies plus staging/production full-registry synth. Plan:
+`docs/plans/2026-08-20-platform-e2e-canary-health-iam-plan.md`.
+
+**Revisit when.** The live SigV4 GET returns 403 after this policy is
+deployed (then consider `lambda:InvokeFunction` with
+`lambda:InvokedViaFunctionUrl=true`); the canary moves to another environment;
+or the health function is renamed away from the pinned literal.
+
+**Commit.** See PR for SHA. Source-only: this decision does not deploy
+`CamppsNonProdDeployRolesStack`.
+
 ## 2026-08-01
 
 ### Grant the tenant.read denial gate by literal tenant id, wildcarding only the API id

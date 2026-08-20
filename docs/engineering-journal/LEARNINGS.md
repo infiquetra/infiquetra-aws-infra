@@ -28,6 +28,49 @@
 
 ---
 
+## 2026-08-20
+
+### The canary Function URL resource policy names the canary deploy role, not platform's
+
+**Evidence.** Live, account `477152411873`, 2026-08-20.
+`aws lambda get-policy --function-name campps-e2e-canary-nonprod-health`
+allows `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction`
+(`InvokedViaFunctionUrl=true`) only for
+`arn:aws:iam::477152411873:role/campps-e2e-canary-nonprod-gha-deploy-role`.
+`aws iam simulate-principal-policy` for
+`campps-platform-nonprod-gha-deploy-role` returns `implicitDeny` with empty
+`MatchedStatements` for both `cloudformation:DescribeStacks` on
+`stack/campps-e2e-canary-nonprod/*` and `lambda:InvokeFunctionUrl` on
+`function:campps-e2e-canary-nonprod-health`.
+`list-attached-role-policies` on the platform role returns three *managed*
+policies (`-gha-data-policy`, `-gha-runtime-policy`, `-gha-deploy-policy`);
+`list-role-policies` returns `PolicyNames: []` — there is no inline policy.
+The stack `campps-e2e-canary-nonprod` is `UPDATE_COMPLETE` and exports
+`HealthUrl`; the function name is the explicit
+`campps-e2e-canary-nonprod-health` with `AuthType=AWS_IAM`.
+
+**Mechanism.** Same-account IAM is a union of identity and resource policies,
+but only for principals the resource policy names. campps-e2e-canary's
+`grant_invoke_url` is wired to its own GitHub deploy role (the post-deploy
+HealthUrl probe in that repo). campps-platform's e2e gate runs as a different
+principal, so the function resource policy cannot save it. CloudFormation
+stack describe has no resource policy that would help either. The test
+catches `ClientError` and skips, which is why the gate stays green.
+
+**Fix.** Identity-based grant on the platform nonprod deploy role, as a
+standalone optional helper, not a widening of the platform-foundation
+profile. Source-only in this change; live effect requires a later
+`CamppsNonProdDeployRolesStack` deploy.
+
+**Generalizable rule.** Before treating a Function URL resource policy as
+"the invoke grant already exists", read the Principal. A grant to the
+service's own deploy role is not a grant to a different repo's deploy role
+in the same account. And `list-role-policies` is the inline-policy API —
+a managed policy whose name ends in `-gha-deploy-policy` is not inline.
+
+**Refs.** Issue #156; LEARNINGS 2026-06-17 (merge ≠ deploy for these stacks);
+DECISIONS 2026-08-20.
+
 ## 2026-08-01
 
 ### A shared test-user path can bind the wrong authorization identity
