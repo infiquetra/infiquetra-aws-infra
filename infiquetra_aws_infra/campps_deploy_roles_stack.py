@@ -1950,6 +1950,28 @@ class CamppsDeployRolesStack(Stack):
                         )
                     ],
                 ),
+                # Invoking an IAM-authed Function URL needs BOTH actions:
+                # ``lambda:InvokeFunctionUrl`` authorises the URL, and
+                # ``lambda:InvokeFunction`` performs the invocation. Granting
+                # only the first yields HTTP 403 Forbidden at the SigV4 GET —
+                # measured on campps-platform deploy run 32433395232. The
+                # canary's own resource policy emits both for its own deploy
+                # role; this is the identity-side equivalent for the platform
+                # role. The condition keeps the grant to the Function URL path
+                # only: it does not permit a direct ``lambda:Invoke`` call.
+                iam.PolicyStatement(
+                    sid="E2eCanaryHealthInvokeViaFunctionUrl",
+                    actions=["lambda:InvokeFunction"],
+                    resources=[
+                        self.format_arn(
+                            service="lambda",
+                            resource="function",
+                            resource_name=PLATFORM_E2E_CANARY_HEALTH_FUNCTION_NAME,
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        )
+                    ],
+                    conditions={"Bool": {"lambda:InvokedViaFunctionUrl": "true"}},
+                ),
             ],
         )
 

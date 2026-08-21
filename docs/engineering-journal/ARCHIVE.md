@@ -26,6 +26,56 @@
 
 ---
 
+## 2026-08-21
+
+### SHIPPED — `lambda:InvokeFunction` (`InvokedViaFunctionUrl`) for the platform canary probe
+
+**Shipped.** `fix/canary-invoke-function`, infiquetra-aws-infra, 2026-08-21.
+
+The queued trigger fired exactly as written: `CamppsNonProdDeployRolesStack` was deployed with
+`campps-platform-nonprod-gha-e2e-canary-health-policy`, `simulate-principal-policy` returned `allowed`
+for `lambda:InvokeFunctionUrl`, and the campps-platform e2e canary still returned **HTTP 403 Forbidden**
+rather than executing green — campps-platform deploy run 32433395232, 2026-08-21.
+
+**Evidence for the diagnosis.** Simulating `lambda:InvokeFunction` with the runtime context key
+`lambda:InvokedViaFunctionUrl=true` separates the two roles cleanly:
+
+| role | `InvokeFunctionUrl` | `InvokeFunction` via URL | live |
+|---|---|---|---|
+| `campps-e2e-canary-nonprod-gha-deploy-role` | allowed | **allowed** | works |
+| `campps-platform-nonprod-gha-deploy-role` | allowed | **implicitDeny** | 403 |
+
+The canary's own role draws both from the function's *resource* policy, which grants them only to that
+role. The platform role held the identity-side `InvokeFunctionUrl` alone.
+
+**Original queued rationale, preserved:**
+
+### Add `lambda:InvokeFunction` (`InvokedViaFunctionUrl`) if the platform canary still 403s
+
+**Status:** not-started
+**Why:** New Lambda Function URLs require both `lambda:InvokeFunctionUrl` and
+`lambda:InvokeFunction` (the latter conditioned on
+`lambda:InvokedViaFunctionUrl=true`). The canary function's *resource* policy
+already emits both, but only for `campps-e2e-canary-nonprod-gha-deploy-role`.
+Issue #156 grants the platform role only the two named actions
+(`DescribeStacks` + `InvokeFunctionUrl`). If the identity grant is deployed
+and the SigV4 GET still 403s, the missing action is `InvokeFunction`, not a
+broader wildcard.
+**Effort:** S
+**Worth it when:** After `CamppsNonProdDeployRolesStack` is deployed with
+`campps-platform-nonprod-gha-e2e-canary-health-policy`,
+`simulate-principal-policy` allows `InvokeFunctionUrl`, and the campps-platform
+e2e canary still returns HTTP 403 rather than executing green.
+**Related items:** infiquetra-aws-infra #156; campps-platform #43;
+`infiquetra_aws_infra/campps_deploy_roles_stack.py`
+`_create_platform_e2e_canary_health_policy`; campps-e2e-canary
+`E2ECanaryStack.grant_invoke_url`.
+**Notes:** Do not add unconditioned `lambda:InvokeFunction` — that would allow
+`aws lambda invoke` on the health function. Match the resource-policy
+condition.
+
+## P2
+
 ## 2026-05-29
 
 ### CAMPPS platform deploy role direct SSM namespace verification — SHIPPED 2026-05-29

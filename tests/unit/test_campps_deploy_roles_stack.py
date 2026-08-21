@@ -2135,6 +2135,7 @@ def test_platform_nonprod_deploy_role_has_e2e_canary_health_policy() -> None:
     assert set(statements_by_sid) == {
         "E2eCanaryStackDescribe",
         "E2eCanaryHealthInvoke",
+        "E2eCanaryHealthInvokeViaFunctionUrl",
     }
 
     describe = statements_by_sid["E2eCanaryStackDescribe"]
@@ -2154,9 +2155,42 @@ def test_platform_nonprod_deploy_role_has_e2e_canary_health_policy() -> None:
     assert "*" not in invoke_rendered, invoke_rendered
     assert "*" not in json.dumps(invoke["Action"])
 
+    # Invoking an IAM-authed Function URL needs InvokeFunction as well as
+    # InvokeFunctionUrl; granting only the latter yields HTTP 403 at the SigV4
+    # GET. The condition confines the grant to the Function URL path.
+    via_url = statements_by_sid["E2eCanaryHealthInvokeViaFunctionUrl"]
+    assert set(normalize_actions(via_url["Action"])) == {"lambda:InvokeFunction"}
+    via_url_rendered = flatten_cfn(via_url["Resource"])
+    assert CANARY_FUNCTION_ARN_FRAGMENT in via_url_rendered, via_url_rendered
+    assert "*" not in via_url_rendered, via_url_rendered
+    assert "*" not in json.dumps(via_url["Action"])
+    assert via_url["Condition"] == {"Bool": {"lambda:InvokedViaFunctionUrl": "true"}}, (
+        via_url.get("Condition")
+    )
+
     role = find_deploy_role(template, PLATFORM_REPO.role_name("nonprod"))
     assert {"Ref": policy_logical_id} in role["Properties"]["ManagedPolicyArns"]
     assert role["Properties"].get("Policies") is None
+
+
+def test_unconditioned_invoke_function_is_not_granted() -> None:
+    """The invoke grant must not permit a direct ``lambda:Invoke`` call.
+
+    Without the ``lambda:InvokedViaFunctionUrl`` condition this statement would
+    let the platform deploy role invoke the canary function by any path, which
+    is broader than the Function URL probe the grant exists for.
+    """
+    template = synth_template_for_repositories(
+        PLATFORM_REPO, target_environment="nonprod"
+    )
+    _, policy = find_managed_policy_with_logical_id(
+        template, PLATFORM_E2E_CANARY_HEALTH_POLICY_NAME
+    )
+    for stmt in policy["Properties"]["PolicyDocument"]["Statement"]:
+        if "lambda:InvokeFunction" in normalize_actions(stmt["Action"]):
+            assert stmt.get("Condition") == {
+                "Bool": {"lambda:InvokedViaFunctionUrl": "true"}
+            }, f"unconditioned lambda:InvokeFunction in {stmt.get('Sid')}"
 
 
 def test_e2e_canary_health_policy_attached_to_exactly_one_role() -> None:
