@@ -30,6 +30,36 @@
 
 ## 2026-08-20
 
+### An IAM-authed Lambda Function URL needs two actions, not one
+
+**Author.** claude (opus 5)
+
+**Evidence.** `campps-platform-nonprod-gha-deploy-role` was granted
+`lambda:InvokeFunctionUrl` on the canary function and `simulate-principal-policy` returned `allowed`.
+The SigV4 GET against the Function URL still returned **HTTP 403 Forbidden** — campps-platform deploy
+run 32433395232.
+
+**Mechanism.** Invoking a Function URL whose `AuthType` is `AWS_IAM` requires **both**
+`lambda:InvokeFunctionUrl`, which authorises the URL, and `lambda:InvokeFunction`, which performs the
+invocation. The canary function's resource policy emits both — that is what CDK's `grantInvokeUrl()`
+writes — but only for the canary's own deploy role. Simulating `lambda:InvokeFunction` with the runtime
+context key `lambda:InvokedViaFunctionUrl=true` separates the roles exactly: the canary role is
+`allowed`, the platform role `implicitDeny`.
+
+**Fix.** A second statement on the same managed policy granting `lambda:InvokeFunction` on the same
+single function ARN, conditioned on `lambda:InvokedViaFunctionUrl=true` so the grant does not extend to
+a direct invoke.
+
+**Generalizable rule.** `simulate-principal-policy` evaluates only identity policies unless you pass
+`--resource-policy`, and it answers the action you asked about — not the action AWS will actually check.
+When a call is refused but simulation says `allowed`, the usual cause is a *second* required action you
+did not think to ask about, not a `Deny`. Two useful habits follow: read the resource policy of a
+working principal and copy its action set rather than reasoning about which single action "should" be
+enough, and never treat a run under an administrator identity as evidence that a narrowly-scoped role
+will succeed — `lambda:*` masks exactly this class of gap.
+
+## 2026-08-20
+
 ### The canary Function URL resource policy names the canary deploy role, not platform's
 
 **Evidence.** Live, account `477152411873`, 2026-08-20.

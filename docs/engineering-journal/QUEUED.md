@@ -25,30 +25,6 @@
 
 ## P1
 
-### Add `lambda:InvokeFunction` (`InvokedViaFunctionUrl`) if the platform canary still 403s
-
-**Status:** not-started
-**Why:** New Lambda Function URLs require both `lambda:InvokeFunctionUrl` and
-`lambda:InvokeFunction` (the latter conditioned on
-`lambda:InvokedViaFunctionUrl=true`). The canary function's *resource* policy
-already emits both, but only for `campps-e2e-canary-nonprod-gha-deploy-role`.
-Issue #156 grants the platform role only the two named actions
-(`DescribeStacks` + `InvokeFunctionUrl`). If the identity grant is deployed
-and the SigV4 GET still 403s, the missing action is `InvokeFunction`, not a
-broader wildcard.
-**Effort:** S
-**Worth it when:** After `CamppsNonProdDeployRolesStack` is deployed with
-`campps-platform-nonprod-gha-e2e-canary-health-policy`,
-`simulate-principal-policy` allows `InvokeFunctionUrl`, and the campps-platform
-e2e canary still returns HTTP 403 rather than executing green.
-**Related items:** infiquetra-aws-infra #156; campps-platform #43;
-`infiquetra_aws_infra/campps_deploy_roles_stack.py`
-`_create_platform_e2e_canary_health_policy`; campps-e2e-canary
-`E2ECanaryStack.grant_invoke_url`.
-**Notes:** Do not add unconditioned `lambda:InvokeFunction` — that would allow
-`aws lambda invoke` on the health function. Match the resource-policy
-condition.
-
 ## P2
 
 ### Wire the CAMPPS bootstrap app into a guarded CD path (or a drift-check)
@@ -86,6 +62,23 @@ condition.
 **Worth it when:** 8h debug session limit becomes recurring friction. The supporting permission-set `SessionDuration` was already bumped to PT12H on 2026-04-25 for `AdministratorAccess`; bumping the IAM IC interactive session would let role creds last the full 12h without re-login.
 **Related items:** None.
 **Notes:** Path: AWS Console → IAM Identity Center → Settings → Authentication → Session duration → Configure. Trade-off: longer sessions = more exposure if a laptop is stolen. For solo dev on personal machine, 12-24h is reasonable.
+
+### Condition the identity-side `lambda:InvokeFunctionUrl` on `FunctionUrlAuthType`
+
+**Status:** not-started
+**Why:** `campps-platform-nonprod-gha-e2e-canary-health-policy` grants
+`lambda:InvokeFunctionUrl` unconditioned, while the canary function's *resource*
+policy pairs the same action with `StringEquals lambda:FunctionUrlAuthType =
+AWS_IAM` — that is what CDK's `grantInvokeUrl()` emits. Adding the condition
+would make the identity grant lapse automatically if the URL's auth type were
+ever flipped to `NONE`, rather than continuing to grant against an
+unauthenticated endpoint. Pre-existing; surfaced during review of the
+`InvokeFunction` follow-up.
+**Effort:** S
+**Worth it when:** Touching this policy again for any reason, or if a Function
+URL auth type anywhere in the estate is changed.
+**Related items:** infiquetra-aws-infra #156; campps-platform #43;
+`infiquetra_aws_infra/campps_deploy_roles_stack.py`
 
 ## P3
 
