@@ -26,7 +26,7 @@
 
 ---
 
-## 2026-08-21
+## 2026-08-20
 
 ### SHIPPED — `lambda:InvokeFunction` (`InvokedViaFunctionUrl`) for the platform canary probe
 
@@ -74,7 +74,6 @@ e2e canary still returns HTTP 403 rather than executing green.
 `aws lambda invoke` on the health function. Match the resource-policy
 condition.
 
-## P2
 
 ## 2026-05-29
 

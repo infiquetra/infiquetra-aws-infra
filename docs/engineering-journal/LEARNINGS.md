@@ -28,7 +28,7 @@
 
 ---
 
-## 2026-08-21
+## 2026-08-20
 
 ### An IAM-authed Lambda Function URL needs two actions, not one
 

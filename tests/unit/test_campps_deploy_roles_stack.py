@@ -2164,9 +2164,12 @@ def test_platform_nonprod_deploy_role_has_e2e_canary_health_policy() -> None:
     assert CANARY_FUNCTION_ARN_FRAGMENT in via_url_rendered, via_url_rendered
     assert "*" not in via_url_rendered, via_url_rendered
     assert "*" not in json.dumps(via_url["Action"])
-    assert via_url["Condition"] == {"Bool": {"lambda:InvokedViaFunctionUrl": "true"}}, (
-        via_url.get("Condition")
-    )
+    assert via_url.get("Condition") == {
+        "Bool": {"lambda:InvokedViaFunctionUrl": "true"}
+    }, via_url.get("Condition")
+    assert via_url["Effect"] == "Allow", via_url["Effect"]
+    assert invoke["Effect"] == "Allow", invoke["Effect"]
+    assert describe["Effect"] == "Allow", describe["Effect"]
 
     role = find_deploy_role(template, PLATFORM_REPO.role_name("nonprod"))
     assert {"Ref": policy_logical_id} in role["Properties"]["ManagedPolicyArns"]
@@ -2187,10 +2190,20 @@ def test_unconditioned_invoke_function_is_not_granted() -> None:
         template, PLATFORM_E2E_CANARY_HEALTH_POLICY_NAME
     )
     for stmt in policy["Properties"]["PolicyDocument"]["Statement"]:
-        if "lambda:InvokeFunction" in normalize_actions(stmt["Action"]):
+        actions = normalize_actions(stmt["Action"])
+        # Exact membership alone misses ``lambda:*`` and ``*``, which grant
+        # InvokeFunction in reality while failing a string comparison.
+        grants_invoke = any(
+            action == "lambda:InvokeFunction"
+            or (
+                action.endswith("*") and "lambda:InvokeFunction".startswith(action[:-1])
+            )
+            for action in actions
+        )
+        if grants_invoke:
             assert stmt.get("Condition") == {
                 "Bool": {"lambda:InvokedViaFunctionUrl": "true"}
-            }, f"unconditioned lambda:InvokeFunction in {stmt.get('Sid')}"
+            }, f"unconditioned lambda:InvokeFunction in {stmt.get('Sid')}: {actions}"
 
 
 def test_e2e_canary_health_policy_attached_to_exactly_one_role() -> None:
