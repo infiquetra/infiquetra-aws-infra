@@ -392,8 +392,8 @@ See [`docs/engineering-journal/ARCHIVE.md`](docs/engineering-journal/ARCHIVE.md)
 
 ### Package Management
 
-- **Primary**: `uv` (modern, fast package manager)
-- **Fallback**: `pip` (requirements.txt maintained for compatibility)
+- **Primary**: `uv` (`uv sync --dev`; commit `uv.lock`) — required for the gate toolchain (ruff, mypy, bandit)
+- **Legacy**: `requirements.txt` / `requirements-dev.txt` are runtime-only manifests, not supported for reproducing the gate toolchain (per `infiquetra-context-library` `docs/repositories/python-toolchain.md:42` — do not use bare `pip` for project dependency management)
 - **Python Version**: 3.13+
 
 ### Code Quality Standards

@@ -55,7 +55,7 @@ jobs:
           echo "## 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          uv run bandit -r . -f json -o bandit-report.json || true
+          uv run bandit -c pyproject.toml -r . -f json -o bandit-report.json || true
 
           if [ -f bandit-report.json ]; then
             BANDIT_ISSUES=$(jq '.results | length' bandit-report.json 2>/dev/null || echo "0")

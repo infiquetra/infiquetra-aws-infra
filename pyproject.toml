@@ -15,7 +15,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "aws-lambda-powertools>=3.17.0",
-    "bandit>=1.8.6",
+    "bandit==1.9.4",
     "black>=25.1.0",
     "boto3-stubs[essential]>=1.39.13",
     "cfn-lint>=1.38.0",
@@ -25,13 +25,13 @@ dev = [
     "ipdb>=0.13.13",
     "ipython>=9.4.0",
     "isort>=6.0.1",
-    "mypy>=1.17.0",
+    "mypy==2.1.0",
     "pbr>=6.1.1",
     "pdoc3>=0.11.6",
     "pre-commit>=4.2.0",
     "pytest>=8.4.1",
     "python-dotenv>=1.1.1",
-    "ruff>=0.12.5",
+    "ruff==0.15.18",
     "safety>=3.6.0",
     "setuptools>=80.9.0",
     "types-requests>=2.32.4.20250611",
@@ -128,7 +128,7 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 
 [tool.bandit]
-exclude_dirs = ["tests", ".venv", "build"]
+exclude_dirs = ["tests", ".venv", "build", "cdk.out", "node_modules", ".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"]
 skips = ["B101", "B601"]
 
 [tool.bandit.assert_used]

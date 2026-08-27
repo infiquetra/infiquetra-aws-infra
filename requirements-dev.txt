@@ -1,3 +1,4 @@
+# Legacy runtime manifest — not the gate toolchain. Use: uv sync --dev (see pyproject.toml)
 -r requirements.txt
 flake8>=6.0.0
 black>=23.0.0
