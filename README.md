@@ -426,11 +426,12 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy . && uv run c
 ```bash
 # Install dependencies (includes bandit via uv)
 uv sync --dev
+pip install semgrep  # semgrep not in uv group; CI installs at .github/workflows/reusable-security-scan.yml:47
 
 # Run security scans
 uv run bandit -c pyproject.toml -r .
 semgrep --config=auto .
-safety check
+uv run safety check
 ```
 
 **OIDC Bootstrap Testing**:
