@@ -559,7 +559,7 @@ pre-commit autoupdate
 ├── app.py                       # Main CDK app entry point
 ├── cdk.json                     # CDK configuration
 ├── pyproject.toml               # Python project config (uv-based)
-├── requirements.txt             # Python dependencies (pip)
+├── requirements.txt             # Legacy runtime manifest — use uv sync
 └── .pre-commit-config.yaml      # Pre-commit hooks
 ```
 
