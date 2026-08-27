@@ -458,8 +458,8 @@ See [`docs/engineering-journal/ARCHIVE.md`](../docs/engineering-journal/ARCHIVE.
 
 ### Package Management
 
-- **Primary**: `uv` (modern, fast package manager)
-- **Fallback**: `pip` (requirements.txt maintained for compatibility)
+- **Primary**: `uv` (`uv sync --dev`; commit `uv.lock`) — required for the gate toolchain (ruff, mypy, bandit)
+- **Legacy**: `requirements.txt` / `requirements-dev.txt` are runtime-only manifests, not supported for reproducing the gate toolchain (per `infiquetra-context-library` `docs/repositories/python-toolchain.md:42` — do not use bare `pip` for project dependency management)
 - **Python Version**: 3.13+
 
 ### Code Quality Standards
@@ -559,7 +559,7 @@ pre-commit autoupdate
 ├── app.py                       # Main CDK app entry point
 ├── cdk.json                     # CDK configuration
 ├── pyproject.toml               # Python project config (uv-based)
-├── requirements.txt             # Python dependencies (pip)
+├── requirements.txt             # Legacy runtime manifest — use uv sync
 └── .pre-commit-config.yaml      # Pre-commit hooks
 ```
 

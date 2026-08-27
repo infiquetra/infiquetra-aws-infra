@@ -419,18 +419,19 @@ graph LR
 **Quick Validation**:
 ```bash
 # Format and validate
-black . && flake8 . && isort . && cdk synth --all
+uv run ruff check . && uv run ruff format --check . && uv run mypy . && uv run cdk synth --all
 ```
 
 **Security Scanning**:
 ```bash
-# Install security tools
-pip install bandit semgrep checkov safety
+# Install dependencies (includes bandit via uv)
+uv sync --dev
+pip install semgrep  # semgrep not in uv group; CI installs at .github/workflows/reusable-security-scan.yml:47
 
 # Run security scans
-bandit -r .
+uv run bandit -c pyproject.toml -r .
 semgrep --config=auto .
-safety check
+uv run safety check
 ```
 
 **OIDC Bootstrap Testing**:
@@ -494,7 +495,7 @@ aws logs filter-log-events \
 aws sts get-caller-identity --profile infiquetra-root
 
 # Ensure dependencies are installed
-pip install -r requirements.txt
+uv sync --dev
 ```
 
 **Permission Denied Errors**
