@@ -2561,7 +2561,7 @@ def test_prerequisite_operator_policy_has_no_admin_table_event_or_secret_write()
         for action in normalize_actions(statement["Action"])
     }
     resources = {
-        resource
+        str(resource)
         for statement in statements_by_sid.values()
         for resource in normalize_resources(statement["Resource"])
     }

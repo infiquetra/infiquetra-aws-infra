@@ -25,6 +25,69 @@
 
 ---
 
+## 2026-09-07
+
+### Add a dedicated nonprod OIDC prerequisite-operator role instead of widening live-proof
+
+**Decision.** Mint one e2e-canary nonprod role,
+`campps-e2e-canary-nonprod-gha-prerequisite-operator-role`, in the existing
+`CamppsDeployRolesStack`. Reuse the stack OIDC provider. Trust six exact GitHub
+claims (audience, subject, repository, environment, `refs/heads/main`, workflow
+name `Tenant Setup Prerequisites Nonprod`) with a one-hour session. Permissions
+are the locked-index CodeArtifact projection, GetSecretValue on the dedicated
+operator bundle and reviewed WorkOS API-key secret, and AssumeRole on the exact
+T1 fixture-ops and planned I2 platform-operator names in `self.account`. Publish
+only `CamppsE2eCanaryPrerequisiteOperatorRoleArn`. Leave ordinary live-proof and
+deploy policies byte-for-byte equivalent.
+
+`_codeartifact_consume_statements` gains an optional `projection="locked_index"`
+mode. Default `ci_sync` keeps metadata reads and the unconditioned bearer token
+for existing consumers. The bootstrap does not copy `GetRepositoryEndpoint` or
+package-metadata actions because the locked-index install does not resolve an
+endpoint.
+
+`kms:Decrypt` is omitted. The same WorkOS API-key and operator-bundle secret
+reads already in this stack have no Secrets Manager CMK grant, and live secret
+inventory was unrun (SSO renewal pending). Adding unused `kms:Decrypt` would
+widen authority without evidence.
+
+Infra does not emit `TenantSetupFixtureOpsRoleArn` or
+`IdentityPlatformOperatorOpsRoleArn`. Those stay with Tenant Setup RP-T2 and
+Identity RP-I2. Runtime configuration must use reviewed deployed outputs, not
+synth-predicted ARNs.
+
+**Rejected alternatives.**
+- *Widen `campps-e2e-canary-nonprod-gha-live-proof-role`:* that role is the
+  retained-read path (aud+sub only, DynamoDB/GetItem, payments PutEvents). Mixing
+  bootstrap package/secret/AssumeRole into it would let retained-read inherit
+  operator authority.
+- *Copy the existing CodeArtifact consume helper unchanged:* it grants
+  repository-endpoint and package-metadata reads and an unconditioned bearer
+  token. Architect `cc63e089` forbids copying those unless maintained code
+  actually uses them.
+- *Grant `kms:Decrypt` speculatively with ViaService:* the plan allows KMS only
+  if those secret reads use a customer-managed key. No current inventory shows
+  that.
+- *Emit all three protected-variable outputs from infra:* Architect coverage
+  `3f68dc35` binds one infra output; the other two are service-owned.
+- *Trust only aud+sub like live-proof:* the bootstrap must fail closed on
+  missing repository, environment, ref, or workflow-name claims.
+
+**Implementation.** `infiquetra_aws_infra/campps_deploy_roles_stack.py` —
+`_create_e2e_canary_prerequisite_operator_role` and the `locked_index`
+projection. Tests in `tests/unit/test_campps_deploy_roles_stack.py`. Operator
+flow: `docs/ops/03-login-flows.md`. Synth/diff only
+`python3 app_campps_bootstrap.py` / `CamppsNonProdDeployRolesStack`.
+
+**Revisit when.** Live GetSecretValue returns AccessDenied that names a
+customer-managed key (then add exact-key Secrets Manager `kms:ViaService` plus
+encryption context); the dedicated bundle or WorkOS API-key logical name
+changes; or a maintained install path starts resolving
+`GetRepositoryEndpoint`.
+
+**Commit.** See PR for SHA. Source-only: this decision does not deploy
+`CamppsNonProdDeployRolesStack`.
+
 ## 2026-08-20
 
 ### Grant campps-platform's nonprod deploy role a dedicated e2e-canary health policy

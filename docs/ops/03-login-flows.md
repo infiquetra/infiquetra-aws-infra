@@ -124,6 +124,51 @@ CAMPPS service repositories do not use the management-account `infiquetra-aws-in
 
 The active service registry covers existing service repositories: `infiquetra/campps-platform`, `infiquetra/campps-contracts`, and `infiquetra/campps-identity-access`. Each active service gets `campps-<service>-nonprod-gha-deploy-role` and `campps-<service>-production-gha-deploy-role` when `app_campps_bootstrap.py` is deployed. Those workload roles exclude Organizations, SSO Admin, SSO, and IdentityStore permissions.
 
+### CAMPPS nonprod prerequisite-operator bootstrap (Tenant Setup #164)
+
+The protected Canary workflow `Tenant Setup Prerequisites Nonprod` does **not**
+use the ordinary live-proof role or a service deploy role. Nonprod
+`CamppsDeployRolesStack` mints one extra role,
+`campps-e2e-canary-nonprod-gha-prerequisite-operator-role`, reused against the
+same GitHub OIDC provider. Maximum session is one hour. Trust is only
+`sts:AssumeRoleWithWebIdentity` with exact `StringEquals` claims:
+
+| Claim | Required value |
+|---|---|
+| `aud` | `sts.amazonaws.com` |
+| `sub` | `repo:infiquetra/campps-e2e-canary:environment:nonprod` |
+| `repository` | `infiquetra/campps-e2e-canary` |
+| `environment` | `nonprod` |
+| `ref` | `refs/heads/main` |
+| `workflow` | `Tenant Setup Prerequisites Nonprod` (the signed workflow **name**, not a path) |
+
+Missing or mismatched claims fail closed. There is no `StringEqualsIfExists`,
+wildcard subject, actor allowlist, staging/production trust, or second persona.
+
+The role may: mint a step-local CodeArtifact token on the existing `infiquetra`
+domain (`sts:AWSServiceName=codeartifact.amazonaws.com`); read the locked
+`infiquetra/campps` repository; read only the dedicated operator bundle selected
+by `CAMPPS_TENANT_SETUP_OPERATOR_SECRET_ID` and the reviewed WorkOS API-key
+secret; and assume the exact Tenant Setup fixture-ops and planned Identity
+platform-operator roles in the same account. It has no table, EventBridge,
+secret-write, PassRole, admin, or deploy permission. Ordinary live-proof and
+deploy policies are unchanged.
+
+Infra publishes one output, `CamppsE2eCanaryPrerequisiteOperatorRoleArn`.
+Runtime binds `CAMPPS_PREREQUISITE_OPERATOR_ROLE_ARN` from that **deployed**
+output after review — never from a predicted or synthesized ARN. Tenant Setup
+and Identity own the later child-role outputs. Synth and diff this stack only
+with:
+
+```bash
+uv run cdk synth --app "python3 app_campps_bootstrap.py" CamppsNonProdDeployRolesStack
+uv run cdk diff --app "python3 app_campps_bootstrap.py" CamppsNonProdDeployRolesStack
+```
+
+Do not use the default organization app or `--all`. The GitHub
+`Deploy Infrastructure` workflow still targets the organization app and must
+not be used to apply this stack.
+
 ## Programmatic access to other accounts
 
 If you need API access into `campps-prod` or `campps-nonprod` from your local CLI today:
