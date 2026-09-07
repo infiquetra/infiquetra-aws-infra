@@ -11,6 +11,7 @@ from aws_cdk import App, Environment
 from aws_cdk.assertions import Template
 
 from infiquetra_aws_infra.campps_deploy_roles_stack import (
+    CAMPPS_NONPROD_ACCOUNT_ID,
     PLATFORM_E2E_CANARY_HEALTH_FUNCTION_NAME,
     PLATFORM_E2E_CANARY_STACK_NAME,
     CamppsDeployRolesStack,
@@ -2549,6 +2550,89 @@ def test_prerequisite_operator_secret_patterns_have_exact_generated_suffix_width
     ):
         assert not fnmatchcase(forbidden_name, OPERATOR_BUNDLE_NAME_PATTERN)
         assert not fnmatchcase(forbidden_name, WORKOS_API_KEY_PATTERN)
+
+
+@pytest.mark.parametrize(
+    "logical_name",
+    [
+        "campps/e2e/nonprod/tenant-setup-platform-operator",
+        "campps/identity-access/nonprod/workos/api-key",
+    ],
+)
+@pytest.mark.parametrize(
+    "case",
+    [
+        "intended",
+        "recreated",
+        "retained",
+        "other",
+        "extended",
+        "prefixed",
+        "nested",
+        "short_suffix",
+        "long_suffix",
+        "wrong_account",
+        "wrong_region",
+        "wrong_service",
+        "wrong_partition",
+    ],
+)
+def test_prerequisite_operator_rendered_secret_selectors(
+    logical_name: str,
+    case: str,
+) -> None:
+    """Exercise the synthesized resources, not just hand-written name patterns."""
+    statement = _prerequisite_operator_statements()["PrerequisiteOperatorSecretRead"]
+    assert statement["Effect"] == "Allow"
+    assert normalize_actions(statement["Action"]) == ("secretsmanager:GetSecretValue",)
+    resources = statement["Resource"]
+    assert len(resources) == 2
+    selectors: list[str] = []
+    for resource in resources:
+        # The sole unresolved intrinsic in these rendered ARNs is the partition.
+        assert set(resource) == {"Fn::Join"}
+        separator, parts = resource["Fn::Join"]
+        assert separator == ""
+        assert all(
+            isinstance(part, str) or part == {"Ref": "AWS::Partition"} for part in parts
+        )
+        selector = "".join(part if isinstance(part, str) else "aws" for part in parts)
+        assert "*" not in selector
+        assert selector.count("?") == 6
+        selectors.append(selector)
+
+    suffix = "Ab12xy"
+    account = CAMPPS_NONPROD_ACCOUNT_ID
+    region, service, partition = "us-east-1", "secretsmanager", "aws"
+    if case == "recreated":
+        suffix = "Zy98wV"
+    elif case == "retained":
+        logical_name = "campps/e2e/nonprod/workos-test-user"
+    elif case == "other":
+        logical_name = "campps/e2e/nonprod/unrelated-operator"
+    elif case == "extended":
+        logical_name += "-copy"
+    elif case == "prefixed":
+        logical_name = "copied/" + logical_name
+    elif case == "nested":
+        logical_name += "/copy"
+    elif case == "short_suffix":
+        suffix = suffix[:-1]
+    elif case == "long_suffix":
+        suffix += "z"
+    elif case == "wrong_account":
+        account = "000000000000"
+    elif case == "wrong_region":
+        region = "us-west-2"
+    elif case == "wrong_service":
+        service = "ssm"
+    elif case == "wrong_partition":
+        partition = "aws-us-gov"
+    candidate = (
+        f"arn:{partition}:{service}:{region}:{account}:secret:{logical_name}-{suffix}"
+    )
+    matches = [selector for selector in selectors if fnmatchcase(candidate, selector)]
+    assert len(matches) == (1 if case in {"intended", "recreated"} else 0)
 
 
 def test_prerequisite_operator_policy_has_no_admin_table_event_or_secret_write() -> (

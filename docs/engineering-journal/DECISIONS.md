@@ -27,6 +27,54 @@
 
 ## 2026-09-07
 
+### Preserve exact bootstrap selectors and recover only owned resources
+
+**Decision.** Standard Repair 3 follows Planner `9c73c522` and Architect
+[`6f5b609`](https://github.com/infiquetra/campps-tenant-setup/blob/6f5b6099692bb26b7bdd7053b840f0503d0716b4/docs/runs/164/continuation-review-disposition.md):
+retain the accepted IAM implementation and strengthen the existing tests against
+rendered secret resources. Both approved logical names keep the generated
+six-character suffix selector in the exact account/region. Same-name recreation
+remains selectable and requires owning setup/configuration revalidation; selector
+tests are not live permission proof.
+
+Canary owns signed workflow-name uniqueness and rename regressions; infra owns
+coordinated trust changes. B1 may precede exact child roles, whose deployed
+outputs and effective trust remain Release/Tester readback responsibilities.
+The named pending nonprod protection/main/OIDC/configuration evidence remains
+open. All six claims and the existing final-main-message/exact-SHA validation
+protocol below stay binding.
+
+For retirement, stop new runs while preserving authorized cleanup. Inspect
+original operations, restore only owned suspension lineage/prior state, finish
+or retain truthful event obligations, revoke only the dedicated operator grant,
+and record incomplete cleanup honestly. Then disable owned bootstrap delegation
+and remove its protected binding through the authorized owner procedure.
+Outstanding bootstrap and child sessions must expire or receive existing
+targeted authorized revocation; stopping new OIDC sessions does not erase them.
+Only afterward review removal of B1's role, managed policy and output as a
+reverse delta on **current** shared-stack source. Preserve concurrent changes,
+the shared OIDC provider, proof/deploy/service roles, accounts, secrets and
+durable recovery/audit records. Use only the exact nonprod app/stack and safe
+main protocol. Normal cleanup retains reusable roles/account/profile.
+
+**Rejected alternatives.**
+- Broad secret wildcards, speculative KMS access, new role-order guards or
+  workflow monitors would exceed the demonstrated evidence gaps.
+- Shared-stack destruction or a historical template could remove unrelated
+  current resources and cannot safely restore owned fixture state.
+- Disabling all access before cleanup could strand owned suspension/event
+  obligations; stopping OIDC alone would leave child sessions active.
+
+**Implementation.** Existing selector tests and
+[`03-login-flows.md`](../ops/03-login-flows.md#owned-cleanup-and-bootstrap-removal).
+New selector cases are expected to pass the unchanged reviewed implementation;
+there is no fabricated failing-test history. No cloud action is performed.
+**Revisit when.** A maintained selector case demonstrates an actual defect, an
+approved logical name/role/workflow contract changes, or live readback proves a
+binding mismatch; return to the existing owner for a bounded disposition.
+**Commit.** PR #163, Standard Repair 3 evidence/docs delta from `31bea23a`.
+Completed repair counts remain two standard / zero expert pending whole-batch review.
+
 ### Bind this delivery's main merge to a final `[skip actions]` message plus exact-SHA validation
 
 **Decision.** Keep RP-B1's four-file custody and do not edit workflows. For this

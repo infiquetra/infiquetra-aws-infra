@@ -169,6 +169,69 @@ Do not use the default organization app or `--all`. The GitHub
 `Deploy Infrastructure` workflow still targets the organization app and must
 not be used to apply this stack.
 
+#### Selector ownership and pending release evidence
+
+Architect disposition
+[`6f5b609`](https://github.com/infiquetra/campps-tenant-setup/blob/6f5b6099692bb26b7bdd7053b840f0503d0716b4/docs/runs/164/continuation-review-disposition.md)
+retains the two approved logical secret names and their six-character
+AWS-generated ARN suffix selector `-??????`, scoped to the exact nonprod
+account and `us-east-1`. The existing stack tests exercise the synthesized
+`PrerequisiteOperatorSecretRead` resources: both intended names match;
+retained/other names, copied or extended prefixes, nested paths, wrong suffix
+lengths, accounts and regions do not. This is local selector evidence, not
+live inventory or permission proof. Recreating the same logical name remains
+selectable; the maintained setup owner must revalidate actual secret/configuration
+ownership and the expected operator binding before use. This grants no permission
+to recreate secrets or add speculative CMK decrypt authority.
+
+The Canary owner maintains the exact signed workflow name and its uniqueness in
+[`test_tenant_setup_prerequisite_workflow_contract.py`](https://github.com/infiquetra/campps-e2e-canary/blob/9e9582412e5f30ec70bee05340c304e8214323b3/tests/unit/test_tenant_setup_prerequisite_workflow_contract.py).
+That maintained test rejects renamed or duplicate occurrences. Coordinate any
+rename with the infra trust owner; all six exact claims remain required and a
+mismatch denies assumption. No runtime name-discovery mechanism is needed.
+
+B1 may precede the exact T2/I2 destination roles. A policy naming a future role
+does not prove that the role exists or can be assumed. Runtime must reject
+missing/wrong bindings and failed assumptions; Release reads the deployed
+service outputs and effective trust before use, preserving the existing
+B1-before-T2/I2 integration sequence.
+
+**Pending evidence — Release/Tester nonprod binding readback:** record actual
+nonprod environment protection, main restriction, signed OIDC claims,
+bootstrap output/configuration equality, child-role output/configuration
+equality and effective caller/target trust. YAML, synthesized ARNs and local
+doubles are static evidence only. This is the existing preparation evidence
+item, not a new operator gate or a requirement for production proof.
+
+#### Owned cleanup and bootstrap removal
+
+Normal per-run cleanup retains the reusable roles, account and profile.
+If retiring or containing this bootstrap, the existing authorized owners use
+this order; this documentation does not execute or authorize cloud changes:
+
+1. Stop new prerequisite runs while preserving a valid authorized cleanup path.
+   Service owners inspect the original operations and restore only the owned
+   suspension lineage and prior state. Finish or retain truthful event-delivery
+   obligations and revoke only the dedicated operator grant. Record
+   `incomplete_cleanup` if unfinished; do not claim rollback.
+2. After owned cleanup, disable the owned bootstrap entry/delegation and remove
+   its protected binding through the existing authorized owner procedure.
+   Account for outstanding bootstrap **and assumed child** sessions: preventing
+   new OIDC sessions does not invalidate issued child credentials. Let sessions
+   expire, or use an existing targeted authorized revocation procedure when
+   immediate containment is necessary.
+3. Review a reverse delta against the **current shared-stack source**, removing
+   only B1's role, managed policy and output after cleanup and session handling.
+   Preserve concurrent unrelated changes, the shared OIDC provider, ordinary
+   proof/deploy roles, service-owned roles, accounts, secrets and durable
+   audit/recovery records. Never destroy the shared stack or deploy a pre-PR
+   template as a presumed restoration of today's environment.
+4. Any later update follows the safe main-integration protocol below and targets
+   only `python3 app_campps_bootstrap.py` /
+   `CamppsNonProdDeployRolesStack`. Never select the default organization app,
+   `--all`, or `cdk destroy`. Delivery Manager / Release retains integration,
+   validation-dispatch and deployment custody.
+
 #### Safe main integration for this bounded delivery
 
 `Deploy Infrastructure` triggers on every push to `main` with no paths filter.
