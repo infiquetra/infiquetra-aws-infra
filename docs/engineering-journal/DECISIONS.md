@@ -27,6 +27,53 @@
 
 ## 2026-09-07
 
+### Bind this delivery's main merge to a final `[skip actions]` message plus exact-SHA validation
+
+**Decision.** Keep RP-B1's four-file custody and do not edit workflows. For this
+bounded delivery only, Delivery Manager / Release must land the reviewed main
+commit with literal `[skip actions]` in the **actual resulting main commit
+message**, then dispatch existing `pull-request-validation.yml` at a ref fixed
+to that final SHA, then deploy only with the local renewed `campps-nonprod`
+executor and `python3 app_campps_bootstrap.py` / `CamppsNonProdDeployRolesStack`.
+Feature heads and the main-target PR keep ordinary required checks; they must
+not carry skip markers. Cancelling a started `Deploy Infrastructure` run is not
+prevention. This unit does not merge, dispatch, or deploy.
+
+This does not reopen the 2026-04-25 rejection of casual per-feature `[skip ci]`
+markers. That rejection still holds for ordinary commits because squash merges
+drop them. Architect coverage `791cf63b1969b9ee09ea357bd1d6281d3903c838` binds
+the skip token to the **final merge message** and pairs it with explicit
+exact-SHA dispatch, which is the failure the earlier decision named.
+
+**Rejected alternatives.**
+- *Normal main merge:* `deploy-infrastructure.yml` at `1435ae1b` triggers on
+  every main push with no paths filter and defaults to production/`all` on the
+  foundation Organization and SSO stacks. That is an unauthorized deploy.
+- *Cancel the foundation run after it starts:* not prevention; the run has
+  already launched.
+- *Put `[skip actions]` on the feature head or PR body:* GitHub skip tokens
+  apply to the triggering commit. A marker on an earlier commit, title, or body
+  does not protect the merge commit and would suppress required candidate PR
+  checks.
+- *Edit `deploy-infrastructure.yml` or add a paths filter:* workflow files are
+  outside RP-B1 custody; Architect forbids inferring a workflow change.
+- *Treat PR-validation green as bootstrap deploy proof:* that workflow synths
+  the default organization app, does not run pytest, and has no AWS deploy
+  step.
+- *Dispatch `Deploy Infrastructure` for the bootstrap stack:* that workflow
+  cannot select `app_campps_bootstrap.py` / `CamppsNonProdDeployRolesStack`.
+
+**Implementation.** Documented in `docs/ops/03-login-flows.md` under the
+prerequisite-operator bootstrap. No workflow, pin, or app change.
+
+**Revisit when.** Live merge policy cannot preserve the final `[skip actions]`
+message, or branch protection / merge-queue mechanics prevent exact-SHA
+dispatch. Then DM returns the concrete constraint to Architect/Planner for an
+assigned minimal deployment guard. Do not apply this skip/dispatch protocol to
+unrelated repository work.
+
+**Commit.** See PR for SHA. This decision does not merge to main or deploy.
+
 ### Add a dedicated nonprod OIDC prerequisite-operator role instead of widening live-proof
 
 **Decision.** Mint one e2e-canary nonprod role,

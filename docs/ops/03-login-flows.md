@@ -169,6 +169,72 @@ Do not use the default organization app or `--all`. The GitHub
 `Deploy Infrastructure` workflow still targets the organization app and must
 not be used to apply this stack.
 
+#### Safe main integration for this bounded delivery
+
+`Deploy Infrastructure` triggers on every push to `main` with no paths filter.
+Push defaults are the production label and `all`, and the reusable job deploys
+the default foundation app's Organization and SSO stacks. A normal main merge
+therefore starts an unauthorized foundation deployment even when only the four
+RP-B1 files change. Cancelling a started run is not prevention.
+
+Architect coverage `791cf63b1969b9ee09ea357bd1d6281d3903c838` selects native
+commit skip plus explicit maintained validation. No workflow edit, path-filter
+rewrite, CI waiver, or deploy-workflow disable is authorized for this path.
+
+Delivery Manager / Release owns the sequence below. A feature-head author does
+not merge, dispatch, or deploy.
+
+1. **Candidate PR checks stay normal.** The feature head must not carry
+   `[skip actions]` or `[skip ci]`. A main-target pull request must obtain its
+   ordinary required checks on the unchanged reviewed SHA. Skip markers on
+   ordinary candidate heads would suppress those checks. The existing
+   `pull-request-validation.yml` `pull_request` filter is main-only; an
+   integration-branch PR with no automatic run is expected. If extra candidate
+   validation is needed, dispatch **only** that existing workflow on a
+   controlled ref that resolves to the exact candidate SHA, then read back the
+   returned run's head SHA and every required job. Example owned by DM/Release,
+   not this unit:
+
+   ```bash
+   gh workflow run pull-request-validation.yml \
+     --repo infiquetra/infiquetra-aws-infra \
+     --ref <controlled-candidate-branch>
+   ```
+
+   A dispatch or green result on another SHA is not evidence. This workflow's
+   code-quality job does not run pytest; its CDK synth uses the default
+   organization app and is neither bootstrap synth proof nor permission to
+   deploy the foundation. Keep the amendment's local pytest, ruff, mypy,
+   bandit, and exact-app single-stack synth/diff.
+
+2. **Final main commit message, not the PR body.** Before any main change,
+   inspect the live merge policy. Use a supported merge or squash that sets the
+   **actual resulting main commit message** to include literal `[skip actions]`.
+   Bind that operation to the reviewed PR head and current base. Auto-merge,
+   rebase, merge queue, or any other mechanism is forbidden unless it
+   demonstrably preserves that final message. A skip marker in a PR title,
+   body, or earlier feature commit is insufficient. If message preservation or
+   required checks cannot be established, leave main untouched. Do not bypass
+   branch protection or infer permission to deploy the foundation.
+
+3. **Read back main, then validate that SHA.** Record the resulting main SHA,
+   the final commit message, and the reviewed source/tree binding. Dispatch
+   **only** `pull-request-validation.yml` at a ref fixed to that final SHA and
+   require exact-SHA success of every required check. Record that no
+   `Deploy Infrastructure` run was triggered for this push. If the ref
+   advances, earlier dispatch results cannot be attributed to the candidate.
+   Skipped or pending required checks are not green.
+
+4. **Release is local exact-stack only.** After SSO renewal and permission
+   proof, Release deploys the reviewed main candidate with the already-supported
+   local `campps-nonprod` executor and the exact nonprod app/stack command.
+   Never dispatch `Deploy Infrastructure` as a shortcut. Then read back the
+   owning output and protected binding before live matrix work.
+
+If GitHub protection or merge mechanics prevent this native path, DM returns
+that concrete constraint to Architect/Planner for an assigned minimal
+deployment guard. Do not expand workflow custody from this unit.
+
 ## Programmatic access to other accounts
 
 If you need API access into `campps-prod` or `campps-nonprod` from your local CLI today:
