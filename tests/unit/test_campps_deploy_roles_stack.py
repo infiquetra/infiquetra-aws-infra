@@ -2284,3 +2284,415 @@ def test_staging_and_production_full_registry_synth_are_unchanged() -> None:
         )
         assert_no_platform_e2e_canary_health_policy(template)
         assert canonical_json_sha256(template.to_json()) == digest, environment
+
+
+# --- e2e-canary nonprod prerequisite operator bootstrap (infra #162) --------
+#
+# One dedicated GitHub OIDC role for the protected Tenant Setup Prerequisites
+# Nonprod workflow. It may consume the locked campps index, read only the
+# dedicated operator bundle plus the reviewed WorkOS API-key secret, and
+# assume the two named nonprod service-ops roles. Ordinary proof and deploy
+# permissions stay unchanged. Infra owns only
+# CamppsE2eCanaryPrerequisiteOperatorRoleArn; T1/I2 own their later outputs.
+
+PREREQUISITE_OPERATOR_ROLE_NAME = (
+    "campps-e2e-canary-nonprod-gha-prerequisite-operator-role"
+)
+PREREQUISITE_OPERATOR_POLICY_NAME = (
+    "campps-e2e-canary-nonprod-gha-prerequisite-operator-policy"
+)
+PREREQUISITE_OPERATOR_POLICY_SUFFIX = "-gha-prerequisite-operator-policy"
+PREREQUISITE_OPERATOR_OUTPUT = "CamppsE2eCanaryPrerequisiteOperatorRoleArn"
+PREREQUISITE_OPERATOR_OIDC_EQUALS = {
+    "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+    "token.actions.githubusercontent.com:sub": (
+        "repo:infiquetra/campps-e2e-canary:environment:nonprod"
+    ),
+    "token.actions.githubusercontent.com:repository": "infiquetra/campps-e2e-canary",
+    "token.actions.githubusercontent.com:environment": "nonprod",
+    "token.actions.githubusercontent.com:ref": "refs/heads/main",
+    "token.actions.githubusercontent.com:workflow": (
+        "Tenant Setup Prerequisites Nonprod"
+    ),
+}
+OPERATOR_BUNDLE_NAME_PATTERN = (
+    "campps/e2e/nonprod/tenant-setup-platform-operator-??????"
+)
+WORKOS_API_KEY_PATTERN = "campps/identity-access/nonprod/workos/api-key-??????"
+TENANT_SETUP_FIXTURE_OPS_ROLE = "campps-tenant-setup-nonprod-fixture-ops"
+IDENTITY_PLATFORM_OPERATOR_OPS_ROLE = (
+    "campps-identity-access-nonprod-platform-operator-ops"
+)
+FORBIDDEN_BOOTSTRAP_ACTIONS = {
+    "iam:PassRole",
+    "iam:CreateRole",
+    "iam:AttachRolePolicy",
+    "dynamodb:PutItem",
+    "dynamodb:GetItem",
+    "dynamodb:Query",
+    "dynamodb:Scan",
+    "events:PutEvents",
+    "secretsmanager:CreateSecret",
+    "secretsmanager:PutSecretValue",
+    "secretsmanager:DeleteSecret",
+    "secretsmanager:RotateSecret",
+    "kms:Decrypt",
+    "kms:CreateGrant",
+    "kms:PutKeyPolicy",
+    "codeartifact:PublishPackageVersion",
+    "codeartifact:GetRepositoryEndpoint",
+    "codeartifact:DescribePackageVersion",
+    "codeartifact:GetPackageVersionAsset",
+    "codeartifact:ListPackageVersionAssets",
+}
+EXPECTED_BOOTSTRAP_SIDS = {
+    "PrerequisiteCodeArtifactAuth",
+    "PrerequisiteCodeArtifactRead",
+    "PrerequisiteCodeArtifactBearerToken",
+    "PrerequisiteOperatorSecretRead",
+    "PrerequisiteServiceRoleAssume",
+}
+
+
+def assert_no_prerequisite_operator_resources(template: Template) -> None:
+    role_names = {
+        role.get("Properties", {}).get("RoleName")
+        for role in template.find_resources("AWS::IAM::Role").values()
+    }
+    policy_names = managed_policy_names(template)
+    outputs = template.to_json().get("Outputs", {})
+
+    assert PREREQUISITE_OPERATOR_ROLE_NAME not in role_names, role_names
+    assert not any(
+        name.endswith(PREREQUISITE_OPERATOR_POLICY_SUFFIX) for name in policy_names
+    ), policy_names
+    assert PREREQUISITE_OPERATOR_OUTPUT not in outputs, outputs
+    assert "TenantSetupFixtureOpsRoleArn" not in outputs, outputs
+    assert "IdentityPlatformOperatorOpsRoleArn" not in outputs, outputs
+
+
+def _prerequisite_operator_template() -> Template:
+    return synth_template_for_repositories(
+        E2E_CANARY_REPO, target_environment="nonprod"
+    )
+
+
+def _prerequisite_operator_statements() -> dict[str, dict[str, Any]]:
+    template = _prerequisite_operator_template()
+    _, policy = find_managed_policy_with_logical_id(
+        template, PREREQUISITE_OPERATOR_POLICY_NAME
+    )
+    statements = policy["Properties"]["PolicyDocument"]["Statement"]
+    return {statement["Sid"]: statement for statement in statements}
+
+
+def test_e2e_canary_nonprod_has_exactly_one_prerequisite_operator_role() -> None:
+    template = _prerequisite_operator_template()
+    matching_roles = [
+        role
+        for role in template.find_resources("AWS::IAM::Role").values()
+        if role.get("Properties", {}).get("RoleName") == PREREQUISITE_OPERATOR_ROLE_NAME
+    ]
+    matching_policies = [
+        policy
+        for policy in template.find_resources("AWS::IAM::ManagedPolicy").values()
+        if policy.get("Properties", {}).get("ManagedPolicyName")
+        == PREREQUISITE_OPERATOR_POLICY_NAME
+    ]
+
+    assert len(matching_roles) == 1, matching_roles
+    assert len(matching_policies) == 1, matching_policies
+    assert LIVE_PROOF_ROLE_NAME in {
+        role.get("Properties", {}).get("RoleName")
+        for role in template.find_resources("AWS::IAM::Role").values()
+    }
+
+    role = find_deploy_role(template, PREREQUISITE_OPERATOR_ROLE_NAME)
+    assert role["Properties"]["MaxSessionDuration"] == 3600
+
+    policy_logical_id, _ = find_managed_policy_with_logical_id(
+        template, PREREQUISITE_OPERATOR_POLICY_NAME
+    )
+    assert role["Properties"]["ManagedPolicyArns"] == [{"Ref": policy_logical_id}]
+
+    outputs = template.to_json()["Outputs"]
+    assert PREREQUISITE_OPERATOR_OUTPUT in outputs
+    assert "TenantSetupFixtureOpsRoleArn" not in outputs
+    assert "IdentityPlatformOperatorOpsRoleArn" not in outputs
+    output_get_att = outputs[PREREQUISITE_OPERATOR_OUTPUT]["Value"]["Fn::GetAtt"]
+    assert output_get_att[0].startswith("E2eCanaryPrerequisiteOperatorRole")
+    assert output_get_att[1] == "Arn"
+
+
+def test_prerequisite_operator_trust_requires_all_six_oidc_claims() -> None:
+    template = _prerequisite_operator_template()
+    role = find_deploy_role(template, PREREQUISITE_OPERATOR_ROLE_NAME)
+    trust = get_assume_role_statement(role)
+    condition = trust["Condition"]
+
+    assert trust["Effect"] == "Allow"
+    assert trust["Action"] == "sts:AssumeRoleWithWebIdentity"
+    assert "Federated" in trust["Principal"]
+    assert condition["StringEquals"] == PREREQUISITE_OPERATOR_OIDC_EQUALS
+    assert "StringEqualsIfExists" not in condition
+    assert "StringLike" not in condition
+    assert "ForAnyValue:StringEquals" not in condition
+    assert "token.actions.githubusercontent.com:actor" not in condition.get(
+        "StringEquals", {}
+    )
+    for value in condition["StringEquals"].values():
+        assert "*" not in value
+        assert "?" not in value
+
+
+def test_prerequisite_operator_trust_rejects_missing_or_wrong_claims() -> None:
+    required = PREREQUISITE_OPERATOR_OIDC_EQUALS
+    role = find_deploy_role(
+        _prerequisite_operator_template(), PREREQUISITE_OPERATOR_ROLE_NAME
+    )
+    actual = get_assume_role_statement(role)["Condition"]["StringEquals"]
+
+    assert set(actual) == set(required)
+    for key, expected in required.items():
+        assert actual[key] == expected
+        assert actual[key] != ""
+    assert actual["token.actions.githubusercontent.com:aud"] != "https://github.com"
+    assert actual["token.actions.githubusercontent.com:repository"] != (
+        "infiquetra/infiquetra-aws-infra"
+    )
+    assert actual["token.actions.githubusercontent.com:environment"] != "production"
+    assert actual["token.actions.githubusercontent.com:ref"] != "refs/heads/staging"
+    assert actual["token.actions.githubusercontent.com:workflow"] != (
+        "tenant-setup-prerequisites-nonprod.yml"
+    )
+    assert actual["token.actions.githubusercontent.com:sub"] != (
+        "repo:infiquetra/campps-e2e-canary:ref:refs/heads/main"
+    )
+
+
+def test_prerequisite_operator_policy_is_locked_package_secret_and_child_roles() -> (
+    None
+):
+    statements_by_sid = _prerequisite_operator_statements()
+    assert set(statements_by_sid) == EXPECTED_BOOTSTRAP_SIDS
+
+    auth = statements_by_sid["PrerequisiteCodeArtifactAuth"]
+    assert set(normalize_actions(auth["Action"])) == {
+        "codeartifact:GetAuthorizationToken"
+    }
+    auth_resource = str(auth["Resource"])
+    assert "codeartifact:us-east-1:477152411873:domain/infiquetra" in auth_resource
+    assert "repository/" not in auth_resource
+
+    read = statements_by_sid["PrerequisiteCodeArtifactRead"]
+    assert set(normalize_actions(read["Action"])) == {"codeartifact:ReadFromRepository"}
+    read_resource = str(read["Resource"])
+    assert (
+        "codeartifact:us-east-1:477152411873:repository/infiquetra/campps"
+    ) in read_resource
+    assert "package/" not in read_resource
+
+    bearer = statements_by_sid["PrerequisiteCodeArtifactBearerToken"]
+    assert set(normalize_actions(bearer["Action"])) == {"sts:GetServiceBearerToken"}
+    assert bearer["Resource"] == "*"
+    assert bearer["Condition"] == {
+        "StringEquals": {"sts:AWSServiceName": "codeartifact.amazonaws.com"}
+    }
+
+    secrets = statements_by_sid["PrerequisiteOperatorSecretRead"]
+    assert set(normalize_actions(secrets["Action"])) == {
+        "secretsmanager:GetSecretValue"
+    }
+    secret_resources = tuple(normalize_resources(secrets["Resource"]))
+    rendered_secrets = str(secret_resources)
+    assert len(secret_resources) == 2, secret_resources
+    assert OPERATOR_BUNDLE_NAME_PATTERN in rendered_secrets
+    assert WORKOS_API_KEY_PATTERN in rendered_secrets
+    assert "workos-test-user" not in rendered_secrets
+    assert "staging" not in rendered_secrets
+    assert "production" not in rendered_secrets
+
+    assume = statements_by_sid["PrerequisiteServiceRoleAssume"]
+    assert set(normalize_actions(assume["Action"])) == {"sts:AssumeRole"}
+    assume_resources = tuple(normalize_resources(assume["Resource"]))
+    rendered_assume = str(assume_resources)
+    assert len(assume_resources) == 2, assume_resources
+    assert f"role/{TENANT_SETUP_FIXTURE_OPS_ROLE}" in rendered_assume
+    assert f"role/{IDENTITY_PLATFORM_OPERATOR_OPS_ROLE}" in rendered_assume
+    assert "*" not in rendered_assume
+    assert "gha-deploy-role" not in rendered_assume
+    assert LIVE_PROOF_ROLE_NAME not in rendered_assume
+
+
+def test_prerequisite_operator_secret_patterns_have_exact_generated_suffix_width() -> (
+    None
+):
+    secrets = _prerequisite_operator_statements()["PrerequisiteOperatorSecretRead"]
+    rendered = str(tuple(normalize_resources(secrets["Resource"])))
+
+    assert OPERATOR_BUNDLE_NAME_PATTERN in rendered
+    assert WORKOS_API_KEY_PATTERN in rendered
+    assert rendered.count("?") == 12
+    assert "/tenant-setup-platform-operator-*" not in rendered
+    assert "/api-key-*" not in rendered
+    assert fnmatchcase(
+        "campps/e2e/nonprod/tenant-setup-platform-operator-Ab12xy",
+        OPERATOR_BUNDLE_NAME_PATTERN,
+    )
+    for forbidden_name in (
+        "campps/e2e/nonprod/tenant-setup-platform-operator-copy-Ab12xy",
+        "campps/e2e/nonprod/workos-test-user-Ab12xy",
+        "campps/e2e/staging/tenant-setup-platform-operator-Ab12xy",
+        "campps/identity-access/nonprod/workos/api-key-copy-Ab12xy",
+        "campps/identity-access/nonprod/workos/api-key-Ab12x",
+        "campps/identity-access/staging/workos/api-key-Ab12xy",
+    ):
+        assert not fnmatchcase(forbidden_name, OPERATOR_BUNDLE_NAME_PATTERN)
+        assert not fnmatchcase(forbidden_name, WORKOS_API_KEY_PATTERN)
+
+
+def test_prerequisite_operator_policy_has_no_admin_table_event_or_secret_write() -> (
+    None
+):
+    statements_by_sid = _prerequisite_operator_statements()
+    actions = {
+        action
+        for statement in statements_by_sid.values()
+        for action in normalize_actions(statement["Action"])
+    }
+    resources = {
+        resource
+        for statement in statements_by_sid.values()
+        for resource in normalize_resources(statement["Resource"])
+    }
+
+    assert actions == {
+        "codeartifact:GetAuthorizationToken",
+        "codeartifact:ReadFromRepository",
+        "sts:GetServiceBearerToken",
+        "secretsmanager:GetSecretValue",
+        "sts:AssumeRole",
+    }
+    assert actions.isdisjoint(FORBIDDEN_BOOTSTRAP_ACTIONS)
+    assert not any(action.startswith("dynamodb:") for action in actions)
+    assert not any(action.startswith("events:") for action in actions)
+    assert not any(action.startswith("kms:") for action in actions)
+    assert not any(action.startswith("iam:") for action in actions)
+    star_statements = [
+        statement
+        for statement in statements_by_sid.values()
+        if "*" in normalize_resources(statement["Resource"])
+    ]
+    assert [statement["Sid"] for statement in star_statements] == [
+        "PrerequisiteCodeArtifactBearerToken"
+    ]
+    assert not any(
+        "staging" in resource or "production" in resource for resource in resources
+    )
+
+
+def test_prerequisite_operator_policy_is_not_attached_to_proof_or_deploy_roles() -> (
+    None
+):
+    template = _prerequisite_operator_template()
+    policy_logical_id, _ = find_managed_policy_with_logical_id(
+        template, PREREQUISITE_OPERATOR_POLICY_NAME
+    )
+    live_policy_logical_id, _ = find_managed_policy_with_logical_id(
+        template, LIVE_PROOF_POLICY_NAME
+    )
+    deploy_role = find_deploy_role(template, E2E_CANARY_REPO.role_name("nonprod"))
+    live_proof_role = find_deploy_role(template, LIVE_PROOF_ROLE_NAME)
+    bootstrap_ref = {"Ref": policy_logical_id}
+
+    assert bootstrap_ref not in deploy_role["Properties"]["ManagedPolicyArns"]
+    assert bootstrap_ref not in live_proof_role["Properties"]["ManagedPolicyArns"]
+    assert live_proof_role["Properties"]["ManagedPolicyArns"] == [
+        {"Ref": live_policy_logical_id}
+    ]
+
+    live_trust = get_assume_role_statement(live_proof_role)["Condition"]["StringEquals"]
+    assert live_trust == {
+        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+        "token.actions.githubusercontent.com:sub": (
+            "repo:infiquetra/campps-e2e-canary:environment:nonprod"
+        ),
+    }
+
+
+def test_ordinary_proof_and_deploy_codeartifact_consume_remain_unchanged() -> None:
+    canary_template = _prerequisite_operator_template()
+    _, live_policy = find_managed_policy_with_logical_id(
+        canary_template, LIVE_PROOF_POLICY_NAME
+    )
+    live_sids = {
+        statement["Sid"]
+        for statement in live_policy["Properties"]["PolicyDocument"]["Statement"]
+    }
+    assert live_sids == {
+        "WorkOsProviderSecretRead",
+        "IdentityScopeReadback",
+        "PaymentsEmitterPutEvents",
+        "RegistrationCounterReadback",
+        "RegistrationTableKeyDecrypt",
+    }
+
+    identity_template = synth_template_for_repositories(
+        ServiceRepository(
+            name="identity-access",
+            repository="infiquetra/campps-identity-access",
+        ),
+        target_environment="nonprod",
+    )
+    identity_policy = find_managed_policy(
+        identity_template, "campps-identity-access-nonprod-gha-deploy-policy"
+    )
+    identity_actions = {
+        action
+        for statement in identity_policy["Properties"]["PolicyDocument"]["Statement"]
+        for action in normalize_actions(statement["Action"])
+    }
+    assert "codeartifact:GetAuthorizationToken" in identity_actions
+    assert "codeartifact:GetRepositoryEndpoint" in identity_actions
+    assert "codeartifact:DescribePackageVersion" in identity_actions
+    assert "codeartifact:ReadFromRepository" in identity_actions
+    assert "sts:GetServiceBearerToken" in identity_actions
+    bearer_statements = [
+        statement
+        for statement in identity_policy["Properties"]["PolicyDocument"]["Statement"]
+        if "sts:GetServiceBearerToken" in normalize_actions(statement["Action"])
+        and "codeartifact:GetAuthorizationToken"
+        not in normalize_actions(statement["Action"])
+    ]
+    assert bearer_statements
+    assert all("Condition" not in statement for statement in bearer_statements)
+
+
+def test_prerequisite_operator_resources_are_nonprod_e2e_canary_only() -> None:
+    higher_environments: tuple[DeployEnvironment, ...] = ("staging", "production")
+    for environment in higher_environments:
+        higher_template = synth_template_for_repositories(
+            E2E_CANARY_ALL_ENVIRONMENTS_REPO,
+            target_environment=environment,
+        )
+        assert_no_prerequisite_operator_resources(higher_template)
+
+    for unrelated_service in (
+        TENANT_SETUP_REPO,
+        ServiceRepository(
+            name="identity-access",
+            repository="infiquetra/campps-identity-access",
+        ),
+        PLATFORM_REPO,
+    ):
+        unrelated_template = synth_template_for_repositories(
+            unrelated_service,
+            target_environment="nonprod",
+        )
+        assert_no_prerequisite_operator_resources(unrelated_template)
+
+
+def test_prerequisite_operator_synth_is_stable() -> None:
+    first = _prerequisite_operator_template().to_json()
+    second = _prerequisite_operator_template().to_json()
+    assert first == second
