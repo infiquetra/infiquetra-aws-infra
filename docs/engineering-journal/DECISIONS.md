@@ -25,6 +25,51 @@
 
 ---
 
+## 2026-09-08
+
+### Restore Identity-table Decrypt on the Tenant Setup nonprod seam-proof policy
+
+**Decision.** Add one `kms:Decrypt` statement,
+`ScopeSeamConsumerTableKeyDecrypt`, to the existing
+`campps-tenant-setup-nonprod-gha-seam-proof-policy` on
+`campps-tenant-setup-nonprod-gha-deploy-role`. Resource is `*` only because KMS
+aliases cannot be named there. Conditions are conjunctive:
+`kms:ViaService=dynamodb.us-east-1.amazonaws.com`, encryption-context table name
+`campps-identity-access-nonprod`, encryption-context subscriber account
+`self.account`, and `ForAnyValue:StringEquals` on
+`alias/campps-platform-nonprod-pii`. Existing `events:PutEvents` and
+`dynamodb:GetItem` statements stay. No Query/Scan/PutItem, no other KMS action,
+no staging/production/other-service grant, no change to the Canary live-proof
+role or Identity D8 ops role.
+
+Identity #134 switched that table to the platform PII customer-managed key, so
+the already-reviewed GetItem became unusable. This restores that read; it does
+not add a new table or action scope. Architect
+`4205f3a8f3e88ff76469118919f905b5b6d0c2a8` and Planner
+`4712d53a3dcef61a834b57d83514d75be24d4317` bind the statement. This is not
+infra #162 bootstrap work.
+
+**Rejected alternatives.**
+- *Widen the live-proof or D8 ops-role Decrypt:* different principals and
+  owners; the denied caller is the Tenant Setup GitHub deploy role.
+- *Copy RegistrationTableKeyDecrypt unchanged:* that statement lacks the
+  Identity table/subscriber encryption context required here.
+- *Put the key ARN in Resource without conditions:* broader than the reviewed
+  alias-plus-ViaService-plus-context pattern; fallback only if this exact
+  statement still denies after deploy.
+- *Edit the key policy, SCP, or a new role:* not authorized for this unit.
+
+**Implementation.** `_create_scope_seam_proof_policy` in
+`infiquetra_aws_infra/campps_deploy_roles_stack.py`; seam-proof assertions in
+`tests/unit/test_campps_deploy_roles_stack.py`.
+
+**Revisit when.** A post-deploy REAL-BUS rerun still denies Decrypt with this
+statement live (then Resource may become the exact key ARN from the platform
+SSM parameter, never condition removal); or the seam proof is retired.
+
+**Commit.** See PR for SHA. Source-only: this decision does not deploy
+`CamppsNonProdDeployRolesStack`.
+
 ## 2026-09-07
 
 ### Preserve exact bootstrap selectors and recover only owned resources
@@ -429,8 +474,10 @@ instead of a vaulted IAM user key.
 
 **Decision.** Add a single narrowly-scoped managed policy (`campps-tenant-setup-nonprod-gha-seam-proof-policy`) to the tenant-setup nonprod deploy role, granting `events:PutEvents` on the shared platform bus (`campps-platform-nonprod`) and `dynamodb:GetItem` on identity-access's table (`campps-identity-access-nonprod`). This unblocks the deploy-gated integration test `tests/integration/test_scope_origination_seam_deployed.py` (campps-tenant-setup PR #67), which proves the producer → bus → consumer seam end-to-end against real deployed infrastructure. The grant is implemented as a standalone method `_create_scope_seam_proof_policy` that returns `None` for every service/environment combination except `tenant-setup` + `nonprod`, so the guard is co-located with the grant and easy to audit.
 
+**Superseded in part, 2026-09-08.** The two-action description is incomplete after Identity #134 encrypted that table with the platform PII key. The same policy now also carries one DynamoDB-via-service `kms:Decrypt` for that table; see the 2026-09-08 entry. Staging/production exclusion and tenant-setup-only attachment are unchanged.
+
 **Rejected alternatives.**
-- Dedicated seam-proof IAM role: adds OIDC trust configuration, a second role ARN to thread through CI, and operational complexity — disproportionate for a two-action grant that runs in a single lane.
+- Dedicated seam-proof IAM role: adds OIDC trust configuration, a second role ARN to thread through CI, and operational complexity — disproportionate for a bounded grant that runs in a single lane.
 - Broadening the permissions boundary: the boundary governs app-role creation, not the deploy role itself; touching it for a deploy-time test concern mixes two distinct scopes.
 - Granting staging/production as well: the proof only runs in the nonprod lane; granting production/staging deploy roles read into identity-access's table would be speculative privilege with no corresponding test gate.
 
