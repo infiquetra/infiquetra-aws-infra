@@ -1784,7 +1784,8 @@ class CamppsDeployRolesStack(Stack):
         reads back the ``ResourceScope`` row that identity-access projects,
         proving the producer -> bus -> consumer seam end-to-end against deployed
         infrastructure. The deploy role needs ``events:PutEvents`` on the platform
-        bus and ``dynamodb:GetItem`` on identity's table to run that proof.
+        bus, ``dynamodb:GetItem`` on identity's table, and ``kms:Decrypt`` through
+        DynamoDB for that table's customer-managed platform PII key.
 
         Scoped to tenant-setup + nonprod only: the proof runs only in the nonprod
         lane, and granting a staging/production deploy role read access into
@@ -1829,6 +1830,30 @@ class CamppsDeployRolesStack(Stack):
                             arn_format=ArnFormat.SLASH_RESOURCE_NAME,
                         )
                     ],
+                ),
+                # Identity #134 switched campps-identity-access-nonprod to the
+                # platform PII CMK. The existing GetItem is otherwise unused
+                # without Decrypt through DynamoDB for that one table.
+                iam.PolicyStatement(
+                    sid="ScopeSeamConsumerTableKeyDecrypt",
+                    actions=["kms:Decrypt"],
+                    resources=["*"],
+                    conditions={
+                        "StringEquals": {
+                            "kms:ViaService": "dynamodb.us-east-1.amazonaws.com",
+                            "kms:EncryptionContext:aws:dynamodb:tableName": (
+                                "campps-identity-access-nonprod"
+                            ),
+                            "kms:EncryptionContext:aws:dynamodb:subscriberId": (
+                                self.account
+                            ),
+                        },
+                        "ForAnyValue:StringEquals": {
+                            "kms:ResourceAliases": (
+                                "alias/campps-platform-nonprod-pii"
+                            ),
+                        },
+                    },
                 ),
             ],
         )

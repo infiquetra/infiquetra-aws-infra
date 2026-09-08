@@ -1379,10 +1379,11 @@ def test_known_deploy_profiles_do_not_raise() -> None:
 
 # --- campps-tenant-setup PR #67: scope-origination seam proof grant --------
 #
-# The nonprod deploy role for tenant-setup needs two cross-service permissions
+# The nonprod deploy role for tenant-setup needs three cross-service permissions
 # to run tests/integration/test_scope_origination_seam_deployed.py:
 #   - events:PutEvents on the shared platform bus (campps-platform-nonprod)
 #   - dynamodb:GetItem on identity-access's table (campps-identity-access-nonprod)
+#   - kms:Decrypt through DynamoDB for that table's platform PII key
 #
 # The grant is scoped to tenant-setup + nonprod only.
 
@@ -1445,13 +1446,14 @@ def assert_no_live_proof_resources(template: Template) -> None:
 
 def test_tenant_setup_nonprod_deploy_role_has_seam_proof_policy() -> None:
     """Positive: tenant-setup nonprod role is attached to the seam proof policy
-    and that policy contains exactly the two scoped cross-service grants."""
+    and that policy contains exactly the three scoped cross-service grants."""
     template = synth_template_for_repositories(
         TENANT_SETUP_REPO, target_environment="nonprod"
     )
 
-    # The policy must exist with the expected name.
-    policy = find_managed_policy(template, SEAM_PROOF_POLICY_NAME)
+    policy_logical_id, policy = find_managed_policy_with_logical_id(
+        template, SEAM_PROOF_POLICY_NAME
+    )
     document = policy["Properties"]["PolicyDocument"]
 
     statements_by_sid = {
@@ -1460,23 +1462,68 @@ def test_tenant_setup_nonprod_deploy_role_has_seam_proof_policy() -> None:
     assert set(statements_by_sid) == {
         "ScopeSeamProducerEmit",
         "ScopeSeamConsumerReadback",
+        "ScopeSeamConsumerTableKeyDecrypt",
     }
 
-    # ScopeSeamProducerEmit: events:PutEvents on the platform bus.
-    assert "ScopeSeamProducerEmit" in statements_by_sid, statements_by_sid.keys()
     producer_stmt = statements_by_sid["ScopeSeamProducerEmit"]
     assert set(normalize_actions(producer_stmt["Action"])) == {"events:PutEvents"}
     producer_resources = str(producer_stmt["Resource"])
     assert "event-bus/campps-platform-nonprod" in producer_resources, producer_resources
 
-    # ScopeSeamConsumerReadback: dynamodb:GetItem on identity-access's table.
-    assert "ScopeSeamConsumerReadback" in statements_by_sid, statements_by_sid.keys()
     consumer_stmt = statements_by_sid["ScopeSeamConsumerReadback"]
     assert set(normalize_actions(consumer_stmt["Action"])) == {"dynamodb:GetItem"}
     consumer_resources = str(consumer_stmt["Resource"])
     assert "table/campps-identity-access-nonprod" in consumer_resources, (
         consumer_resources
     )
+
+    decrypt_stmt = statements_by_sid["ScopeSeamConsumerTableKeyDecrypt"]
+    assert set(normalize_actions(decrypt_stmt["Action"])) == {"kms:Decrypt"}
+    assert decrypt_stmt["Resource"] == "*"
+    assert decrypt_stmt["Condition"] == {
+        "StringEquals": {
+            "kms:ViaService": "dynamodb.us-east-1.amazonaws.com",
+            "kms:EncryptionContext:aws:dynamodb:tableName": (
+                "campps-identity-access-nonprod"
+            ),
+            "kms:EncryptionContext:aws:dynamodb:subscriberId": "477152411873",
+        },
+        "ForAnyValue:StringEquals": {
+            "kms:ResourceAliases": "alias/campps-platform-nonprod-pii"
+        },
+    }
+
+    actions = {
+        action
+        for statement in statements_by_sid.values()
+        for action in normalize_actions(statement["Action"])
+    }
+    assert actions == {"events:PutEvents", "dynamodb:GetItem", "kms:Decrypt"}
+    assert not any(
+        action in {"dynamodb:Query", "dynamodb:Scan", "dynamodb:PutItem"}
+        for action in actions
+    )
+    assert {action for action in actions if action.startswith("kms:")} == {
+        "kms:Decrypt"
+    }
+    star_statements = [
+        statement
+        for statement in statements_by_sid.values()
+        if "*" in normalize_resources(statement["Resource"])
+    ]
+    assert [statement["Sid"] for statement in star_statements] == [
+        "ScopeSeamConsumerTableKeyDecrypt"
+    ]
+
+    role = find_deploy_role(template, TENANT_SETUP_REPO.role_name("nonprod"))
+    assert {"Ref": policy_logical_id} in role["Properties"]["ManagedPolicyArns"]
+    attached_roles = [
+        role_props["Properties"].get("RoleName")
+        for role_props in template.find_resources("AWS::IAM::Role").values()
+        if {"Ref": policy_logical_id}
+        in role_props.get("Properties", {}).get("ManagedPolicyArns", [])
+    ]
+    assert attached_roles == ["campps-tenant-setup-nonprod-gha-deploy-role"]
 
 
 # --- campps-tenant-setup go-live gate: tenant.read denial proof grant ------
