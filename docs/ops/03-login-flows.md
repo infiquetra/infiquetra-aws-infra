@@ -124,6 +124,180 @@ CAMPPS service repositories do not use the management-account `infiquetra-aws-in
 
 The active service registry covers existing service repositories: `infiquetra/campps-platform`, `infiquetra/campps-contracts`, and `infiquetra/campps-identity-access`. Each active service gets `campps-<service>-nonprod-gha-deploy-role` and `campps-<service>-production-gha-deploy-role` when `app_campps_bootstrap.py` is deployed. Those workload roles exclude Organizations, SSO Admin, SSO, and IdentityStore permissions.
 
+### CAMPPS nonprod prerequisite-operator bootstrap (Tenant Setup #164)
+
+The protected Canary workflow `Tenant Setup Prerequisites Nonprod` does **not**
+use the ordinary live-proof role or a service deploy role. Nonprod
+`CamppsDeployRolesStack` mints one extra role,
+`campps-e2e-canary-nonprod-gha-prerequisite-operator-role`, reused against the
+same GitHub OIDC provider. Maximum session is one hour. Trust is only
+`sts:AssumeRoleWithWebIdentity` with exact `StringEquals` claims:
+
+| Claim | Required value |
+|---|---|
+| `aud` | `sts.amazonaws.com` |
+| `sub` | `repo:infiquetra/campps-e2e-canary:environment:nonprod` |
+| `repository` | `infiquetra/campps-e2e-canary` |
+| `environment` | `nonprod` |
+| `ref` | `refs/heads/main` |
+| `workflow` | `Tenant Setup Prerequisites Nonprod` (the signed workflow **name**, not a path) |
+
+Missing or mismatched claims fail closed. There is no `StringEqualsIfExists`,
+wildcard subject, actor allowlist, staging/production trust, or second persona.
+
+The role may: mint a step-local CodeArtifact token on the existing `infiquetra`
+domain (`sts:AWSServiceName=codeartifact.amazonaws.com`); read the locked
+`infiquetra/campps` repository; read only the dedicated operator bundle selected
+by `CAMPPS_TENANT_SETUP_OPERATOR_SECRET_ID` and the reviewed WorkOS API-key
+secret; and assume the exact Tenant Setup fixture-ops and planned Identity
+platform-operator roles in the same account. It has no table, EventBridge,
+secret-write, PassRole, admin, or deploy permission. Ordinary live-proof and
+deploy policies are unchanged.
+
+Infra publishes one output, `CamppsE2eCanaryPrerequisiteOperatorRoleArn`.
+Runtime binds `CAMPPS_PREREQUISITE_OPERATOR_ROLE_ARN` from that **deployed**
+output after review — never from a predicted or synthesized ARN. Tenant Setup
+and Identity own the later child-role outputs. Synth and diff this stack only
+with:
+
+```bash
+uv run cdk synth --app "python3 app_campps_bootstrap.py" CamppsNonProdDeployRolesStack
+uv run cdk diff --app "python3 app_campps_bootstrap.py" CamppsNonProdDeployRolesStack
+```
+
+Do not use the default organization app or `--all`. The GitHub
+`Deploy Infrastructure` workflow still targets the organization app and must
+not be used to apply this stack.
+
+#### Selector ownership and pending release evidence
+
+Architect disposition
+[`6f5b609`](https://github.com/infiquetra/campps-tenant-setup/blob/6f5b6099692bb26b7bdd7053b840f0503d0716b4/docs/runs/164/continuation-review-disposition.md)
+retains the two approved logical secret names and their six-character
+AWS-generated ARN suffix selector `-??????`, scoped to the exact nonprod
+account and `us-east-1`. The existing stack tests exercise the synthesized
+`PrerequisiteOperatorSecretRead` resources: both intended names match;
+retained/other names, copied or extended prefixes, nested paths, wrong suffix
+lengths, accounts and regions do not. This is local selector evidence, not
+live inventory or permission proof. Recreating the same logical name remains
+selectable; the maintained setup owner must revalidate actual secret/configuration
+ownership and the expected operator binding before use. This grants no permission
+to recreate secrets or add speculative CMK decrypt authority.
+
+The Canary owner maintains the exact signed workflow name and its uniqueness in
+[`test_tenant_setup_prerequisite_workflow_contract.py`](https://github.com/infiquetra/campps-e2e-canary/blob/9e9582412e5f30ec70bee05340c304e8214323b3/tests/unit/test_tenant_setup_prerequisite_workflow_contract.py).
+That maintained test rejects renamed or duplicate occurrences. Coordinate any
+rename with the infra trust owner; all six exact claims remain required and a
+mismatch denies assumption. No runtime name-discovery mechanism is needed.
+
+B1 may precede the exact T2/I2 destination roles. A policy naming a future role
+does not prove that the role exists or can be assumed. Runtime must reject
+missing/wrong bindings and failed assumptions; Release reads the deployed
+service outputs and effective trust before use, preserving the existing
+B1-before-T2/I2 integration sequence.
+
+**Pending evidence — Release/Tester nonprod binding readback:** record actual
+nonprod environment protection, main restriction, signed OIDC claims,
+bootstrap output/configuration equality, child-role output/configuration
+equality and effective caller/target trust. YAML, synthesized ARNs and local
+doubles are static evidence only. This is the existing preparation evidence
+item, not a new operator gate or a requirement for production proof.
+
+#### Owned cleanup and bootstrap removal
+
+Normal per-run cleanup retains the reusable roles, account and profile.
+If retiring or containing this bootstrap, the existing authorized owners use
+this order; this documentation does not execute or authorize cloud changes:
+
+1. Stop new prerequisite runs while preserving a valid authorized cleanup path.
+   Service owners inspect the original operations and restore only the owned
+   suspension lineage and prior state. Finish or retain truthful event-delivery
+   obligations and revoke only the dedicated operator grant. Record
+   `incomplete_cleanup` if unfinished; do not claim rollback.
+2. After owned cleanup, disable the owned bootstrap entry/delegation and remove
+   its protected binding through the existing authorized owner procedure.
+   Account for outstanding bootstrap **and assumed child** sessions: preventing
+   new OIDC sessions does not invalidate issued child credentials. Let sessions
+   expire, or use an existing targeted authorized revocation procedure when
+   immediate containment is necessary.
+3. Review a reverse delta against the **current shared-stack source**, removing
+   only B1's role, managed policy and output after cleanup and session handling.
+   Preserve concurrent unrelated changes, the shared OIDC provider, ordinary
+   proof/deploy roles, service-owned roles, accounts, secrets and durable
+   audit/recovery records. Never destroy the shared stack or deploy a pre-PR
+   template as a presumed restoration of today's environment.
+4. Any later update follows the safe main-integration protocol below and targets
+   only `python3 app_campps_bootstrap.py` /
+   `CamppsNonProdDeployRolesStack`. Never select the default organization app,
+   `--all`, or `cdk destroy`. Delivery Manager / Release retains integration,
+   validation-dispatch and deployment custody.
+
+#### Safe main integration for this bounded delivery
+
+`Deploy Infrastructure` triggers on every push to `main` with no paths filter.
+Push defaults are the production label and `all`, and the reusable job deploys
+the default foundation app's Organization and SSO stacks. A normal main merge
+therefore starts an unauthorized foundation deployment even when only the four
+RP-B1 files change. Cancelling a started run is not prevention.
+
+Architect coverage `791cf63b1969b9ee09ea357bd1d6281d3903c838` selects native
+commit skip plus explicit maintained validation. No workflow edit, path-filter
+rewrite, CI waiver, or deploy-workflow disable is authorized for this path.
+
+Delivery Manager / Release owns the sequence below. A feature-head author does
+not merge, dispatch, or deploy.
+
+1. **Candidate PR checks stay normal.** The feature head must not carry
+   `[skip actions]` or `[skip ci]`. A main-target pull request must obtain its
+   ordinary required checks on the unchanged reviewed SHA. Skip markers on
+   ordinary candidate heads would suppress those checks. The existing
+   `pull-request-validation.yml` `pull_request` filter is main-only; an
+   integration-branch PR with no automatic run is expected. If extra candidate
+   validation is needed, dispatch **only** that existing workflow on a
+   controlled ref that resolves to the exact candidate SHA, then read back the
+   returned run's head SHA and every required job. Example owned by DM/Release,
+   not this unit:
+
+   ```bash
+   gh workflow run pull-request-validation.yml \
+     --repo infiquetra/infiquetra-aws-infra \
+     --ref <controlled-candidate-branch>
+   ```
+
+   A dispatch or green result on another SHA is not evidence. This workflow's
+   code-quality job does not run pytest; its CDK synth uses the default
+   organization app and is neither bootstrap synth proof nor permission to
+   deploy the foundation. Keep the amendment's local pytest, ruff, mypy,
+   bandit, and exact-app single-stack synth/diff.
+
+2. **Final main commit message, not the PR body.** Before any main change,
+   inspect the live merge policy. Use a supported merge or squash that sets the
+   **actual resulting main commit message** to include literal `[skip actions]`.
+   Bind that operation to the reviewed PR head and current base. Auto-merge,
+   rebase, merge queue, or any other mechanism is forbidden unless it
+   demonstrably preserves that final message. A skip marker in a PR title,
+   body, or earlier feature commit is insufficient. If message preservation or
+   required checks cannot be established, leave main untouched. Do not bypass
+   branch protection or infer permission to deploy the foundation.
+
+3. **Read back main, then validate that SHA.** Record the resulting main SHA,
+   the final commit message, and the reviewed source/tree binding. Dispatch
+   **only** `pull-request-validation.yml` at a ref fixed to that final SHA and
+   require exact-SHA success of every required check. Record that no
+   `Deploy Infrastructure` run was triggered for this push. If the ref
+   advances, earlier dispatch results cannot be attributed to the candidate.
+   Skipped or pending required checks are not green.
+
+4. **Release is local exact-stack only.** After SSO renewal and permission
+   proof, Release deploys the reviewed main candidate with the already-supported
+   local `campps-nonprod` executor and the exact nonprod app/stack command.
+   Never dispatch `Deploy Infrastructure` as a shortcut. Then read back the
+   owning output and protected binding before live matrix work.
+
+If GitHub protection or merge mechanics prevent this native path, DM returns
+that concrete constraint to Architect/Planner for an assigned minimal
+deployment guard. Do not expand workflow custody from this unit.
+
 ## Programmatic access to other accounts
 
 If you need API access into `campps-prod` or `campps-nonprod` from your local CLI today:

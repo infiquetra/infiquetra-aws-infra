@@ -25,6 +25,164 @@
 
 ---
 
+## 2026-09-07
+
+### Preserve exact bootstrap selectors and recover only owned resources
+
+**Decision.** Standard Repair 3 follows Planner `9c73c522` and Architect
+[`6f5b609`](https://github.com/infiquetra/campps-tenant-setup/blob/6f5b6099692bb26b7bdd7053b840f0503d0716b4/docs/runs/164/continuation-review-disposition.md):
+retain the accepted IAM implementation and strengthen the existing tests against
+rendered secret resources. Both approved logical names keep the generated
+six-character suffix selector in the exact account/region. Same-name recreation
+remains selectable and requires owning setup/configuration revalidation; selector
+tests are not live permission proof.
+
+Canary owns signed workflow-name uniqueness and rename regressions; infra owns
+coordinated trust changes. B1 may precede exact child roles, whose deployed
+outputs and effective trust remain Release/Tester readback responsibilities.
+The named pending nonprod protection/main/OIDC/configuration evidence remains
+open. All six claims and the existing final-main-message/exact-SHA validation
+protocol below stay binding.
+
+For retirement, stop new runs while preserving authorized cleanup. Inspect
+original operations, restore only owned suspension lineage/prior state, finish
+or retain truthful event obligations, revoke only the dedicated operator grant,
+and record incomplete cleanup honestly. Then disable owned bootstrap delegation
+and remove its protected binding through the authorized owner procedure.
+Outstanding bootstrap and child sessions must expire or receive existing
+targeted authorized revocation; stopping new OIDC sessions does not erase them.
+Only afterward review removal of B1's role, managed policy and output as a
+reverse delta on **current** shared-stack source. Preserve concurrent changes,
+the shared OIDC provider, proof/deploy/service roles, accounts, secrets and
+durable recovery/audit records. Use only the exact nonprod app/stack and safe
+main protocol. Normal cleanup retains reusable roles/account/profile.
+
+**Rejected alternatives.**
+- Broad secret wildcards, speculative KMS access, new role-order guards or
+  workflow monitors would exceed the demonstrated evidence gaps.
+- Shared-stack destruction or a historical template could remove unrelated
+  current resources and cannot safely restore owned fixture state.
+- Disabling all access before cleanup could strand owned suspension/event
+  obligations; stopping OIDC alone would leave child sessions active.
+
+**Implementation.** Existing selector tests and
+[`03-login-flows.md`](../ops/03-login-flows.md#owned-cleanup-and-bootstrap-removal).
+New selector cases are expected to pass the unchanged reviewed implementation;
+there is no fabricated failing-test history. No cloud action is performed.
+**Revisit when.** A maintained selector case demonstrates an actual defect, an
+approved logical name/role/workflow contract changes, or live readback proves a
+binding mismatch; return to the existing owner for a bounded disposition.
+**Commit.** PR #163, Standard Repair 3 evidence/docs delta from `31bea23a`.
+Completed repair counts remain two standard / zero expert pending whole-batch review.
+
+### Bind this delivery's main merge to a final `[skip actions]` message plus exact-SHA validation
+
+**Decision.** Keep RP-B1's four-file custody and do not edit workflows. For this
+bounded delivery only, Delivery Manager / Release must land the reviewed main
+commit with literal `[skip actions]` in the **actual resulting main commit
+message**, then dispatch existing `pull-request-validation.yml` at a ref fixed
+to that final SHA, then deploy only with the local renewed `campps-nonprod`
+executor and `python3 app_campps_bootstrap.py` / `CamppsNonProdDeployRolesStack`.
+Feature heads and the main-target PR keep ordinary required checks; they must
+not carry skip markers. Cancelling a started `Deploy Infrastructure` run is not
+prevention. This unit does not merge, dispatch, or deploy.
+
+This does not reopen the 2026-04-25 rejection of casual per-feature `[skip ci]`
+markers. That rejection still holds for ordinary commits because squash merges
+drop them. Architect coverage `791cf63b1969b9ee09ea357bd1d6281d3903c838` binds
+the skip token to the **final merge message** and pairs it with explicit
+exact-SHA dispatch, which is the failure the earlier decision named.
+
+**Rejected alternatives.**
+- *Normal main merge:* `deploy-infrastructure.yml` at `1435ae1b` triggers on
+  every main push with no paths filter and defaults to production/`all` on the
+  foundation Organization and SSO stacks. That is an unauthorized deploy.
+- *Cancel the foundation run after it starts:* not prevention; the run has
+  already launched.
+- *Put `[skip actions]` on the feature head or PR body:* GitHub skip tokens
+  apply to the triggering commit. A marker on an earlier commit, title, or body
+  does not protect the merge commit and would suppress required candidate PR
+  checks.
+- *Edit `deploy-infrastructure.yml` or add a paths filter:* workflow files are
+  outside RP-B1 custody; Architect forbids inferring a workflow change.
+- *Treat PR-validation green as bootstrap deploy proof:* that workflow synths
+  the default organization app, does not run pytest, and has no AWS deploy
+  step.
+- *Dispatch `Deploy Infrastructure` for the bootstrap stack:* that workflow
+  cannot select `app_campps_bootstrap.py` / `CamppsNonProdDeployRolesStack`.
+
+**Implementation.** Documented in `docs/ops/03-login-flows.md` under the
+prerequisite-operator bootstrap. No workflow, pin, or app change.
+
+**Revisit when.** Live merge policy cannot preserve the final `[skip actions]`
+message, or branch protection / merge-queue mechanics prevent exact-SHA
+dispatch. Then DM returns the concrete constraint to Architect/Planner for an
+assigned minimal deployment guard. Do not apply this skip/dispatch protocol to
+unrelated repository work.
+
+**Commit.** See PR for SHA. This decision does not merge to main or deploy.
+
+### Add a dedicated nonprod OIDC prerequisite-operator role instead of widening live-proof
+
+**Decision.** Mint one e2e-canary nonprod role,
+`campps-e2e-canary-nonprod-gha-prerequisite-operator-role`, in the existing
+`CamppsDeployRolesStack`. Reuse the stack OIDC provider. Trust six exact GitHub
+claims (audience, subject, repository, environment, `refs/heads/main`, workflow
+name `Tenant Setup Prerequisites Nonprod`) with a one-hour session. Permissions
+are the locked-index CodeArtifact projection, GetSecretValue on the dedicated
+operator bundle and reviewed WorkOS API-key secret, and AssumeRole on the exact
+T1 fixture-ops and planned I2 platform-operator names in `self.account`. Publish
+only `CamppsE2eCanaryPrerequisiteOperatorRoleArn`. Leave ordinary live-proof and
+deploy policies byte-for-byte equivalent.
+
+`_codeartifact_consume_statements` gains an optional `projection="locked_index"`
+mode. Default `ci_sync` keeps metadata reads and the unconditioned bearer token
+for existing consumers. The bootstrap does not copy `GetRepositoryEndpoint` or
+package-metadata actions because the locked-index install does not resolve an
+endpoint.
+
+`kms:Decrypt` is omitted. The same WorkOS API-key and operator-bundle secret
+reads already in this stack have no Secrets Manager CMK grant, and live secret
+inventory was unrun (SSO renewal pending). Adding unused `kms:Decrypt` would
+widen authority without evidence.
+
+Infra does not emit `TenantSetupFixtureOpsRoleArn` or
+`IdentityPlatformOperatorOpsRoleArn`. Those stay with Tenant Setup RP-T2 and
+Identity RP-I2. Runtime configuration must use reviewed deployed outputs, not
+synth-predicted ARNs.
+
+**Rejected alternatives.**
+- *Widen `campps-e2e-canary-nonprod-gha-live-proof-role`:* that role is the
+  retained-read path (aud+sub only, DynamoDB/GetItem, payments PutEvents). Mixing
+  bootstrap package/secret/AssumeRole into it would let retained-read inherit
+  operator authority.
+- *Copy the existing CodeArtifact consume helper unchanged:* it grants
+  repository-endpoint and package-metadata reads and an unconditioned bearer
+  token. Architect `cc63e089` forbids copying those unless maintained code
+  actually uses them.
+- *Grant `kms:Decrypt` speculatively with ViaService:* the plan allows KMS only
+  if those secret reads use a customer-managed key. No current inventory shows
+  that.
+- *Emit all three protected-variable outputs from infra:* Architect coverage
+  `3f68dc35` binds one infra output; the other two are service-owned.
+- *Trust only aud+sub like live-proof:* the bootstrap must fail closed on
+  missing repository, environment, ref, or workflow-name claims.
+
+**Implementation.** `infiquetra_aws_infra/campps_deploy_roles_stack.py` —
+`_create_e2e_canary_prerequisite_operator_role` and the `locked_index`
+projection. Tests in `tests/unit/test_campps_deploy_roles_stack.py`. Operator
+flow: `docs/ops/03-login-flows.md`. Synth/diff only
+`python3 app_campps_bootstrap.py` / `CamppsNonProdDeployRolesStack`.
+
+**Revisit when.** Live GetSecretValue returns AccessDenied that names a
+customer-managed key (then add exact-key Secrets Manager `kms:ViaService` plus
+encryption context); the dedicated bundle or WorkOS API-key logical name
+changes; or a maintained install path starts resolving
+`GetRepositoryEndpoint`.
+
+**Commit.** See PR for SHA. Source-only: this decision does not deploy
+`CamppsNonProdDeployRolesStack`.
+
 ## 2026-08-20
 
 ### Grant campps-platform's nonprod deploy role a dedicated e2e-canary health policy
