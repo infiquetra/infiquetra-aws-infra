@@ -44,18 +44,6 @@ PLATFORM_E2E_CANARY_STACK_NAME = "campps-e2e-canary-nonprod"
 #: so the platform role needs an identity-based ``InvokeFunctionUrl`` grant.
 PLATFORM_E2E_CANARY_HEALTH_FUNCTION_NAME = "campps-e2e-canary-nonprod-health"
 
-PREREQUISITE_OPERATOR_ROLE_NAME = (
-    "campps-e2e-canary-nonprod-gha-prerequisite-operator-role"
-)
-PREREQUISITE_OPERATOR_POLICY_NAME = (
-    "campps-e2e-canary-nonprod-gha-prerequisite-operator-policy"
-)
-PREREQUISITE_OPERATOR_WORKFLOW_NAME = "Tenant Setup Prerequisites Nonprod"
-TENANT_SETUP_FIXTURE_OPS_ROLE_NAME = "campps-tenant-setup-nonprod-fixture-ops"
-IDENTITY_PLATFORM_OPERATOR_OPS_ROLE_NAME = (
-    "campps-identity-access-nonprod-platform-operator-ops"
-)
-
 
 class CamppsDeployRolesStack(Stack):
     """Create per-service GitHub Actions deploy roles in a CAMPPS account."""
@@ -148,24 +136,6 @@ class CamppsDeployRolesStack(Stack):
                     value=live_proof_role.role_arn,
                     description=(
                         "Nonprod live-proof role ARN for "
-                        f"{service_repository.repository}"
-                    ),
-                )
-
-            prerequisite_operator_role = (
-                self._create_e2e_canary_prerequisite_operator_role(
-                    oidc_provider=oidc_provider,
-                    service_repository=service_repository,
-                    target_environment=target_environment,
-                )
-            )
-            if prerequisite_operator_role is not None:
-                CfnOutput(
-                    self,
-                    "CamppsE2eCanaryPrerequisiteOperatorRoleArn",
-                    value=prerequisite_operator_role.role_arn,
-                    description=(
-                        "Nonprod prerequisite-operator bootstrap role ARN for "
                         f"{service_repository.repository}"
                     ),
                 )
@@ -2245,95 +2215,6 @@ class CamppsDeployRolesStack(Stack):
 
     def _same_account_role_arn(self, role_name: str) -> str:
         return f"arn:{self.partition}:iam::{self.account}:role/{role_name}"
-
-    def _create_e2e_canary_prerequisite_operator_role(
-        self,
-        *,
-        oidc_provider: iam.CfnOIDCProvider,
-        service_repository: ServiceRepository,
-        target_environment: DeployEnvironment,
-    ) -> iam.Role | None:
-        """Create the nonprod OIDC bootstrap used by Tenant Setup prerequisites."""
-        if service_repository.name != "e2e-canary" or target_environment != "nonprod":
-            return None
-
-        role = iam.Role(
-            self,
-            "E2eCanaryPrerequisiteOperatorRole",
-            role_name=PREREQUISITE_OPERATOR_ROLE_NAME,
-            assumed_by=iam.FederatedPrincipal(
-                federated=oidc_provider.attr_arn,
-                conditions={
-                    "StringEquals": {
-                        f"{GITHUB_OIDC_HOST}:aud": GITHUB_OIDC_AUDIENCE,
-                        f"{GITHUB_OIDC_HOST}:sub": (
-                            "repo:infiquetra/campps-e2e-canary:environment:nonprod"
-                        ),
-                        f"{GITHUB_OIDC_HOST}:repository": (
-                            "infiquetra/campps-e2e-canary"
-                        ),
-                        f"{GITHUB_OIDC_HOST}:environment": "nonprod",
-                        f"{GITHUB_OIDC_HOST}:ref": "refs/heads/main",
-                        f"{GITHUB_OIDC_HOST}:workflow": (
-                            PREREQUISITE_OPERATOR_WORKFLOW_NAME
-                        ),
-                    }
-                },
-                assume_role_action="sts:AssumeRoleWithWebIdentity",
-            ),
-            max_session_duration=Duration.hours(1),
-            description=(
-                "Least-privilege GitHub OIDC bootstrap for the protected "
-                "campps-e2e-canary Tenant Setup prerequisites nonprod workflow"
-            ),
-        )
-        policy = iam.ManagedPolicy(
-            self,
-            "E2eCanaryPrerequisiteOperatorPolicy",
-            managed_policy_name=PREREQUISITE_OPERATOR_POLICY_NAME,
-            description=(
-                "Locked-index, dedicated-secret, and exact child-role assume "
-                "permissions for the nonprod prerequisite operator bootstrap"
-            ),
-            statements=[
-                *self._codeartifact_consume_statements(projection="locked_index"),
-                iam.PolicyStatement(
-                    sid="PrerequisiteOperatorSecretRead",
-                    actions=["secretsmanager:GetSecretValue"],
-                    resources=[
-                        self.format_arn(
-                            service="secretsmanager",
-                            resource="secret",
-                            resource_name=(
-                                "campps/e2e/nonprod/"
-                                "tenant-setup-platform-operator-??????"
-                            ),
-                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
-                        ),
-                        self.format_arn(
-                            service="secretsmanager",
-                            resource="secret",
-                            resource_name=(
-                                "campps/identity-access/nonprod/workos/api-key-??????"
-                            ),
-                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
-                        ),
-                    ],
-                ),
-                iam.PolicyStatement(
-                    sid="PrerequisiteServiceRoleAssume",
-                    actions=["sts:AssumeRole"],
-                    resources=[
-                        self._same_account_role_arn(TENANT_SETUP_FIXTURE_OPS_ROLE_NAME),
-                        self._same_account_role_arn(
-                            IDENTITY_PLATFORM_OPERATOR_OPS_ROLE_NAME
-                        ),
-                    ],
-                ),
-            ],
-        )
-        role.add_managed_policy(policy)
-        return role
 
     @staticmethod
     def _logical_id_prefix(service_name: str) -> str:

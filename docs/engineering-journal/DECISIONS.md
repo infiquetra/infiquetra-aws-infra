@@ -1,5 +1,14 @@
 # DECISIONS
 
+## 2026-09-09
+
+### Remove the Canary prerequisite-operator bootstrap role
+
+**Decision.** Delete `campps-e2e-canary-nonprod-gha-prerequisite-operator-role` / policy / `CamppsE2eCanaryPrerequisiteOperatorRoleArn`. Tenant Setup fixture-ops and Identity platform-operator-ops roles are removed in their owning stacks; this bootstrap existed only to assume them.
+**Rejected alternatives.** Leaving the OIDC role after its only workflow is gone.
+**Revisit when.** A later Canary workflow needs a dedicated nonprod operator bootstrap.
+**Refs.** infra #162; Jeff cancellation of the reusable testing system.
+
 > **ADR-style records of architectural / pipeline-design / process choices.** When you commit a chosen path over alternatives — pick A over B, flip a flag, change a permission scope, add or remove a workflow stage — capture rationale + tradeoff + revisit-when condition + commit hash.
 >
 > The point is to make **revisit conditions explicit** so a future Claude (or human) reading "why did we pick X?" gets the answer cold, including when it would be right to reconsider.
