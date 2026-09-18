@@ -34,6 +34,20 @@
 
 ---
 
+## 2026-09-18
+
+### Coppa-consent CI gets a CodeArtifact-only GHA role, not the deploy role
+
+**Author.** Developer Five (grok-4.6).
+**Decision.** Mint `campps-coppa-consent-gha-ci-readonly-role` in the nonprod `CamppsDeployRolesStack` (same stack as the e2e-canary live-proof sibling role — there is no separate CI-roles stack). Trust is GitHub OIDC `aud=sts.amazonaws.com` and `sub` in `{repo:infiquetra/campps-coppa-consent:ref:refs/heads/main, repo:infiquetra/campps-coppa-consent:pull_request}` — no `environment:` binding. Policy is the existing `locked_index` CodeArtifact consume projection: `GetAuthorizationToken` on domain `infiquetra`, `ReadFromRepository` on `infiquetra/campps`, and `sts:GetServiceBearerToken` with `sts:AWSServiceName=codeartifact.amazonaws.com`. Staging and production mint nothing. The GitHub repo secret `AWS_CI_READONLY_ROLE_ARN` is set only after this role deploys live.
+**Rejected alternatives.**
+- Pointing CI at `AWS_DEPLOY_ROLE_ARN` plus `environment: nonprod` — rejected by coppa-consent DECISIONS 2026-09-08 (#124) and `test_ci_never_references_the_deploy_role` / `test_ci_jobs_bind_no_deployment_environment`. The deploy role's trust is `environment:nonprod` only, which CI subjects never match.
+- Putting the grant on the coppa-consent deploy role — CI still could not assume it.
+- Using the broader `ci_sync` consume projection — extra metadata reads and an unconditioned bearer token.
+**Rationale.** Every CI run since 2026-09-08 failed because `secrets.AWS_CI_READONLY_ROLE_ARN` was empty and the role did not exist. Least privilege at the most-exposed workflow (PR-head code).
+**Revisit when.** Other CAMPPS services adopt the same CI-readonly role, or CodeArtifact access moves off OIDC.
+**Commit.** (this change)
+
 ## 2026-09-17
 
 ### Dedicated web-app nonprod WorkOS principal for #68, scoped GetSecretValue on the web-app deploy role

@@ -44,6 +44,16 @@ PLATFORM_E2E_CANARY_STACK_NAME = "campps-e2e-canary-nonprod"
 #: so the platform role needs an identity-based ``InvokeFunctionUrl`` grant.
 PLATFORM_E2E_CANARY_HEALTH_FUNCTION_NAME = "campps-e2e-canary-nonprod-health"
 
+#: Dedicated CI CodeArtifact-read role for campps-coppa-consent. CI jobs have
+#: no GitHub Environment binding, so they cannot assume the deploy role
+#: (trust is ``environment:nonprod`` only). Nonprod stack only.
+COPPA_CONSENT_CI_READONLY_ROLE_NAME = "campps-coppa-consent-gha-ci-readonly-role"
+COPPA_CONSENT_CI_READONLY_POLICY_NAME = "campps-coppa-consent-gha-ci-readonly-policy"
+COPPA_CONSENT_CI_READONLY_SUBJECTS: tuple[str, ...] = (
+    "repo:infiquetra/campps-coppa-consent:ref:refs/heads/main",
+    "repo:infiquetra/campps-coppa-consent:pull_request",
+)
+
 
 class CamppsDeployRolesStack(Stack):
     """Create per-service GitHub Actions deploy roles in a CAMPPS account."""
@@ -146,6 +156,23 @@ class CamppsDeployRolesStack(Stack):
                     description=(
                         "Nonprod live-proof role ARN for "
                         f"{service_repository.repository}"
+                    ),
+                )
+
+            ci_readonly_role = self._create_coppa_consent_ci_readonly_role(
+                oidc_provider=oidc_provider,
+                service_repository=service_repository,
+                target_environment=target_environment,
+            )
+            if ci_readonly_role is not None:
+                CfnOutput(
+                    self,
+                    "CamppsCoppaConsentCiReadonlyRoleArn",
+                    value=ci_readonly_role.role_arn,
+                    description=(
+                        "CI CodeArtifact-read role ARN for "
+                        f"{service_repository.repository} "
+                        "(no environment binding)"
                     ),
                 )
 
@@ -2123,6 +2150,62 @@ class CamppsDeployRolesStack(Stack):
                 )
             ],
         )
+
+    def _create_coppa_consent_ci_readonly_role(
+        self,
+        *,
+        oidc_provider: iam.CfnOIDCProvider,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+    ) -> iam.Role | None:
+        """Mint the coppa-consent CI CodeArtifact-read role (nonprod only).
+
+        Placement: this stack, beside the e2e-canary live-proof role — a
+        second GitHub OIDC role in the workload account, not a policy on the
+        deploy role. CI has no ``environment:`` binding (#124), so it cannot
+        assume ``campps-coppa-consent-nonprod-gha-deploy-role``.
+        """
+        if (
+            service_repository.name != "coppa-consent"
+            or target_environment != "nonprod"
+        ):
+            return None
+
+        role = iam.Role(
+            self,
+            "CoppaConsentCiReadonlyRole",
+            role_name=COPPA_CONSENT_CI_READONLY_ROLE_NAME,
+            assumed_by=iam.FederatedPrincipal(
+                federated=oidc_provider.attr_arn,
+                conditions={
+                    "StringEquals": {
+                        f"{GITHUB_OIDC_HOST}:aud": GITHUB_OIDC_AUDIENCE,
+                        f"{GITHUB_OIDC_HOST}:sub": list(
+                            COPPA_CONSENT_CI_READONLY_SUBJECTS
+                        ),
+                    }
+                },
+                assume_role_action="sts:AssumeRoleWithWebIdentity",
+            ),
+            max_session_duration=Duration.hours(1),
+            description=(
+                "CodeArtifact-read GitHub Actions role for campps-coppa-consent CI"
+            ),
+        )
+        # ``locked_index`` is the narrow consume projection: domain token,
+        # repository read, and GetServiceBearerToken conditioned on
+        # codeartifact.amazonaws.com. That bearer action does not accept a
+        # resource ARN; the ``*`` is the AWS-required form, not a wildcard
+        # grant. No deploy / DynamoDB / Secrets Manager.
+        policy = iam.ManagedPolicy(
+            self,
+            "CoppaConsentCiReadonlyPolicy",
+            managed_policy_name=COPPA_CONSENT_CI_READONLY_POLICY_NAME,
+            description="CodeArtifact package-read for campps-coppa-consent CI",
+            statements=self._codeartifact_consume_statements(projection="locked_index"),
+        )
+        role.add_managed_policy(policy)
+        return role
 
     def _create_e2e_canary_live_proof_role(
         self,

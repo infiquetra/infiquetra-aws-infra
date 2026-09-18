@@ -28,6 +28,18 @@
 
 ---
 
+## 2026-09-18
+
+### Coppa-consent CI OIDC failed because the named read-only role was never minted
+
+**Author.** Developer Five (grok-4.6).
+**Context.** Every CI run on campps-coppa-consent since at least 2026-09-08 failed at Configure AWS credentials with "Could not load credentials from any providers", while Deploy nonprod in the same push succeeded.
+**Evidence.** CI run 35329852920 (`82d09de`): the action `with:` block had `aws-region` and `audience` but **no `role-to-assume`**. Repo secrets: none. Env secret `AWS_DEPLOY_ROLE_ARN` is nonprod-only. `aws iam list-roles` had no CI-readonly role. Deploy role trust is `sub=repo:infiquetra/campps-coppa-consent:environment:nonprod`.
+**Mechanism.** `ci.yml` names `AWS_CI_READONLY_ROLE_ARN` and binds no GitHub Environment (#124). An empty secret is omitted from the action inputs, so the default credential chain runs on a runner with no AWS keys. The deploy role cannot serve that workflow even if the ARN were copied in: CI's OIDC `sub` is `ref:` / `pull_request`, not `environment:nonprod`.
+**Fix.** Nonprod-only `campps-coppa-consent-gha-ci-readonly-role` in `CamppsDeployRolesStack` with CodeArtifact `locked_index` consume plus PR/main trust subjects.
+**Generalizable rule.** A workflow that assumes a dedicated CI role is not done until the role exists in IAM **and** the repo secret is set. Environment-bound deploy-role trust can never satisfy a no-environment CI job.
+**Refs.** DECISIONS 2026-09-18 coppa-consent CI readonly role; coppa-consent#124.
+
 ## 2026-09-17
 
 ### Web-app #68 principal is a new WorkOS user plus a two-secret GetSecretValue grant

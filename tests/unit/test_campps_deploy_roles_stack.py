@@ -11,6 +11,9 @@ from aws_cdk import App, Environment
 from aws_cdk.assertions import Template
 
 from infiquetra_aws_infra.campps_deploy_roles_stack import (
+    COPPA_CONSENT_CI_READONLY_POLICY_NAME,
+    COPPA_CONSENT_CI_READONLY_ROLE_NAME,
+    COPPA_CONSENT_CI_READONLY_SUBJECTS,
     PLATFORM_E2E_CANARY_HEALTH_FUNCTION_NAME,
     PLATFORM_E2E_CANARY_STACK_NAME,
     CamppsDeployRolesStack,
@@ -1397,6 +1400,11 @@ WEB_APP_REPO = ServiceRepository(
     deploy_profile="web-app",
 )
 
+COPPA_CONSENT_REPO = ServiceRepository(
+    name="coppa-consent",
+    repository="infiquetra/campps-coppa-consent",
+)
+
 E2E_CANARY_REPO = ServiceRepository(
     name="e2e-canary",
     repository="infiquetra/campps-e2e-canary",
@@ -1755,6 +1763,110 @@ def test_tenant_setup_nonprod_does_not_receive_web_app_e2e_credentials() -> None
     tenant_policy = find_managed_policy(template, E2E_CREDENTIALS_POLICY_NAME)
     rendered = str(tenant_policy["Properties"]["PolicyDocument"]["Statement"])
     assert "campps/web-app/nonprod/workos-test-user" not in rendered
+
+
+def test_coppa_consent_nonprod_has_ci_readonly_role() -> None:
+    """CI CodeArtifact-read role: no env binding, no deploy/DDB/secrets."""
+    template = synth_template_for_repositories(
+        COPPA_CONSENT_REPO, target_environment="nonprod"
+    )
+    policy_logical_id, policy = find_managed_policy_with_logical_id(
+        template, COPPA_CONSENT_CI_READONLY_POLICY_NAME
+    )
+    statements = policy["Properties"]["PolicyDocument"]["Statement"]
+    statements_by_sid = {statement["Sid"]: statement for statement in statements}
+
+    assert set(statements_by_sid) == {
+        "PrerequisiteCodeArtifactAuth",
+        "PrerequisiteCodeArtifactRead",
+        "PrerequisiteCodeArtifactBearerToken",
+    }
+    auth = statements_by_sid["PrerequisiteCodeArtifactAuth"]
+    assert set(normalize_actions(auth["Action"])) == {
+        "codeartifact:GetAuthorizationToken"
+    }
+    auth_resource = str(auth["Resource"])
+    assert "codeartifact:us-east-1:477152411873:domain/infiquetra" in auth_resource
+    assert "*" not in auth_resource
+
+    read = statements_by_sid["PrerequisiteCodeArtifactRead"]
+    assert set(normalize_actions(read["Action"])) == {"codeartifact:ReadFromRepository"}
+    read_resource = str(read["Resource"])
+    assert (
+        "codeartifact:us-east-1:477152411873:repository/infiquetra/campps"
+        in read_resource
+    )
+    assert "*" not in read_resource
+
+    bearer = statements_by_sid["PrerequisiteCodeArtifactBearerToken"]
+    assert set(normalize_actions(bearer["Action"])) == {"sts:GetServiceBearerToken"}
+    assert bearer["Resource"] == "*"
+    assert bearer["Condition"] == {
+        "StringEquals": {"sts:AWSServiceName": "codeartifact.amazonaws.com"}
+    }
+
+    actions = {
+        action
+        for statement in statements
+        for action in normalize_actions(statement["Action"])
+    }
+    assert actions == {
+        "codeartifact:GetAuthorizationToken",
+        "codeartifact:ReadFromRepository",
+        "sts:GetServiceBearerToken",
+    }
+    assert "dynamodb" not in str(actions)
+    assert "secretsmanager" not in str(actions)
+    assert "cloudformation" not in str(actions)
+    assert "s3:" not in str(actions)
+
+    role = find_deploy_role(template, COPPA_CONSENT_CI_READONLY_ROLE_NAME)
+    assert role["Properties"]["MaxSessionDuration"] == 3600
+    assert {"Ref": policy_logical_id} in role["Properties"]["ManagedPolicyArns"]
+
+    trust = get_assume_role_statement(role)
+    string_equals = trust["Condition"]["StringEquals"]
+    assert string_equals["token.actions.githubusercontent.com:aud"] == (
+        "sts.amazonaws.com"
+    )
+    subjects = string_equals["token.actions.githubusercontent.com:sub"]
+    assert set(normalize_actions(subjects)) == set(COPPA_CONSENT_CI_READONLY_SUBJECTS)
+    assert "environment:nonprod" not in str(subjects)
+
+    outputs = template.to_json()["Outputs"]
+    output_get_att = outputs["CamppsCoppaConsentCiReadonlyRoleArn"]["Value"][
+        "Fn::GetAtt"
+    ]
+    assert output_get_att[0].startswith("CoppaConsentCiReadonlyRole")
+    assert output_get_att[1] == "Arn"
+
+
+def test_coppa_consent_ci_readonly_absent_from_staging_and_production() -> None:
+    higher_environments: tuple[DeployEnvironment, ...] = ("staging", "production")
+    for environment in higher_environments:
+        template = synth_template_for_repositories(
+            COPPA_CONSENT_REPO, target_environment=environment
+        )
+        role_names = {
+            role.get("Properties", {}).get("RoleName")
+            for role in template.find_resources("AWS::IAM::Role").values()
+        }
+        assert COPPA_CONSENT_CI_READONLY_ROLE_NAME not in role_names, environment
+        assert COPPA_CONSENT_CI_READONLY_POLICY_NAME not in managed_policy_names(
+            template
+        )
+
+
+def test_unrelated_nonprod_service_has_no_coppa_ci_readonly_role() -> None:
+    template = synth_template_for_repositories(
+        TENANT_SETUP_REPO, target_environment="nonprod"
+    )
+    role_names = {
+        role.get("Properties", {}).get("RoleName")
+        for role in template.find_resources("AWS::IAM::Role").values()
+    }
+    assert COPPA_CONSENT_CI_READONLY_ROLE_NAME not in role_names
+    assert COPPA_CONSENT_CI_READONLY_POLICY_NAME not in managed_policy_names(template)
 
 
 def test_tenant_setup_higher_environments_have_no_e2e_credentials_policy() -> None:
