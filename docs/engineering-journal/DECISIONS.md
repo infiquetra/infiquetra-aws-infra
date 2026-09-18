@@ -34,6 +34,21 @@
 
 ---
 
+## 2026-09-17
+
+### Dedicated web-app nonprod WorkOS principal for #68, scoped GetSecretValue on the web-app deploy role
+
+**Author.** Developer Five (grok-4.6).
+**Decision.** Provision a dedicated synthetic WorkOS user in the nonprod AuthKit application `client_01KRZ8D8FRWBGVTHSJ1CKR2GW1`, store its bundle at `campps/web-app/nonprod/workos-test-user` (same keys as tenant-setup: `client_id`, `api_key_secret_id`, `email`, `password`, `expected_user_id`), and attach `campps-web-app-nonprod-gha-e2e-credentials-policy` to `campps-web-app-nonprod-gha-deploy-role` with `secretsmanager:GetSecretValue` on that bundle (`-??????` suffix) and `campps/identity-access/nonprod/workos/api-key-??????`. Email is `l7-webapp-e2e@synthetic.nonprod.campps.infiquetra.com`, verified via the User Management API `email_verified: true`.
+**Rejected alternatives.**
+- Reuse tenant-setup's user: competes for founder-creation quota and mixes service identities.
+- Reuse the canary bundle `campps/e2e/nonprod/workos-test-user`: forbidden by the canary decision record.
+- A new live-proof role: the assignment asked for the web-app nonprod workflow role, mirroring tenant-setup's deploy-role pattern.
+- Static long-lived CI token: WorkOS access tokens last ~5 minutes.
+**Implementation.** WorkOS `POST /user_management/users` plus password-grant check; Secrets Manager create in account 477152411873; `_create_web_app_e2e_credentials_policy`.
+**Revisit when.** The #68 gate moves onto a dedicated live-proof role like the canary, or Identity issues a CAMPPS person id that should be stored as `identity_person_id`.
+**Commit.** (this change)
+
 ## 2026-09-08
 
 ### Restore Identity-table Decrypt on the Tenant Setup nonprod seam-proof policy

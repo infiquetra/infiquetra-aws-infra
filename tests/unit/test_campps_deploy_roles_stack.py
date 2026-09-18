@@ -1391,6 +1391,12 @@ TENANT_SETUP_REPO = ServiceRepository(
     repository="infiquetra/campps-tenant-setup",
 )
 
+WEB_APP_REPO = ServiceRepository(
+    name="web-app",
+    repository="infiquetra/campps-web-app",
+    deploy_profile="web-app",
+)
+
 E2E_CANARY_REPO = ServiceRepository(
     name="e2e-canary",
     repository="infiquetra/campps-e2e-canary",
@@ -1404,6 +1410,9 @@ E2E_CANARY_ALL_ENVIRONMENTS_REPO = ServiceRepository(
 
 SEAM_PROOF_POLICY_NAME = "campps-tenant-setup-nonprod-gha-seam-proof-policy"
 E2E_CREDENTIALS_POLICY_NAME = "campps-tenant-setup-nonprod-gha-e2e-credentials-policy"
+WEB_APP_E2E_CREDENTIALS_POLICY_NAME = (
+    "campps-web-app-nonprod-gha-e2e-credentials-policy"
+)
 E2E_CREDENTIALS_POLICY_SUFFIX = "-gha-e2e-credentials-policy"
 IDENTITY_SCOPE_READBACK_POLICY_NAME = (
     "campps-e2e-canary-nonprod-gha-identity-scope-readback-policy"
@@ -1692,6 +1701,60 @@ def test_tenant_setup_nonprod_deploy_role_has_e2e_credentials_policy() -> None:
 
     role = find_deploy_role(template, TENANT_SETUP_REPO.role_name("nonprod"))
     assert {"Ref": policy_logical_id} in role["Properties"]["ManagedPolicyArns"]
+
+
+def test_web_app_nonprod_deploy_role_has_e2e_credentials_policy() -> None:
+    """The #68 OIDC gate can read only the web-app bundle and the WorkOS API key."""
+    template = synth_template_for_repositories(
+        WEB_APP_REPO, target_environment="nonprod"
+    )
+    policy_logical_id, policy = find_managed_policy_with_logical_id(
+        template, WEB_APP_E2E_CREDENTIALS_POLICY_NAME
+    )
+    statements = policy["Properties"]["PolicyDocument"]["Statement"]
+
+    assert len(statements) == 1, statements
+    statement = statements[0]
+    assert statement["Sid"] == "WorkOsTestUserCredentialRead"
+    assert set(normalize_actions(statement["Action"])) == {
+        "secretsmanager:GetSecretValue"
+    }
+    resources = tuple(normalize_resources(statement["Resource"]))
+    assert len(resources) == 2, resources
+    rendered_resources = str(resources)
+    assert "campps/web-app/nonprod/workos-test-user-??????" in rendered_resources
+    assert "campps/identity-access/nonprod/workos/api-key-??????" in rendered_resources
+    assert "campps/tenant-setup/nonprod/workos-test-user" not in rendered_resources
+    assert "campps/e2e/nonprod/workos-test-user" not in rendered_resources
+    assert "campps/web-app/staging" not in rendered_resources
+    assert "campps/web-app/production" not in rendered_resources
+    assert "*" not in rendered_resources
+
+    role = find_deploy_role(template, WEB_APP_REPO.role_name("nonprod"))
+    assert {"Ref": policy_logical_id} in role["Properties"]["ManagedPolicyArns"]
+
+
+def test_web_app_higher_environments_have_no_e2e_credentials_policy() -> None:
+    """Staging and production must not receive nonprod test-user access."""
+    higher_environments: tuple[DeployEnvironment, ...] = ("staging", "production")
+    for environment in higher_environments:
+        template = synth_template_for_repositories(
+            WEB_APP_REPO, target_environment=environment
+        )
+        policy_names = managed_policy_names(template)
+        assert WEB_APP_E2E_CREDENTIALS_POLICY_NAME not in policy_names, policy_names
+
+
+def test_tenant_setup_nonprod_does_not_receive_web_app_e2e_credentials() -> None:
+    """The web-app bundle stays isolated to the web-app deploy role."""
+    template = synth_template_for_repositories(
+        TENANT_SETUP_REPO, target_environment="nonprod"
+    )
+    policy_names = managed_policy_names(template)
+    assert WEB_APP_E2E_CREDENTIALS_POLICY_NAME not in policy_names, policy_names
+    tenant_policy = find_managed_policy(template, E2E_CREDENTIALS_POLICY_NAME)
+    rendered = str(tenant_policy["Properties"]["PolicyDocument"]["Statement"])
+    assert "campps/web-app/nonprod/workos-test-user" not in rendered
 
 
 def test_tenant_setup_higher_environments_have_no_e2e_credentials_policy() -> None:

@@ -28,6 +28,18 @@
 
 ---
 
+## 2026-09-17
+
+### Web-app #68 principal is a new WorkOS user plus a two-secret GetSecretValue grant
+
+**Author.** Developer Five (grok-4.6).
+**Context.** Durable OIDC headless-Chrome for web-app#68 needed a dedicated synthetic nonprod principal. Jeff delegated the previously Jeff-only provisioning on 2026-09-17.
+**Evidence.** Created `user_01M2RWY5ET7KJSGD2B877CQ0TB` in client `client_01KRZ8D8FRWBGVTHSJ1CKR2GW1`; password grant HTTP 200; secret `campps/web-app/nonprod/workos-test-user`. Tenant-setup grant pattern is `_create_tenant_setup_e2e_credentials_policy` (bundle plus shared API key).
+**Mechanism.** The mint helper reads `api_key_secret_id` from the bundle, so the deploy role must also read `campps/identity-access/nonprod/workos/api-key`. The user-bundle ARN suffix is the six-character Secrets Manager wildcard, same as tenant-setup.
+**Fix.** Sibling policy on `campps-web-app-nonprod-gha-deploy-role` only in nonprod.
+**Generalizable rule.** A WorkOS test-user bundle is never enough by itself: the pointed-at API-key secret is a second GetSecretValue. Do not reuse tenant-setup or canary principals for a new service's gate.
+**Refs.** DECISIONS 2026-09-17 dedicated web-app WorkOS principal; web-app#68.
+
 ## 2026-08-20
 
 ### An IAM-authed Lambda Function URL needs two actions, not one

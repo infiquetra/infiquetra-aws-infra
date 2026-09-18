@@ -108,6 +108,15 @@ class CamppsDeployRolesStack(Stack):
             if e2e_credentials_policy is not None:
                 deploy_role.add_managed_policy(e2e_credentials_policy)
 
+            web_app_e2e_credentials_policy = (
+                self._create_web_app_e2e_credentials_policy(
+                    service_repository=service_repository,
+                    target_environment=target_environment,
+                )
+            )
+            if web_app_e2e_credentials_policy is not None:
+                deploy_role.add_managed_policy(web_app_e2e_credentials_policy)
+
             identity_scope_readback_policy = (
                 self._create_e2e_canary_identity_scope_readback_policy(
                     service_repository=service_repository,
@@ -2043,6 +2052,48 @@ class CamppsDeployRolesStack(Stack):
 
         secret_names = (
             "campps/tenant-setup/nonprod/workos-test-user-??????",
+            "campps/identity-access/nonprod/workos/api-key-??????",
+        )
+        return iam.ManagedPolicy(
+            self,
+            (f"{self._logical_id_prefix(service_repository.name)}E2eCredentialsPolicy"),
+            managed_policy_name=(
+                f"campps-{service_repository.name}-{target_environment}"
+                "-gha-e2e-credentials-policy"
+            ),
+            description=(
+                "Credential reads for memory-only WorkOS token minting in "
+                f"{service_repository.repository} {target_environment}"
+            ),
+            statements=[
+                iam.PolicyStatement(
+                    sid="WorkOsTestUserCredentialRead",
+                    actions=["secretsmanager:GetSecretValue"],
+                    resources=[
+                        self.format_arn(
+                            service="secretsmanager",
+                            resource="secret",
+                            resource_name=secret_name,
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        )
+                        for secret_name in secret_names
+                    ],
+                )
+            ],
+        )
+
+    def _create_web_app_e2e_credentials_policy(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+    ) -> iam.ManagedPolicy | None:
+        """Allow web-app's nonprod gate to mint a short-lived OIDC test token."""
+        if service_repository.name != "web-app" or target_environment != "nonprod":
+            return None
+
+        secret_names = (
+            "campps/web-app/nonprod/workos-test-user-??????",
             "campps/identity-access/nonprod/workos/api-key-??????",
         )
         return iam.ManagedPolicy(
