@@ -3,6 +3,17 @@ name: Deploy Infrastructure
 on:
   push:
     branches: [ main ]
+    # These files belong to the separately deployed Heimdall monitoring app.
+    # Ignore the workflow edits too so their monitoring-only merge cannot
+    # trigger the foundation Organization and SSO stacks.
+    paths-ignore:
+      - 'app_heimdall_monitoring.py'
+      - 'infiquetra_aws_infra/heimdall_monitoring_stack.py'
+      - 'tests/unit/test_heimdall_monitoring_stack.py'
+      - 'docs/engineering-journal/DECISIONS.md'
+      - 'docs/engineering-journal/LEARNINGS.md'
+      - '.github/workflows/deploy-infrastructure.yml'
+      - '.github/workflows/pull-request-validation.yml'
   workflow_dispatch:
     inputs:
       environment:
