@@ -1,5 +1,14 @@
 # LEARNINGS
 
+## 2026-09-25
+
+### Cross-account CDK commands replace the default account environment variable
+
+**Evidence.** The management monitoring stack diff succeeded, but the initial nonprod, staging, and production diffs failed app validation when CDK ran under each workload account's profile. The corrected app's three workload diffs succeeded with an explicit `HEIMDALL_MONITORING_MANAGEMENT_ACCOUNT_ID`.
+**Mechanism.** CDK sets `CDK_DEFAULT_ACCOUNT` from the selected credential profile before starting the app, so it cannot also identify a separate management account during a cross-account diff or deploy.
+**Fix.** Accept a dedicated management account variable in `app_heimdall_monitoring.py`, with `CDK_DEFAULT_ACCOUNT` as a convenience fallback for management-account synthesis.
+**Generalizable rule.** Give a cross-account CDK app explicit inputs for any account that differs from the active credentials.
+
 > **Empirical findings + mechanisms + fixes + validations.** When something turns out to be true that wasn't obvious — about an AWS API behavior, a CDK quirk, a GitHub Actions gotcha, an SCP rejection, a deploy failure mechanism — it goes here. Include the **evidence** (workflow run ID / commit SHA / AWS error code / log excerpt) and the **mechanism** (why it's true), not just the observation.
 >
 > **Append new entries to the top.** Most-recent first. Format:

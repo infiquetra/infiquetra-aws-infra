@@ -1,5 +1,14 @@
 # DECISIONS
 
+## 2026-09-25
+
+### Isolate read-only Forge monitoring roles from foundation stacks
+
+**Decision.** A separate CDK app defines one management-account GitHub OIDC role and one alarm-reader role in each distinct CAMPPS workload account. The management role reuses the existing OIDC provider, trusts only `infiquetra/home-lab` on `main`, and may assume only the three named workload roles. Each workload role trusts only that management role. The app uses the repository's current CAMPPS account map and accepts `HEIMDALL_MONITORING_MANAGEMENT_ACCOUNT_ID` for cross-account deploys, falling back to `CDK_DEFAULT_ACCOUNT` for management-account synthesis. Pull request validation tests and synthesizes this app separately. The foundation push workflow ignores only these monitoring files, their journal entries, and the two workflow files changed for this gate, so a monitoring-only merge does not deploy Organization or SSO stacks; manual foundation dispatch remains available.
+**Rejected alternatives.** Extending the organization, single sign-on, or existing deployment roles would expand their deployment and permission scope. Creating another OIDC provider or access keys would duplicate identity infrastructure. A changed-file detector job would add workflow complexity for this fixed file set.
+**Revisit when.** A workload account changes, alarm monitoring expands to another account, or the monitoring workflow needs an additional AWS action.
+**Implementation.** `app_heimdall_monitoring.py` and `infiquetra_aws_infra/heimdall_monitoring_stack.py`.
+
 ## 2026-09-09
 
 ### Remove the Canary prerequisite-operator bootstrap role
