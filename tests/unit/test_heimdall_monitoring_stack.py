@@ -128,6 +128,9 @@ def test_each_workload_role_trusts_only_management_and_reads_alarms() -> None:
         )
         assert len(policies) == 1
         statements = policies[0]["Properties"]["PolicyDocument"]["Statement"]
-        assert _action_resources(statements) == {("cloudwatch:DescribeAlarms", "*")}
+        expected = {("cloudwatch:DescribeAlarms", "*")}
+        if account_id == WORKLOAD_ACCOUNTS["nonprod"]:
+            expected.add(("freetier:GetFreeTierUsage", "*"))
+        assert _action_resources(statements) == expected
         template.resource_count_is("AWS::IAM::OIDCProvider", 0)
         template.resource_count_is("AWS::IAM::AccessKey", 0)
