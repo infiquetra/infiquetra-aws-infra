@@ -1,5 +1,33 @@
 # DECISIONS
 
+## 2026-09-26
+
+### Permit nonproduction Free Tier reads in the existing Heimdall role
+
+**Decision.** Add only `freetier:GetFreeTierUsage` to the existing nonproduction
+monitoring role. This API requires a wildcard resource; the statement is emitted
+only for the nonproduction stack. The operator explicitly approved this one
+permission and one nonproduction-filtered Cost Explorer validation request
+costing $0.01. The existing daily cost request remains one per day, approximately
+$0.30–$0.31 per month. No additional recurring query is introduced.
+
+**Scope.** Only `HeimdallMonitoringNonprodStack` is eligible for deployment. No
+production, staging, management, Organization or single-sign-on stack change is
+part of this work. The home-lab collector narrows cost attribution and alarm reads
+to nonproduction and displays unavailable allowance data honestly.
+
+**Rejected alternatives.** Broad billing access, budgets with paid actions,
+extra telemetry, and additional Cost Explorer queries are unnecessary for this
+read-only display. Necessary existing services remain enabled even when their
+spending exceeds the Free Tier.
+
+**Revisit when.** A required allowance cannot be obtained from this API, AWS
+changes its pricing, or the operator authorizes a different monitoring scope.
+
+**Verification.** Focused synthesized-template tests constrain the permission to
+nonproduction. Deployment and the one paid query require recorded live evidence;
+this decision entry alone does not assert either happened.
+
 ## 2026-09-25
 
 ### Isolate read-only Forge monitoring roles from foundation stacks

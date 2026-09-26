@@ -103,6 +103,12 @@ class HeimdallMonitoringWorkloadStack(Stack):
         role.add_to_policy(
             iam.PolicyStatement(actions=["cloudwatch:DescribeAlarms"], resources=["*"])
         )
+        if self.account == CAMPPS_NONPROD_ACCOUNT_ID:
+            role.add_to_policy(
+                iam.PolicyStatement(
+                    actions=["freetier:GetFreeTierUsage"], resources=["*"]
+                )
+            )
 
         CfnOutput(
             self,
