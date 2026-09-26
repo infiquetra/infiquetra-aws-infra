@@ -382,3 +382,12 @@ outside CD — see QUEUED "Wire the CAMPPS bootstrap app into a guarded CD path"
 **Generalizable rule:** When introducing a reusable workflow, audit every caller for matching permissions. The rule of thumb: declare a least-privilege baseline at the caller's top level (typically `contents: read`), then elevate per-job for the specific jobs that call permission-needing reusable workflows. The reusable workflow itself should still declare its needs internally for documentation, but those declarations are not enforcement — the caller's token is.
 
 ---
+# Heimdall monitoring deployment evidence — 2026-09-25
+
+PR 166 passed every CI job in run `36209871050`. The four separately deployed
+Heimdall monitoring stacks reached `CREATE_COMPLETE`, creating read-only roles
+without deploying the foundation stacks. Home-lab's first monitoring workflow
+run `36210335406` then successfully assumed the management role and three
+workload roles, collected account alarm states and a fresh cost observation,
+and published the report to Forge. Production reported zero configured alarms
+in `us-east-1`, so the dashboard labels its alarm coverage unmonitored.
