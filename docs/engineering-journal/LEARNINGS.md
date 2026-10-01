@@ -1,5 +1,13 @@
 # LEARNINGS
 
+## 2026-09-30
+
+### A numbered Secrets Manager name needs a wildcard before the six-character suffix
+
+**Evidence.** `tool/create_founder_workos_user.py` on campps-web-app `origin/main` (`6554f7f2`) creates `campps/web-app/e2e/founder-<n>` and passes `Tags` to `CreateSecret` (lines 160-166). `ListSecrets` is at line 110. The new grant is `LiveTestFounderSecretCreate` and `LiveTestFounderSecretList` in `campps_deploy_roles_stack.py`.
+**Mechanism.** Secrets Manager appends six random characters to the secret name in the ARN, so a fixed name is `name-??????`. The founder number is not fixed, and IAM has no digit class, so the resource is `campps/web-app/e2e/founder-*-??????`. That matches `founder-1-Ab12xy` and `founder-12-Ab12xy` and does not match a secret whose name is just `founder`. `CreateSecret` with `Tags` is authorized as two actions, `secretsmanager:CreateSecret` and `secretsmanager:TagResource`, against that same ARN. `ListSecrets` has no resource type; AWS only accepts `Resource: "*"`.
+**Generalizable rule.** Scope a Secrets Manager ARN as `<name>-??????`. When the name itself varies, put the wildcard in the name and keep the six-character suffix. A create that sends tags needs `TagResource` as well. `ListSecrets` cannot be narrowed below `*`.
+
 ## 2026-09-25
 
 ### Cross-account CDK commands replace the default account environment variable

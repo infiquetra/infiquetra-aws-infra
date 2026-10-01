@@ -1,5 +1,15 @@
 # DECISIONS
 
+## 2026-09-30
+
+### Give the web-app live suites their own nonprod GitHub role
+
+**Decision.** Mint `campps-web-app-nonprod-gha-live-test-role` from `CamppsDeployRolesStack`, only when the registry service is `web-app` and the stack environment is nonprod. Trust is `repo:infiquetra/campps-web-app:environment:nonprod-live-tests` with audience `sts.amazonaws.com`, and the session limit is two hours. The policy is the calls Gate B, `seed_health_lodge.py`, and Gate A make: read the fixture, the seven role secrets, and the WorkOS API key; write the fixture and the activity-leader secret; list, create, tag, and read `founder-<n>` secrets; query `campps-identity-access-nonprod`; decrypt that table's key through DynamoDB with the seam-proof conditions; invoke `campps-registration-nonprod-expiry-sweep`. `sts:GetCallerIdentity` is not listed because IAM does not gate it.
+
+**Rejected alternatives.** A new `ServiceRepository` entry would mint another deploy role. Attaching the same policy to `campps-web-app-nonprod-gha-deploy-role` would not help: that role trusts `environment:nonprod`, and the live workflow uses the `nonprod-live-tests` environment. Copying the deploy role's static-site actions, or its `workos-test-user` secret, grants calls these suites do not make. `secretsmanager:DeleteSecret` belongs to cleanup, which the CI runner does not run. `CreateSecret` on the standing fixture and activity-leader secrets is only the fallback when those secrets are missing; setup creates them and is not part of this run. The looser live-proof `kms:Decrypt` (alias and ViaService only) would also decrypt the registration table. These suites query only the identity table, so the statement uses the seam-proof conditions, including the table-name encryption context.
+
+**Revisit when.** A live spec or seed that this runner executes calls another AWS API, the GitHub environment name changes, or the identity table stops using `alias/campps-platform-nonprod-pii`.
+
 ## 2026-09-26
 
 ### Permit nonproduction Free Tier reads in the existing Heimdall role

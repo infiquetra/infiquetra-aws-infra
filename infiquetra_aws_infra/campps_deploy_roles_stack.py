@@ -54,6 +54,16 @@ COPPA_CONSENT_CI_READONLY_SUBJECTS: tuple[str, ...] = (
     "repo:infiquetra/campps-coppa-consent:pull_request",
 )
 
+#: Dedicated GitHub Actions role for the campps-web-app nonprod live suites.
+#: Trust is the ``nonprod-live-tests`` environment, not the deploy environment.
+#: The nonprod stack is the only stack that mints it.
+WEB_APP_LIVE_TEST_ROLE_NAME = "campps-web-app-nonprod-gha-live-test-role"
+WEB_APP_LIVE_TEST_POLICY_NAME = "campps-web-app-nonprod-gha-live-test-policy"
+WEB_APP_LIVE_TEST_SUBJECT = (
+    "repo:infiquetra/campps-web-app:environment:nonprod-live-tests"
+)
+WEB_APP_LIVE_TEST_EXPIRY_SWEEP_FUNCTION = "campps-registration-nonprod-expiry-sweep"
+
 
 class CamppsDeployRolesStack(Stack):
     """Create per-service GitHub Actions deploy roles in a CAMPPS account."""
@@ -155,6 +165,22 @@ class CamppsDeployRolesStack(Stack):
                     value=live_proof_role.role_arn,
                     description=(
                         "Nonprod live-proof role ARN for "
+                        f"{service_repository.repository}"
+                    ),
+                )
+
+            live_test_role = self._create_web_app_live_test_role(
+                oidc_provider=oidc_provider,
+                service_repository=service_repository,
+                target_environment=target_environment,
+            )
+            if live_test_role is not None:
+                CfnOutput(
+                    self,
+                    "CamppsWebAppLiveTestRoleArn",
+                    value=live_test_role.role_arn,
+                    description=(
+                        "Nonprod live-test role ARN for "
                         f"{service_repository.repository}"
                     ),
                 )
@@ -2341,6 +2367,173 @@ class CamppsDeployRolesStack(Stack):
                             "kms:ResourceAliases": "alias/campps-platform-nonprod-pii",
                         },
                     },
+                ),
+            ],
+        )
+        role.add_managed_policy(policy)
+        return role
+
+    def _create_web_app_live_test_role(
+        self,
+        *,
+        oidc_provider: iam.CfnOIDCProvider,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+    ) -> iam.Role | None:
+        """Least-privilege role for the campps-web-app nonprod live suites.
+
+        Gate B and Gate A assume this role from the ``nonprod-live-tests``
+        GitHub environment. It is not attached to the web-app deploy role:
+        that role's trust subject is ``environment:nonprod``.
+        """
+        if service_repository.name != "web-app" or target_environment != "nonprod":
+            return None
+
+        def secret_arn(resource_name: str) -> Any:
+            return self.format_arn(
+                service="secretsmanager",
+                resource="secret",
+                resource_name=resource_name,
+                arn_format=ArnFormat.COLON_RESOURCE_NAME,
+            )
+
+        # Standing secrets. The six ``?`` are the Secrets Manager suffix.
+        # ``campps/web-app/nonprod/workos-test-user`` is the deploy role's
+        # credential, and these suites do not read it.
+        read_secret_names = (
+            "campps/web-app/e2e/fixture-??????",
+            "campps/web-app/e2e/director-??????",
+            "campps/web-app/e2e/office-??????",
+            "campps/web-app/e2e/unit-leader-??????",
+            "campps/web-app/e2e/activity-leader-??????",
+            "campps/web-app/e2e/health-officer-??????",
+            "campps/web-app/e2e/parent-??????",
+            "campps/web-app/e2e/support-??????",
+            "campps/identity-access/nonprod/workos/api-key-??????",
+        )
+        # Founder numbers grow (``founder-1``, ``founder-12``). IAM has no
+        # digit class, so ``*`` is that number. The six ``?`` stay the
+        # generated suffix, which keeps ``founder`` itself unmatched.
+        founder_resource_name = "campps/web-app/e2e/founder-*-??????"
+        writable_secret_names = (
+            "campps/web-app/e2e/fixture-??????",
+            "campps/web-app/e2e/activity-leader-??????",
+        )
+
+        role = iam.Role(
+            self,
+            "WebAppLiveTestRole",
+            role_name=WEB_APP_LIVE_TEST_ROLE_NAME,
+            assumed_by=iam.FederatedPrincipal(
+                federated=oidc_provider.attr_arn,
+                conditions={
+                    "StringEquals": {
+                        f"{GITHUB_OIDC_HOST}:aud": GITHUB_OIDC_AUDIENCE,
+                        f"{GITHUB_OIDC_HOST}:sub": WEB_APP_LIVE_TEST_SUBJECT,
+                    }
+                },
+                assume_role_action="sts:AssumeRoleWithWebIdentity",
+            ),
+            max_session_duration=Duration.hours(2),
+            description=(
+                "Secrets, identity-grant reads, and expiry-sweep invoke for "
+                "campps-web-app nonprod live tests"
+            ),
+        )
+        policy = iam.ManagedPolicy(
+            self,
+            "WebAppLiveTestPolicy",
+            managed_policy_name=WEB_APP_LIVE_TEST_POLICY_NAME,
+            description=(
+                "Live-test grants for campps-web-app nonprod Gate A and Gate B"
+            ),
+            statements=[
+                iam.PolicyStatement(
+                    sid="LiveTestSecretRead",
+                    actions=["secretsmanager:GetSecretValue"],
+                    resources=[
+                        secret_arn(secret_name) for secret_name in read_secret_names
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="LiveTestFounderSecretRead",
+                    actions=["secretsmanager:GetSecretValue"],
+                    resources=[secret_arn(founder_resource_name)],
+                ),
+                iam.PolicyStatement(
+                    sid="LiveTestFixtureAndLeaderSecretWrite",
+                    actions=["secretsmanager:PutSecretValue"],
+                    resources=[
+                        secret_arn(secret_name) for secret_name in writable_secret_names
+                    ],
+                ),
+                # CreateSecret with Tags also requires TagResource. The
+                # standing fixture and activity-leader secrets are written
+                # with PutSecretValue; CreateSecret is the founder path only.
+                iam.PolicyStatement(
+                    sid="LiveTestFounderSecretCreate",
+                    actions=[
+                        "secretsmanager:CreateSecret",
+                        "secretsmanager:TagResource",
+                    ],
+                    resources=[secret_arn(founder_resource_name)],
+                ),
+                # ListSecrets has no resource-level permission. AWS authorizes
+                # it only against "*". The call filters names by the prefix
+                # campps/web-app/e2e/founder-; IAM cannot express that filter.
+                iam.PolicyStatement(
+                    sid="LiveTestFounderSecretList",
+                    actions=["secretsmanager:ListSecrets"],
+                    resources=["*"],
+                ),
+                iam.PolicyStatement(
+                    sid="LiveTestIdentityGrantQuery",
+                    actions=["dynamodb:Query"],
+                    resources=[
+                        self.format_arn(
+                            service="dynamodb",
+                            resource="table",
+                            resource_name="campps-identity-access-nonprod",
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
+                    ],
+                ),
+                # Same conditions as ScopeSeamConsumerTableKeyDecrypt
+                # (this file, the tenant-setup seam-proof statement). Decrypt
+                # works only through DynamoDB, only for the identity table,
+                # and only the platform PII alias.
+                iam.PolicyStatement(
+                    sid="LiveTestIdentityTableKeyDecrypt",
+                    actions=["kms:Decrypt"],
+                    resources=["*"],
+                    conditions={
+                        "StringEquals": {
+                            "kms:ViaService": "dynamodb.us-east-1.amazonaws.com",
+                            "kms:EncryptionContext:aws:dynamodb:tableName": (
+                                "campps-identity-access-nonprod"
+                            ),
+                            "kms:EncryptionContext:aws:dynamodb:subscriberId": (
+                                self.account
+                            ),
+                        },
+                        "ForAnyValue:StringEquals": {
+                            "kms:ResourceAliases": (
+                                "alias/campps-platform-nonprod-pii"
+                            ),
+                        },
+                    },
+                ),
+                iam.PolicyStatement(
+                    sid="LiveTestExpirySweepInvoke",
+                    actions=["lambda:InvokeFunction"],
+                    resources=[
+                        self.format_arn(
+                            service="lambda",
+                            resource="function",
+                            resource_name=WEB_APP_LIVE_TEST_EXPIRY_SWEEP_FUNCTION,
+                            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                        )
+                    ],
                 ),
             ],
         )
