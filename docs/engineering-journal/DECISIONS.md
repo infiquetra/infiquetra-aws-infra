@@ -10,6 +10,16 @@
 
 **Revisit when.** A live spec or seed that this runner executes calls another AWS API, the GitHub environment name changes, or the identity table stops using `alias/campps-platform-nonprod-pii`.
 
+### Keep the founder create suffix, and record what this role leaves to people
+
+**Decision.** Leave `LiveTestFounderSecretCreate` on `campps/web-app/e2e/founder-*-??????`. Leave the session limit at two hours. Do not create the GitHub environment `nonprod-live-tests` from this repository. Leave `secretsmanager:DeleteSecret` off the policy, and treat founder-secret cleanup as an operator job.
+
+**Rationale.** AWS documents the six question marks as the grant for a secret that does not exist yet, and warns that a trailing `*` also matches a longer suffix (Secrets Manager identity-based policies, "Match secret name", <https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_iam-policies.html>). The deploy role's `campps/<service>/<environment>/*` covers every secret under a service. It is not evidence that `CreateSecret` drops the six-character suffix. The trust policy already requires `environment:nonprod-live-tests`. The limit to the main branch is a GitHub environment rule, and the original task left creating that environment to the coordinator. The coordinator must create `nonprod-live-tests` with a main-branch-only deployment rule before the role ARN is stored there. Until that rule exists, any branch whose workflow names the environment can assume the role. No wall-clock time is recorded for one full run of Gate B, then `seed_health_lodge.py`, then Gate A. `playwright.live.config.ts` allows 300 seconds per test with one worker, which is not a measurement of the full run. Every scheduled `setup-journey.spec.ts` run creates another `campps/web-app/e2e/founder-<n>` secret and another WorkOS user. Nothing in CI removes them. They accumulate, and each secret is billed. The operator runs that cleanup periodically.
+
+**Rejected alternatives.** Widen `CreateSecret` and `TagResource` to `campps/web-app/e2e/founder-*`. That is the wider form the AWS page warns against, and it was not tried against AWS. Create the GitHub environment in this change. The coordinator owns that environment, and this repository's job was the role. Change `max_session_duration` without a measured run. Grant `DeleteSecret` so CI can delete the founder secrets. Cleanup is not part of the run.
+
+**Revisit when.** The first founder `CreateSecret` returns AccessDenied. A measured local run of Gate B, `seed_health_lodge.py`, and Gate A exceeds two hours. The operator cannot keep up with the founder secrets and WorkOS users the scheduled run creates.
+
 ## 2026-09-26
 
 ### Permit nonproduction Free Tier reads in the existing Heimdall role

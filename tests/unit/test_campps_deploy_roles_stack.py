@@ -2233,11 +2233,79 @@ def _live_test_statements(template: Template) -> dict[str, dict[str, Any]]:
 
 
 def _rendered_resources(statement: dict[str, Any]) -> list[str]:
-    """Render each resource. Concrete ARNs are Fn::Join on the partition."""
-    return [
-        resource if isinstance(resource, str) else json.dumps(resource)
-        for resource in normalize_resources(statement.get("Resource", []))
+    """Render each resource. A single Fn::Join is one value, not its keys."""
+    resource = statement.get("Resource", [])
+    if isinstance(resource, dict):
+        values: tuple[Any, ...] = (resource,)
+    else:
+        values = tuple(normalize_resources(resource))
+    return [item if isinstance(item, str) else json.dumps(item) for item in values]
+
+
+def _partition_arn(suffix: str) -> dict[str, Any]:
+    """Exact Fn::Join from format_arn for account 477152411873 in us-east-1."""
+    return {
+        "Fn::Join": [
+            "",
+            ["arn:", {"Ref": "AWS::Partition"}, suffix],
+        ]
+    }
+
+
+def _secretsmanager_arn(resource_name: str) -> dict[str, Any]:
+    return _partition_arn(
+        f":secretsmanager:us-east-1:477152411873:secret:{resource_name}"
+    )
+
+
+def _find_role_with_logical_id(
+    template: Template, role_name: str
+) -> tuple[str, dict[str, Any]]:
+    matches = [
+        (logical_id, role)
+        for logical_id, role in template.find_resources("AWS::IAM::Role").items()
+        if role.get("Properties", {}).get("RoleName") == role_name
     ]
+    assert len(matches) == 1, role_name
+    logical_id, role = matches[0]
+    return logical_id, dict(role)
+
+
+def _policies_referencing_role(template: Template, role_logical_id: str) -> list[str]:
+    """IAM policy logical ids, other than the live-test policy, that name the role."""
+    live_policy_logical_id, _live_policy = find_managed_policy_with_logical_id(
+        template, WEB_APP_LIVE_TEST_POLICY_NAME
+    )
+    referencing: list[str] = []
+    for logical_id, policy in template.find_resources("AWS::IAM::Policy").items():
+        if role_logical_id in json.dumps(policy):
+            referencing.append(logical_id)
+    for logical_id, policy in template.find_resources(
+        "AWS::IAM::ManagedPolicy"
+    ).items():
+        if logical_id == live_policy_logical_id:
+            continue
+        if role_logical_id in json.dumps(policy):
+            referencing.append(logical_id)
+    return referencing
+
+
+def _granted_statements(
+    template: Template, role_logical_id: str, role: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Statements on the role: attached managed policies, inline, and IAM policies."""
+    granted: list[dict[str, Any]] = []
+    managed = template.find_resources("AWS::IAM::ManagedPolicy")
+    for attachment in role["Properties"].get("ManagedPolicyArns", []):
+        if isinstance(attachment, dict) and "Ref" in attachment:
+            document = managed[attachment["Ref"]]["Properties"]["PolicyDocument"]
+            granted.extend(document["Statement"])
+    for inline in role["Properties"].get("Policies", []):
+        granted.extend(inline["PolicyDocument"]["Statement"])
+    for policy in template.find_resources("AWS::IAM::Policy").values():
+        if role_logical_id in json.dumps(policy):
+            granted.extend(policy["Properties"]["PolicyDocument"]["Statement"])
+    return granted
 
 
 def test_web_app_nonprod_has_live_test_role() -> None:
@@ -2281,9 +2349,9 @@ def test_web_app_nonprod_has_live_test_role() -> None:
 
 
 def test_web_app_live_test_policy_statements() -> None:
-    """Each statement's actions and resources, including the founder wildcard."""
+    """Each statement's action and resource equal the synthesized value."""
     statements = _live_test_statements(_live_test_template())
-    assert set(statements) == {
+    assert list(statements) == [
         "LiveTestSecretRead",
         "LiveTestFounderSecretRead",
         "LiveTestFixtureAndLeaderSecretWrite",
@@ -2292,40 +2360,31 @@ def test_web_app_live_test_policy_statements() -> None:
         "LiveTestIdentityGrantQuery",
         "LiveTestIdentityTableKeyDecrypt",
         "LiveTestExpirySweepInvoke",
-    }
+    ]
+    for statement in statements.values():
+        assert statement["Effect"] == "Allow"
 
-    read_resources = _rendered_resources(statements["LiveTestSecretRead"])
-    assert set(normalize_actions(statements["LiveTestSecretRead"]["Action"])) == {
+    assert statements["LiveTestSecretRead"]["Action"] == (
         "secretsmanager:GetSecretValue"
-    }
-    expected_reads = {
-        "campps/web-app/e2e/fixture-??????",
-        "campps/web-app/e2e/director-??????",
-        "campps/web-app/e2e/office-??????",
-        "campps/web-app/e2e/unit-leader-??????",
-        "campps/web-app/e2e/activity-leader-??????",
-        "campps/web-app/e2e/health-officer-??????",
-        "campps/web-app/e2e/parent-??????",
-        "campps/web-app/e2e/support-??????",
-        "campps/identity-access/nonprod/workos/api-key-??????",
-    }
-    assert len(read_resources) == len(expected_reads)
-    for secret_name in expected_reads:
-        assert any(secret_name in resource for resource in read_resources), secret_name
-    for resource in read_resources:
-        assert "secretsmanager:us-east-1:477152411873:secret:" in resource
-        assert resource.count("?") == 6
-        assert "*" not in resource
+    )
+    assert statements["LiveTestSecretRead"]["Resource"] == [
+        _secretsmanager_arn("campps/web-app/e2e/fixture-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/director-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/office-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/unit-leader-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/activity-leader-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/health-officer-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/parent-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/support-??????"),
+        _secretsmanager_arn("campps/identity-access/nonprod/workos/api-key-??????"),
+    ]
 
-    founder_pattern = "campps/web-app/e2e/founder-*-??????"
+    founder_resource_name = "campps/web-app/e2e/founder-*-??????"
     founder_read = statements["LiveTestFounderSecretRead"]
-    assert set(normalize_actions(founder_read["Action"])) == {
-        "secretsmanager:GetSecretValue"
-    }
-    assert founder_pattern in str(founder_read["Resource"])
-    assert str(founder_read["Resource"]).count("?") == 6
-    assert fnmatchcase("campps/web-app/e2e/founder-1-Ab12xy", founder_pattern)
-    assert fnmatchcase("campps/web-app/e2e/founder-12-Ab12xy", founder_pattern)
+    assert founder_read["Action"] == "secretsmanager:GetSecretValue"
+    assert founder_read["Resource"] == _secretsmanager_arn(founder_resource_name)
+    assert fnmatchcase("campps/web-app/e2e/founder-1-Ab12xy", founder_resource_name)
+    assert fnmatchcase("campps/web-app/e2e/founder-12-Ab12xy", founder_resource_name)
     for forbidden_name in (
         "campps/web-app/e2e/founder-Ab12xy",
         "campps/web-app/e2e/founder-1-Ab12x",
@@ -2334,38 +2393,34 @@ def test_web_app_live_test_policy_statements() -> None:
         "campps/web-app/e2e/director-Ab12xy",
         "campps/identity-access/nonprod/workos/api-key-Ab12xy",
     ):
-        assert not fnmatchcase(forbidden_name, founder_pattern), forbidden_name
+        assert not fnmatchcase(forbidden_name, founder_resource_name), forbidden_name
 
     write = statements["LiveTestFixtureAndLeaderSecretWrite"]
-    assert set(normalize_actions(write["Action"])) == {"secretsmanager:PutSecretValue"}
-    write_resources = _rendered_resources(write)
-    for secret_name in (
-        "campps/web-app/e2e/fixture-??????",
-        "campps/web-app/e2e/activity-leader-??????",
-    ):
-        assert any(secret_name in resource for resource in write_resources)
-    assert len(write_resources) == 2
+    assert write["Action"] == "secretsmanager:PutSecretValue"
+    assert write["Resource"] == [
+        _secretsmanager_arn("campps/web-app/e2e/fixture-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/activity-leader-??????"),
+    ]
 
     create = statements["LiveTestFounderSecretCreate"]
-    assert set(normalize_actions(create["Action"])) == {
+    assert create["Action"] == [
         "secretsmanager:CreateSecret",
         "secretsmanager:TagResource",
-    }
-    assert founder_pattern in str(create["Resource"])
+    ]
+    assert create["Resource"] == _secretsmanager_arn(founder_resource_name)
 
     listed = statements["LiveTestFounderSecretList"]
-    assert set(normalize_actions(listed["Action"])) == {"secretsmanager:ListSecrets"}
+    assert listed["Action"] == "secretsmanager:ListSecrets"
     assert listed["Resource"] == "*"
 
     query = statements["LiveTestIdentityGrantQuery"]
-    assert set(normalize_actions(query["Action"])) == {"dynamodb:Query"}
-    assert (
-        "dynamodb:us-east-1:477152411873:table/campps-identity-access-nonprod"
-        in str(query["Resource"])
+    assert query["Action"] == "dynamodb:Query"
+    assert query["Resource"] == _partition_arn(
+        ":dynamodb:us-east-1:477152411873:table/campps-identity-access-nonprod"
     )
 
     decrypt = statements["LiveTestIdentityTableKeyDecrypt"]
-    assert set(normalize_actions(decrypt["Action"])) == {"kms:Decrypt"}
+    assert decrypt["Action"] == "kms:Decrypt"
     assert decrypt["Resource"] == "*"
     assert decrypt["Condition"] == {
         "StringEquals": {
@@ -2381,21 +2436,29 @@ def test_web_app_live_test_policy_statements() -> None:
     }
 
     invoke = statements["LiveTestExpirySweepInvoke"]
-    assert set(normalize_actions(invoke["Action"])) == {"lambda:InvokeFunction"}
-    assert (
-        "lambda:us-east-1:477152411873:function:"
-        "campps-registration-nonprod-expiry-sweep" in str(invoke["Resource"])
+    assert invoke["Action"] == "lambda:InvokeFunction"
+    assert invoke["Resource"] == _partition_arn(
+        ":lambda:us-east-1:477152411873:function:"
+        "campps-registration-nonprod-expiry-sweep"
     )
     assert "Condition" not in invoke
 
 
 def test_web_app_live_test_policy_has_no_dangerous_grants() -> None:
-    """No IAM admin, secret deletion, DynamoDB writes, or production resources."""
+    """No inline policy, second policy, IAM admin, or production resource."""
     template = _live_test_template()
-    _, policy = find_managed_policy_with_logical_id(
+    policy_logical_id, _policy = find_managed_policy_with_logical_id(
         template, WEB_APP_LIVE_TEST_POLICY_NAME
     )
-    statements = policy["Properties"]["PolicyDocument"]["Statement"]
+    role_logical_id, role = _find_role_with_logical_id(
+        template, WEB_APP_LIVE_TEST_ROLE_NAME
+    )
+    assert role_logical_id.startswith("WebAppLiveTestRole")
+    assert "Policies" not in role["Properties"]
+    assert role["Properties"]["ManagedPolicyArns"] == [{"Ref": policy_logical_id}]
+    assert _policies_referencing_role(template, role_logical_id) == []
+
+    statements = _granted_statements(template, role_logical_id, role)
     actions = {
         action
         for statement in statements
@@ -2428,7 +2491,7 @@ def test_web_app_live_test_policy_has_no_dangerous_grants() -> None:
         assert "production" not in resource
         assert "staging" not in resource
     star_sids = [
-        statement["Sid"]
+        statement.get("Sid", "<no sid>")
         for statement in statements
         if "*" in normalize_resources(statement["Resource"])
     ]

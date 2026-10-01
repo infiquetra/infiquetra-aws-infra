@@ -2,6 +2,18 @@
 
 ## 2026-09-30
 
+### A substring of an Fn::Join ARN does not pin the resource list
+
+**Evidence.** On `feat/web-app-live-test-role` at `ab93be227ab747aa23d30db86668e39b9efff4c9`, `test_web_app_live_test_policy_statements` checked founder, create, query, and invoke resources with `pattern in str(Resource)`. Adding `campps/web-app/e2e/*` to `LiveTestFounderSecretCreate`, changing the query table to `campps-identity-access-nonprod*`, and changing the Lambda name to `campps-registration-nonprod-expiry-sweep*` all still passed. `test_web_app_live_test_policy_has_no_dangerous_grants` read only the named managed policy, so `role.add_to_policy` with `secretsmanager:DeleteSecret` and `iam:*` was invisible.
+**Mechanism.** `format_arn` becomes `{"Fn::Join": ["", ["arn:", {"Ref": "AWS::Partition"}, <suffix>]]}`. One resource is that dict. Two or more are a list of those dicts. The original suffix is still inside the value after a second resource is added or a `*` is appended, so a substring check stays true. In this CDK version, `role.add_to_policy` synthesizes an `AWS::IAM::Policy` whose `Roles` reference the role logical id (`WebAppLiveTestRole` plus its hash). It does not set the CloudFormation `Policies` property on the role. A policy written directly on that property would also be invisible to a test that reads only the named managed policy. Iterating a single `Fn::Join` dict yields the key `Fn::Join`, which hides the ARN.
+**Generalizable rule.** Assert `statement["Resource"] ==` the CloudFormation value, the same way a KMS condition is asserted. Also assert the role has no `Policies` property, and that no other IAM policy names that role's logical id.
+
+### Six question marks are the documented grant for a secret that does not exist yet
+
+**Evidence.** AWS Secrets Manager, "Identity-based policies", section "Match secret name" (<https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_iam-policies.html>, fetched 2026-09-30): using the wildcard character `??????` grants permissions to a secret that does not yet exist. The same section says `another_secret_name-*` also matches `another_secret_name-<anything-here>a1b2c3`. The CreateSecret example on that page uses `Resource "*"`, which is the broad example. `LiveTestFounderSecretCreate` in `infiquetra_aws_infra/campps_deploy_roles_stack.py` is the only `CreateSecret` in that stack whose resource ends in `-??????`. The deploy role statement `SecretsManagerSecrets` uses `campps/<service>/<environment>/*`.
+**Mechanism.** The six-character ARN suffix does not exist until the secret is created. `??????` matches those six characters. A path-wide `*` is a different grant: every secret under that prefix.
+**Generalizable rule.** For one secret that does not exist yet, grant `name-??????`. Do not copy a path-wide `*` from a statement whose job is every secret under a service.
+
 ### A numbered Secrets Manager name needs a wildcard before the six-character suffix
 
 **Evidence.** `tool/create_founder_workos_user.py` on campps-web-app `origin/main` (`6554f7f2`) creates `campps/web-app/e2e/founder-<n>` and passes `Tags` to `CreateSecret` (lines 160-166). `ListSecrets` is at line 110. The new grant is `LiveTestFounderSecretCreate` and `LiveTestFounderSecretList` in `campps_deploy_roles_stack.py`.
