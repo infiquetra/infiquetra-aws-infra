@@ -1,5 +1,25 @@
 # DECISIONS
 
+## 2026-09-30
+
+### Give the web-app live suites their own nonprod GitHub role
+
+**Decision.** Mint `campps-web-app-nonprod-gha-live-test-role` from `CamppsDeployRolesStack`, only when the registry service is `web-app` and the stack environment is nonprod. Trust is `repo:infiquetra/campps-web-app:environment:nonprod-live-tests` with audience `sts.amazonaws.com`, and the session limit is two hours. The policy is the calls Gate B, `seed_health_lodge.py`, and Gate A make: read the fixture, the seven role secrets, and the WorkOS API key; write the fixture and the activity-leader secret; list, create, tag, and read `founder-<n>` secrets; query `campps-identity-access-nonprod`; decrypt that table's key through DynamoDB with the seam-proof conditions; invoke `campps-registration-nonprod-expiry-sweep`. `sts:GetCallerIdentity` is not listed because IAM does not gate it.
+
+**Rejected alternatives.** A new `ServiceRepository` entry would mint another deploy role. Attaching the same policy to `campps-web-app-nonprod-gha-deploy-role` would not help: that role trusts `environment:nonprod`, and the live workflow uses the `nonprod-live-tests` environment. Copying the deploy role's static-site actions, or its `workos-test-user` secret, grants calls these suites do not make. `secretsmanager:DeleteSecret` belongs to cleanup, which the CI runner does not run. `CreateSecret` on the standing fixture and activity-leader secrets is only the fallback when those secrets are missing; setup creates them and is not part of this run. The looser live-proof `kms:Decrypt` (alias and ViaService only) would also decrypt the registration table. These suites query only the identity table, so the statement uses the seam-proof conditions, including the table-name encryption context.
+
+**Revisit when.** A live spec or seed that this runner executes calls another AWS API, the GitHub environment name changes, or the identity table stops using `alias/campps-platform-nonprod-pii`.
+
+### Keep the founder create suffix, and record what this role leaves to people
+
+**Decision.** Leave `LiveTestFounderSecretCreate` on `campps/web-app/e2e/founder-*-??????`. Leave the session limit at two hours. Do not create the GitHub environment `nonprod-live-tests` from this repository. Leave `secretsmanager:DeleteSecret` off the policy, and treat founder-secret cleanup as an operator job.
+
+**Rationale.** AWS documents the six question marks as the grant for a secret that does not exist yet, and warns that a trailing `*` also matches a longer suffix (Secrets Manager identity-based policies, "Match secret name", <https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_iam-policies.html>). The deploy role's `campps/<service>/<environment>/*` covers every secret under a service. It is not evidence that `CreateSecret` drops the six-character suffix. The trust policy already requires `environment:nonprod-live-tests`. The limit to the main branch is a GitHub environment rule, and the original task left creating that environment to the coordinator. The coordinator must create `nonprod-live-tests` with a main-branch-only deployment rule before the role ARN is stored there. Until that rule exists, any branch whose workflow names the environment can assume the role. No wall-clock time is recorded for one full run of Gate B, then `seed_health_lodge.py`, then Gate A. `playwright.live.config.ts` allows 300 seconds per test with one worker, which is not a measurement of the full run. Every scheduled `setup-journey.spec.ts` run creates another `campps/web-app/e2e/founder-<n>` secret and another WorkOS user. Nothing in CI removes them. They accumulate, and each secret is billed. The operator runs that cleanup periodically.
+
+**Rejected alternatives.** Widen `CreateSecret` and `TagResource` to `campps/web-app/e2e/founder-*`. That is the wider form the AWS page warns against, and it was not tried against AWS. Create the GitHub environment in this change. The coordinator owns that environment, and this repository's job was the role. Change `max_session_duration` without a measured run. Grant `DeleteSecret` so CI can delete the founder secrets. Cleanup is not part of the run.
+
+**Revisit when.** The first founder `CreateSecret` returns AccessDenied. A measured local run of Gate B, `seed_health_lodge.py`, and Gate A exceeds two hours. The operator cannot keep up with the founder secrets and WorkOS users the scheduled run creates.
+
 ## 2026-09-26
 
 ### Permit nonproduction Free Tier reads in the existing Heimdall role

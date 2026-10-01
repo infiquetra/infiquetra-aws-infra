@@ -16,6 +16,9 @@ from infiquetra_aws_infra.campps_deploy_roles_stack import (
     COPPA_CONSENT_CI_READONLY_SUBJECTS,
     PLATFORM_E2E_CANARY_HEALTH_FUNCTION_NAME,
     PLATFORM_E2E_CANARY_STACK_NAME,
+    WEB_APP_LIVE_TEST_POLICY_NAME,
+    WEB_APP_LIVE_TEST_ROLE_NAME,
+    WEB_APP_LIVE_TEST_SUBJECT,
     CamppsDeployRolesStack,
 )
 from infiquetra_aws_infra.campps_service_registry import (
@@ -2212,6 +2215,325 @@ def test_live_proof_synth_is_stable() -> None:
     ).to_json()
 
     assert first == second
+
+
+# --- campps-web-app nonprod live-test role ---------------------------------
+
+
+def _live_test_template() -> Template:
+    return synth_template_for_repositories(WEB_APP_REPO, target_environment="nonprod")
+
+
+def _live_test_statements(template: Template) -> dict[str, dict[str, Any]]:
+    _, policy = find_managed_policy_with_logical_id(
+        template, WEB_APP_LIVE_TEST_POLICY_NAME
+    )
+    statements = policy["Properties"]["PolicyDocument"]["Statement"]
+    return {statement["Sid"]: statement for statement in statements}
+
+
+def _rendered_resources(statement: dict[str, Any]) -> list[str]:
+    """Render each resource. A single Fn::Join is one value, not its keys."""
+    resource = statement.get("Resource", [])
+    if isinstance(resource, dict):
+        values: tuple[Any, ...] = (resource,)
+    else:
+        values = tuple(normalize_resources(resource))
+    return [item if isinstance(item, str) else json.dumps(item) for item in values]
+
+
+def _partition_arn(suffix: str) -> dict[str, Any]:
+    """Exact Fn::Join from format_arn for account 477152411873 in us-east-1."""
+    return {
+        "Fn::Join": [
+            "",
+            ["arn:", {"Ref": "AWS::Partition"}, suffix],
+        ]
+    }
+
+
+def _secretsmanager_arn(resource_name: str) -> dict[str, Any]:
+    return _partition_arn(
+        f":secretsmanager:us-east-1:477152411873:secret:{resource_name}"
+    )
+
+
+def _find_role_with_logical_id(
+    template: Template, role_name: str
+) -> tuple[str, dict[str, Any]]:
+    matches = [
+        (logical_id, role)
+        for logical_id, role in template.find_resources("AWS::IAM::Role").items()
+        if role.get("Properties", {}).get("RoleName") == role_name
+    ]
+    assert len(matches) == 1, role_name
+    logical_id, role = matches[0]
+    return logical_id, dict(role)
+
+
+def _policies_referencing_role(template: Template, role_logical_id: str) -> list[str]:
+    """IAM policy logical ids, other than the live-test policy, that name the role."""
+    live_policy_logical_id, _live_policy = find_managed_policy_with_logical_id(
+        template, WEB_APP_LIVE_TEST_POLICY_NAME
+    )
+    referencing: list[str] = []
+    for logical_id, policy in template.find_resources("AWS::IAM::Policy").items():
+        if role_logical_id in json.dumps(policy):
+            referencing.append(logical_id)
+    for logical_id, policy in template.find_resources(
+        "AWS::IAM::ManagedPolicy"
+    ).items():
+        if logical_id == live_policy_logical_id:
+            continue
+        if role_logical_id in json.dumps(policy):
+            referencing.append(logical_id)
+    return referencing
+
+
+def _granted_statements(
+    template: Template, role_logical_id: str, role: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Statements on the role: attached managed policies, inline, and IAM policies."""
+    granted: list[dict[str, Any]] = []
+    managed = template.find_resources("AWS::IAM::ManagedPolicy")
+    for attachment in role["Properties"].get("ManagedPolicyArns", []):
+        if isinstance(attachment, dict) and "Ref" in attachment:
+            document = managed[attachment["Ref"]]["Properties"]["PolicyDocument"]
+            granted.extend(document["Statement"])
+    for inline in role["Properties"].get("Policies", []):
+        granted.extend(inline["PolicyDocument"]["Statement"])
+    for policy in template.find_resources("AWS::IAM::Policy").values():
+        if role_logical_id in json.dumps(policy):
+            granted.extend(policy["Properties"]["PolicyDocument"]["Statement"])
+    return granted
+
+
+def test_web_app_nonprod_has_live_test_role() -> None:
+    """Trust, audience, two-hour session, and the role ARN output."""
+    template = _live_test_template()
+    policy_logical_id, _policy = find_managed_policy_with_logical_id(
+        template, WEB_APP_LIVE_TEST_POLICY_NAME
+    )
+    role = find_deploy_role(template, WEB_APP_LIVE_TEST_ROLE_NAME)
+    assert role["Properties"]["MaxSessionDuration"] == 7200
+    assert role["Properties"]["ManagedPolicyArns"] == [{"Ref": policy_logical_id}]
+
+    trust = get_assume_role_statement(role)
+    assert trust["Effect"] == "Allow"
+    assert trust["Condition"]["StringEquals"] == {
+        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+        "token.actions.githubusercontent.com:sub": (
+            "repo:infiquetra/campps-web-app:environment:nonprod-live-tests"
+        ),
+    }
+    assert WEB_APP_LIVE_TEST_SUBJECT == (
+        "repo:infiquetra/campps-web-app:environment:nonprod-live-tests"
+    )
+
+    deploy_role = find_deploy_role(template, WEB_APP_REPO.role_name("nonprod"))
+    assert {"Ref": policy_logical_id} not in deploy_role["Properties"][
+        "ManagedPolicyArns"
+    ]
+    attached_roles = [
+        role_props["Properties"].get("RoleName")
+        for role_props in template.find_resources("AWS::IAM::Role").values()
+        if {"Ref": policy_logical_id}
+        in role_props.get("Properties", {}).get("ManagedPolicyArns", [])
+    ]
+    assert attached_roles == [WEB_APP_LIVE_TEST_ROLE_NAME]
+
+    outputs = template.to_json()["Outputs"]
+    output_get_att = outputs["CamppsWebAppLiveTestRoleArn"]["Value"]["Fn::GetAtt"]
+    assert output_get_att[0].startswith("WebAppLiveTestRole")
+    assert output_get_att[1] == "Arn"
+
+
+def test_web_app_live_test_policy_statements() -> None:
+    """Each statement's action and resource equal the synthesized value."""
+    statements = _live_test_statements(_live_test_template())
+    assert list(statements) == [
+        "LiveTestSecretRead",
+        "LiveTestFounderSecretRead",
+        "LiveTestFixtureAndLeaderSecretWrite",
+        "LiveTestFounderSecretCreate",
+        "LiveTestFounderSecretList",
+        "LiveTestIdentityGrantQuery",
+        "LiveTestIdentityTableKeyDecrypt",
+        "LiveTestExpirySweepInvoke",
+    ]
+    for statement in statements.values():
+        assert statement["Effect"] == "Allow"
+
+    assert statements["LiveTestSecretRead"]["Action"] == (
+        "secretsmanager:GetSecretValue"
+    )
+    assert statements["LiveTestSecretRead"]["Resource"] == [
+        _secretsmanager_arn("campps/web-app/e2e/fixture-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/director-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/office-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/unit-leader-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/activity-leader-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/health-officer-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/parent-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/support-??????"),
+        _secretsmanager_arn("campps/identity-access/nonprod/workos/api-key-??????"),
+    ]
+
+    founder_resource_name = "campps/web-app/e2e/founder-*-??????"
+    founder_read = statements["LiveTestFounderSecretRead"]
+    assert founder_read["Action"] == "secretsmanager:GetSecretValue"
+    assert founder_read["Resource"] == _secretsmanager_arn(founder_resource_name)
+    assert fnmatchcase("campps/web-app/e2e/founder-1-Ab12xy", founder_resource_name)
+    assert fnmatchcase("campps/web-app/e2e/founder-12-Ab12xy", founder_resource_name)
+    for forbidden_name in (
+        "campps/web-app/e2e/founder-Ab12xy",
+        "campps/web-app/e2e/founder-1-Ab12x",
+        "campps/web-app/e2e/founder-1-Ab12xyz",
+        "campps/web-app/e2e/fixture-Ab12xy",
+        "campps/web-app/e2e/director-Ab12xy",
+        "campps/identity-access/nonprod/workos/api-key-Ab12xy",
+    ):
+        assert not fnmatchcase(forbidden_name, founder_resource_name), forbidden_name
+
+    write = statements["LiveTestFixtureAndLeaderSecretWrite"]
+    assert write["Action"] == "secretsmanager:PutSecretValue"
+    assert write["Resource"] == [
+        _secretsmanager_arn("campps/web-app/e2e/fixture-??????"),
+        _secretsmanager_arn("campps/web-app/e2e/activity-leader-??????"),
+    ]
+
+    create = statements["LiveTestFounderSecretCreate"]
+    assert create["Action"] == [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:TagResource",
+    ]
+    assert create["Resource"] == _secretsmanager_arn(founder_resource_name)
+
+    listed = statements["LiveTestFounderSecretList"]
+    assert listed["Action"] == "secretsmanager:ListSecrets"
+    assert listed["Resource"] == "*"
+
+    query = statements["LiveTestIdentityGrantQuery"]
+    assert query["Action"] == "dynamodb:Query"
+    assert query["Resource"] == _partition_arn(
+        ":dynamodb:us-east-1:477152411873:table/campps-identity-access-nonprod"
+    )
+
+    decrypt = statements["LiveTestIdentityTableKeyDecrypt"]
+    assert decrypt["Action"] == "kms:Decrypt"
+    assert decrypt["Resource"] == "*"
+    assert decrypt["Condition"] == {
+        "StringEquals": {
+            "kms:ViaService": "dynamodb.us-east-1.amazonaws.com",
+            "kms:EncryptionContext:aws:dynamodb:tableName": (
+                "campps-identity-access-nonprod"
+            ),
+            "kms:EncryptionContext:aws:dynamodb:subscriberId": "477152411873",
+        },
+        "ForAnyValue:StringEquals": {
+            "kms:ResourceAliases": "alias/campps-platform-nonprod-pii"
+        },
+    }
+
+    invoke = statements["LiveTestExpirySweepInvoke"]
+    assert invoke["Action"] == "lambda:InvokeFunction"
+    assert invoke["Resource"] == _partition_arn(
+        ":lambda:us-east-1:477152411873:function:"
+        "campps-registration-nonprod-expiry-sweep"
+    )
+    assert "Condition" not in invoke
+
+
+def test_web_app_live_test_policy_has_no_dangerous_grants() -> None:
+    """No inline policy, second policy, IAM admin, or production resource."""
+    template = _live_test_template()
+    policy_logical_id, _policy = find_managed_policy_with_logical_id(
+        template, WEB_APP_LIVE_TEST_POLICY_NAME
+    )
+    role_logical_id, role = _find_role_with_logical_id(
+        template, WEB_APP_LIVE_TEST_ROLE_NAME
+    )
+    assert role_logical_id.startswith("WebAppLiveTestRole")
+    assert "Policies" not in role["Properties"]
+    assert role["Properties"]["ManagedPolicyArns"] == [{"Ref": policy_logical_id}]
+    assert _policies_referencing_role(template, role_logical_id) == []
+
+    statements = _granted_statements(template, role_logical_id, role)
+    actions = {
+        action
+        for statement in statements
+        for action in normalize_actions(statement["Action"])
+    }
+    resources = [
+        rendered
+        for statement in statements
+        for rendered in _rendered_resources(statement)
+    ]
+    assert actions == {
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:PutSecretValue",
+        "secretsmanager:CreateSecret",
+        "secretsmanager:TagResource",
+        "secretsmanager:ListSecrets",
+        "dynamodb:Query",
+        "kms:Decrypt",
+        "lambda:InvokeFunction",
+    }
+    assert not any(action == "iam:*" or action.startswith("iam:") for action in actions)
+    assert "secretsmanager:DeleteSecret" not in actions
+    assert not any("*" in action for action in actions)
+    assert {action for action in actions if action.startswith("dynamodb:")} == {
+        "dynamodb:Query"
+    }
+    for resource in resources:
+        assert "431643435299" not in resource
+        assert "050922968859" not in resource
+        assert "production" not in resource
+        assert "staging" not in resource
+    star_sids = [
+        statement.get("Sid", "<no sid>")
+        for statement in statements
+        if "*" in normalize_resources(statement["Resource"])
+    ]
+    assert star_sids == [
+        "LiveTestFounderSecretList",
+        "LiveTestIdentityTableKeyDecrypt",
+    ]
+
+
+def test_web_app_live_test_role_is_nonprod_web_app_only() -> None:
+    higher_environments: tuple[DeployEnvironment, ...] = ("staging", "production")
+    for environment in higher_environments:
+        template = synth_template_for_repositories(
+            WEB_APP_REPO, target_environment=environment
+        )
+        role_names = {
+            role.get("Properties", {}).get("RoleName")
+            for role in template.find_resources("AWS::IAM::Role").values()
+        }
+        assert WEB_APP_LIVE_TEST_ROLE_NAME not in role_names, environment
+        assert WEB_APP_LIVE_TEST_POLICY_NAME not in managed_policy_names(template)
+        assert "CamppsWebAppLiveTestRoleArn" not in template.to_json().get(
+            "Outputs", {}
+        )
+
+    for service in (
+        TENANT_SETUP_REPO,
+        E2E_CANARY_REPO,
+        ServiceRepository(
+            name="identity-access",
+            repository="infiquetra/campps-identity-access",
+        ),
+    ):
+        template = synth_template_for_repositories(
+            service, target_environment="nonprod"
+        )
+        role_names = {
+            role.get("Properties", {}).get("RoleName")
+            for role in template.find_resources("AWS::IAM::Role").values()
+        }
+        assert WEB_APP_LIVE_TEST_ROLE_NAME not in role_names, service.name
+        assert WEB_APP_LIVE_TEST_POLICY_NAME not in managed_policy_names(template)
 
 
 # --- campps-platform e2e canary health probe grant (issue #156) -------------
