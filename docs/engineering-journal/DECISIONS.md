@@ -1,5 +1,17 @@
 # DECISIONS
 
+## 2026-10-04
+
+### Let tenant-setup's nonprod deploy role read the consolidated e2e store (OD-13)
+
+**Decision.** Add `campps/web-app/e2e/fixture-??????` to the `WorkOsTestUserCredentialRead` statement of `campps-tenant-setup-nonprod-gha-e2e-credentials-policy` (logical id `TenantSetupE2eCredentialsPolicyAC488617`), beside the two grants it already had: the old tenant-setup test-user secret and the identity-access WorkOS API key. This is the one infiquetra-aws-infra permission change the CAMPPS issue 164 operator decision OD-13 allows (child issue infiquetra/campps-tenant-setup#271, plan unit U8). It lets tenant-setup's deploy gate read its test user from the store every CAMPPS consumer now shares, so the old tenant-setup secret can later be deleted. The six question marks match exactly the six random characters Secrets Manager appends (the store's ARN ends `-lorl8b`), so a `campps/web-app/e2e/fixture-previous-*` secret never matches.
+
+**Rejected alternative.** Replace the old tenant-setup secret in the tuple instead of adding beside it. Between this deploy and the tenant-setup change that moves its gate to the store, every tenant-setup push-to-main deploy check would fail. The old resource becomes an inert grant once its secret is deleted; removing it is a QUEUED item, because OD-13 allows one change.
+
+**How it is deployed.** No workflow deploys `CamppsNonProdDeployRolesStack`, and the push-triggered "Deploy Infrastructure" workflow deploys management-account stacks, so the change merges with `[skip ci]` in the squash subject (OD-20) and is deployed from the Mac through `scripts/campps_nonprod_deploy_roles.py deploy`. That script and the live diff test `tests/live/test_deploy_roles_stack_diff_live.py` share one module, so the gate's check and the deploy cannot drift apart. The module loads the SSO credentials in-process and gives children only environment variables, asserts the nonprod account (and again just before deploying), runs only the pinned `npx -y aws-cdk@2.1144.0` against that one stack (Homebrew's 2.1029.1 silently ignores `diff --method` and would create a change set), and refuses any changed resource other than the one policy. These replace the multi-step shell blocks earlier plan drafts used, because a value-asserting live check must be a committed test that fails non-zero. `tests/live/conftest.py` turns any skip into a failure when `CAMPPS_LIVE_IAM_CHECK=1` is set, so missing credentials never pass the gate.
+
+**Revisit when.** The old `campps/tenant-setup/nonprod/workos-test-user` grant is removed (then the script's expected changed resource is the same policy again, and the script should be generalized or retired), or a workflow starts deploying the CAMPPS bootstrap stacks.
+
 ## 2026-09-30
 
 ### Give the web-app live suites their own nonprod GitHub role

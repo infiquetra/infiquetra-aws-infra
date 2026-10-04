@@ -2099,11 +2099,19 @@ class CamppsDeployRolesStack(Stack):
         service_repository: ServiceRepository,
         target_environment: DeployEnvironment,
     ) -> iam.ManagedPolicy | None:
-        """Allow Tenant Setup's nonprod gate to mint a short-lived test token."""
+        """Allow Tenant Setup's nonprod gate to read the consolidated e2e test store
+        (OD-13) and the WorkOS API key.
+
+        The old tenant-setup test-user secret stays granted until it is deleted
+        (add, do not replace), so no deploy window breaks the gate. The ``-??????``
+        suffix matches exactly the six random characters Secrets Manager appends,
+        so ``campps/web-app/e2e/fixture-previous-*`` never matches.
+        """
         if service_repository.name != "tenant-setup" or target_environment != "nonprod":
             return None
 
         secret_names = (
+            "campps/web-app/e2e/fixture-??????",
             "campps/tenant-setup/nonprod/workos-test-user-??????",
             "campps/identity-access/nonprod/workos/api-key-??????",
         )

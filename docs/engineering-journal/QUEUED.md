@@ -27,6 +27,14 @@
 
 ## P2
 
+### Remove tenant-setup's inert grant on its deleted test-user secret
+
+**Status:** blocked (waits on the secret's deletion)
+**Why:** Under OD-13 (CAMPPS issue 164, plan unit U8) tenant-setup's nonprod e2e credentials policy gained `campps/web-app/e2e/fixture-??????` beside `campps/tenant-setup/nonprod/workos-test-user-??????`, so no deploy window broke tenant-setup's gate. Once tenant-setup reads the shared store and the old secret is deleted (plan deletion D5), the old resource grants read of a secret that no longer exists. It is harmless but misleading, and a recreated secret of that name would be readable again.
+**Effort:** S (drop one tuple entry and the matching unit-test assertion; deploy `CamppsNonProdDeployRolesStack` from the Mac)
+**Worth it when:** `campps/tenant-setup/nonprod/workos-test-user` has been deleted and its recovery window has passed.
+**Related items:** DECISIONS 2026-10-04 (OD-13); `infiquetra_aws_infra/campps_deploy_roles_stack.py` `_create_tenant_setup_e2e_credentials_policy`; `scripts/campps_nonprod_deploy_roles.py` (its expected changed resource is the same policy logical id, so it can deploy this removal unchanged).
+
 ### Wire the CAMPPS bootstrap app into a guarded CD path (or a drift-check)
 
 **Status:** not-started
