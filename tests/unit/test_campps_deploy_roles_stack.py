@@ -1686,7 +1686,11 @@ def test_identity_access_nonprod_has_no_seam_proof_policy() -> None:
 
 
 def test_tenant_setup_nonprod_deploy_role_has_e2e_credentials_policy() -> None:
-    """The deploy gate can read only the two secrets needed to mint a token."""
+    """The deploy gate reads the consolidated e2e store and the token secrets.
+
+    OD-13 adds the shared store ``campps/web-app/e2e/fixture`` beside the two
+    existing grants (add, do not replace), so no deploy window breaks the gate.
+    """
     template = synth_template_for_repositories(
         TENANT_SETUP_REPO, target_environment="nonprod"
     )
@@ -1702,8 +1706,10 @@ def test_tenant_setup_nonprod_deploy_role_has_e2e_credentials_policy() -> None:
         "secretsmanager:GetSecretValue"
     }
     resources = tuple(normalize_resources(statement["Resource"]))
-    assert len(resources) == 2, resources
+    assert len(resources) == 3, resources
     rendered_resources = str(resources)
+    assert "campps/web-app/e2e/fixture-??????" in rendered_resources
+    assert "campps/web-app/e2e/fixture-previous" not in rendered_resources
     assert "campps/tenant-setup/nonprod/workos-test-user-??????" in rendered_resources
     assert "campps/identity-access/nonprod/workos/api-key-??????" in rendered_resources
     assert "campps/tenant-setup/staging" not in rendered_resources
@@ -1757,7 +1763,12 @@ def test_web_app_higher_environments_have_no_e2e_credentials_policy() -> None:
 
 
 def test_tenant_setup_nonprod_does_not_receive_web_app_e2e_credentials() -> None:
-    """The web-app bundle stays isolated to the web-app deploy role."""
+    """Tenant-setup is still not attached to web-app's deploy-role policy.
+
+    Under OD-13 tenant-setup reads the shared e2e store through its own
+    policy, but web-app's deploy-role credentials policy and web-app's own
+    test-user secret stay isolated to the web-app deploy role.
+    """
     template = synth_template_for_repositories(
         TENANT_SETUP_REPO, target_environment="nonprod"
     )
