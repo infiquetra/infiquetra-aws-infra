@@ -242,7 +242,9 @@ per test need with narrowly scoped inline statements (and remove the matching de
 2. Users → create `team-hermod-qa` with an email you control (a plus-alias is fine).
    Accept the invite, set a password, and register MFA (passkey or authenticator).
 3. Add the user to the `team-hermod-qa` group.
-4. Preview, then deploy from the management account:
+4. `CamppsQaGroupId` defaults to the `team-hermod-qa` group ID
+   (`5458e4b8-2051-700c-0959-b2b12771a084`), so the main-branch deploy creates and keeps the
+   assignment. Manual preview/deploy (only needed to override the group):
 
 ```bash
 cdk diff InfiquetraSSOStack --profile infiquetra-root \

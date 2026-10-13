@@ -234,3 +234,13 @@ def test_campps_qa_s3_read_exception_is_limited_to_qa_mail_bucket() -> None:
     assert len(get_object_denies) == 1
     assert "Resource" not in get_object_denies[0]
     assert get_object_denies[0]["NotResource"] == [f"{bucket_arn}/*"]
+
+
+def test_campps_qa_group_id_defaults_to_team_hermod_qa_group() -> None:
+    template_json = synth_template().to_json()
+
+    assert (
+        template_json["Parameters"]["CamppsQaGroupId"]["Default"]
+        == "5458e4b8-2051-700c-0959-b2b12771a084"
+    )
+    assert "CamppsQaNonprodAssignment" in "".join(template_json["Resources"])
