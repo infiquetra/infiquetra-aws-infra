@@ -316,7 +316,9 @@ class SSOStack(Stack):
             self,
             "CamppsQaGroupId",
             type="String",
-            default="",
+            # team-hermod-qa group (created manually); group IDs are not secret.
+            # Defaulted so the automatic main-branch deploy keeps the assignment.
+            default="5458e4b8-2051-700c-0959-b2b12771a084",
             description=(
                 "Optional Identity Center group ID for team-hermod QA agents "
                 "(CAMPPS nonprod only)"
