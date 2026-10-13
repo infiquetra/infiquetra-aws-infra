@@ -228,6 +228,11 @@ role credentials (`PT1H`) obtained via the device-code flow, exactly like human 
 and logs out when the run ends, so the credentials expire within an hour even if the
 logout step never runs.
 
+The only data-read exception is the QA mail bucket
+`infiquetra-campps-qa-mail-477152411873` (`s3:GetObject` + `s3:ListBucket`). The
+`s3:GetObject*` deny uses `NotResource` for that bucket's objects. See
+[08-qa-inbound-mail.md](08-qa-inbound-mail.md).
+
 Account scoping comes from the assignment, not a policy condition. Expand permissions
 per test need with narrowly scoped inline statements (and remove the matching deny).
 

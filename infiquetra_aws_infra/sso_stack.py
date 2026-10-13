@@ -7,6 +7,7 @@ from aws_cdk import CfnCondition, CfnOutput, CfnParameter, Fn, Stack
 from aws_cdk import aws_sso as sso
 from constructs import Construct
 
+from .campps_qa_mail_stack import QA_MAIL_BUCKET_NAME
 from .organization_stack import OrganizationStack
 
 MANAGEMENT_ACCOUNT_ID = "645166163764"
@@ -475,6 +476,8 @@ class SSOStack(Stack):
         calls and would deny most of ViewOnlyAccess).
         """
 
+        qa_mail_bucket_arn = f"arn:aws:s3:::{QA_MAIL_BUCKET_NAME}"
+
         return {
             "Version": "2012-10-17",
             "Statement": [
@@ -524,10 +527,21 @@ class SSOStack(Stack):
                     "Resource": "*",
                 },
                 {
+                    "Sid": "QaMailBucketRead",
+                    "Effect": "Allow",
+                    "Action": ["s3:GetObject", "s3:ListBucket"],
+                    "Resource": [qa_mail_bucket_arn, f"{qa_mail_bucket_arn}/*"],
+                },
+                {
+                    "Sid": "DenyS3ObjectReadsExceptQaMail",
+                    "Effect": "Deny",
+                    "Action": ["s3:GetObject*"],
+                    "NotResource": [f"{qa_mail_bucket_arn}/*"],
+                },
+                {
                     "Sid": "DenyDataPlaneReadsAndWrites",
                     "Effect": "Deny",
                     "Action": [
-                        "s3:GetObject*",
                         "s3:PutObject*",
                         "s3:DeleteObject*",
                         "s3:RestoreObject",
