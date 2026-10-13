@@ -131,10 +131,12 @@ def test_group_assignments_target_expected_accounts() -> None:
 
 def test_group_assignments_are_conditionally_created() -> None:
     template_json = synth_template().to_json()
+    # CamppsQaNonprodAssignment is intentionally unconditional (fixed group).
     assignment_resources = [
         resource
-        for resource in template_json["Resources"].values()
+        for logical_id, resource in template_json["Resources"].items()
         if resource["Type"] == "AWS::SSO::Assignment"
+        and logical_id != "CamppsQaNonprodAssignment"
     ]
 
     assert assignment_resources
@@ -193,7 +195,11 @@ def test_campps_qa_assignment_targets_only_nonprod() -> None:
 
     assert len(qa_assignments) == 1
     assert qa_assignments[0]["Properties"]["TargetId"] == "477152411873"
-    assert qa_assignments[0]["Condition"] == "CamppsQaGroupIdProvided"
+    assert qa_assignments[0]["Properties"]["PrincipalId"] == (
+        "5458e4b8-2051-700c-0959-b2b12771a084"
+    )
+    assert qa_assignments[0]["Properties"]["PrincipalType"] == "GROUP"
+    assert "Condition" not in qa_assignments[0]
 
 
 def _qa_policy_statements() -> list[dict]:
@@ -236,11 +242,8 @@ def test_campps_qa_s3_read_exception_is_limited_to_qa_mail_bucket() -> None:
     assert get_object_denies[0]["NotResource"] == [f"{bucket_arn}/*"]
 
 
-def test_campps_qa_group_id_defaults_to_team_hermod_qa_group() -> None:
+def test_campps_qa_group_is_not_a_parameter() -> None:
     template_json = synth_template().to_json()
 
-    assert (
-        template_json["Parameters"]["CamppsQaGroupId"]["Default"]
-        == "5458e4b8-2051-700c-0959-b2b12771a084"
-    )
-    assert "CamppsQaNonprodAssignment" in "".join(template_json["Resources"])
+    assert "CamppsQaGroupId" not in template_json.get("Parameters", {})
+    assert "CamppsQaGroupIdProvided" not in template_json.get("Conditions", {})

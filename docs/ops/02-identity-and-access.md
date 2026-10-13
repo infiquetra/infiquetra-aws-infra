@@ -92,7 +92,6 @@ Six SSO account assignments — all on `jefcox` directly (no group-based assignm
 | `CamppsDevelopersGroupId` | `CAMPPSDeveloper` | `477152411873` campps-nonprod | Day-to-day nonprod development and debugging |
 | `CamppsProdReadOnlyGroupId` | `ReadOnlyAccess` | `431643435299` campps-prod | Production inspection without write access |
 | `CamppsProdBreakGlassAdminsGroupId` | `CAMPPSProductionBreakGlassAdministrator` | `431643435299` campps-prod | Emergency production changes only |
-| `CamppsQaGroupId` | `CAMPPSQAReadOnly` | `477152411873` campps-nonprod | team-hermod QA agents (nonprod only; no staging/prod assignment) |
 
 The intended migration path is: create or verify the groups, deploy these parameters, test each profile, then remove the direct legacy `AdministratorAccess` assignments. Do not remove the legacy assignments first.
 
@@ -242,16 +241,11 @@ per test need with narrowly scoped inline statements (and remove the matching de
 2. Users → create `team-hermod-qa` with an email you control (a plus-alias is fine).
    Accept the invite, set a password, and register MFA (passkey or authenticator).
 3. Add the user to the `team-hermod-qa` group.
-4. `CamppsQaGroupId` defaults to the `team-hermod-qa` group ID
-   (`5458e4b8-2051-700c-0959-b2b12771a084`), so the main-branch deploy creates and keeps the
-   assignment. Manual preview/deploy (only needed to override the group):
+4. The assignment `CamppsQaNonprodAssignment` (`CAMPPSQAReadOnly` → group
+   `5458e4b8-2051-700c-0959-b2b12771a084` on `477152411873` only) is hard-coded in
+   `sso_stack.py` (`CAMPPS_QA_GROUP_ID`), not a stack parameter, so the automatic
+   main-branch deploy creates and keeps it. No manual deploy is needed.
 
-```bash
-cdk diff InfiquetraSSOStack --profile infiquetra-root \
-  --parameters CamppsQaGroupId=<group-id>
-cdk deploy InfiquetraSSOStack --profile infiquetra-root \
-  --parameters CamppsQaGroupId=<group-id>
-```
-
-> Always run `cdk diff` first. Parameters not passed revert to their defaults (`""`),
-> which would remove any other conditional group assignments that are currently set.
+> Why not a parameter: `cdk deploy` reuses a stack's previously stored parameter
+> values unless they are passed explicitly, so changing a parameter default in code
+> never reaches an existing stack through CI (this is why #172 had no effect).
