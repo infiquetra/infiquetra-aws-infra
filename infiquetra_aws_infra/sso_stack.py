@@ -13,6 +13,8 @@ from .organization_stack import OrganizationStack
 MANAGEMENT_ACCOUNT_ID = "645166163764"
 CAMPPS_NONPROD_ACCOUNT_ID = "477152411873"
 CAMPPS_PROD_ACCOUNT_ID = "431643435299"
+# team-hermod-qa Identity Center group (created manually; group IDs are not secret)
+CAMPPS_QA_GROUP_ID = "5458e4b8-2051-700c-0959-b2b12771a084"
 
 
 class SSOStack(Stack):
@@ -312,19 +314,6 @@ class SSOStack(Stack):
             ),
         )
 
-        self.campps_qa_group_id = CfnParameter(
-            self,
-            "CamppsQaGroupId",
-            type="String",
-            # team-hermod-qa group (created manually); group IDs are not secret.
-            # Defaulted so the automatic main-branch deploy keeps the assignment.
-            default="5458e4b8-2051-700c-0959-b2b12771a084",
-            description=(
-                "Optional Identity Center group ID for team-hermod QA agents "
-                "(CAMPPS nonprod only)"
-            ),
-        )
-
         self.infiquetra_admins_group_id_provided = self.create_group_id_condition(
             "InfiquetraAdminsGroupIdProvided",
             self.infiquetra_admins_group_id,
@@ -342,11 +331,6 @@ class SSOStack(Stack):
                 "CamppsProdBreakGlassAdminsGroupIdProvided",
                 self.campps_prod_breakglass_admins_group_id,
             )
-        )
-
-        self.campps_qa_group_id_provided = self.create_group_id_condition(
-            "CamppsQaGroupIdProvided",
-            self.campps_qa_group_id,
         )
 
     def create_group_id_condition(
@@ -403,13 +387,6 @@ class SSOStack(Stack):
                 self.campps_prod_breakglass_permission_set.attr_permission_set_arn,
                 self.campps_prod_breakglass_admins_group_id_provided,
             ),
-            (
-                "CamppsQaNonprodAssignment",
-                self.campps_qa_group_id,
-                CAMPPS_NONPROD_ACCOUNT_ID,
-                self.campps_qa_permission_set.attr_permission_set_arn,
-                self.campps_qa_group_id_provided,
-            ),
         ]
 
         for (
@@ -430,6 +407,20 @@ class SSOStack(Stack):
                 target_type="AWS_ACCOUNT",
             )
             assignment.cfn_options.condition = condition
+
+        # team-hermod QA: fixed group, unconditional, nonprod only. Not a
+        # CfnParameter: CI deploys reuse stored parameter values, so a changed
+        # default never takes effect (see #172).
+        sso.CfnAssignment(
+            self,
+            "CamppsQaNonprodAssignment",
+            instance_arn=self.sso_instance_arn,
+            permission_set_arn=self.campps_qa_permission_set.attr_permission_set_arn,
+            principal_id=CAMPPS_QA_GROUP_ID,
+            principal_type="GROUP",
+            target_id=CAMPPS_NONPROD_ACCOUNT_ID,
+            target_type="AWS_ACCOUNT",
+        )
 
     def create_campps_developer_policy(self) -> dict:
         """Create inline policy for CAMPPS developers."""
