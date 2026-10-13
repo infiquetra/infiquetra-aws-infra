@@ -56,6 +56,7 @@ Two layers exist: **legacy** sets created when SSO was first turned on (2021), a
 | `ConsultingDeveloper` | `PT8H` | `PowerUserAccess` | Developer access for Consulting |
 | `ConsultingAdministrator` | `PT4H` | `AdministratorAccess` | Admin access for Consulting |
 | `ReadOnlyAccess` | `PT4H` | `ReadOnlyAccess` | Generic read-only |
+| `CAMPPSQAReadOnly` | `PT1H` | `ViewOnlyAccess` + CAMPPS QA inline policy | team-hermod QA agents, CAMPPS nonprod only (logs/metrics/X-Ray read; denies IAM/SSO/STS role assumption and data-plane reads/writes) |
 
 `★ Tier convention:`
 
@@ -91,6 +92,7 @@ Six SSO account assignments — all on `jefcox` directly (no group-based assignm
 | `CamppsDevelopersGroupId` | `CAMPPSDeveloper` | `477152411873` campps-nonprod | Day-to-day nonprod development and debugging |
 | `CamppsProdReadOnlyGroupId` | `ReadOnlyAccess` | `431643435299` campps-prod | Production inspection without write access |
 | `CamppsProdBreakGlassAdminsGroupId` | `CAMPPSProductionBreakGlassAdministrator` | `431643435299` campps-prod | Emergency production changes only |
+| `CamppsQaGroupId` | `CAMPPSQAReadOnly` | `477152411873` campps-nonprod | team-hermod QA agents (nonprod only; no staging/prod assignment) |
 
 The intended migration path is: create or verify the groups, deploy these parameters, test each profile, then remove the direct legacy `AdministratorAccess` assignments. Do not remove the legacy assignments first.
 
@@ -215,3 +217,34 @@ aws sso-admin list-account-assignments \
 aws iam get-role --role-name infiquetra-aws-infra-gha-role \
   --profile infiquetra-root --query 'Role.AssumeRolePolicyDocument'
 ```
+
+## team-hermod QA identity (CAMPPSQAReadOnly)
+
+A dedicated Identity Center user for the team-hermod QA agents, assigned **only** to
+`campps-nonprod` (`477152411873`) through a group. Credentials are short-lived SSO
+role credentials (`PT1H`) obtained via the device-code flow, exactly like human users.
+
+`PT1H` is intentionally shorter than the other tiers: the QA box logs in per test run
+and logs out when the run ends, so the credentials expire within an hour even if the
+logout step never runs.
+
+Account scoping comes from the assignment, not a policy condition. Expand permissions
+per test need with narrowly scoped inline statements (and remove the matching deny).
+
+### Manual steps (users and groups are not managed in CDK)
+
+1. Identity Center console → Groups → create `team-hermod-qa`; copy the group ID.
+2. Users → create `team-hermod-qa` with an email you control (a plus-alias is fine).
+   Accept the invite, set a password, and register MFA (passkey or authenticator).
+3. Add the user to the `team-hermod-qa` group.
+4. Preview, then deploy from the management account:
+
+```bash
+cdk diff InfiquetraSSOStack --profile infiquetra-root \
+  --parameters CamppsQaGroupId=<group-id>
+cdk deploy InfiquetraSSOStack --profile infiquetra-root \
+  --parameters CamppsQaGroupId=<group-id>
+```
+
+> Always run `cdk diff` first. Parameters not passed revert to their defaults (`""`),
+> which would remove any other conditional group assignments that are currently set.

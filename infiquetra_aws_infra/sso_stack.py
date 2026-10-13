@@ -237,6 +237,25 @@ class SSOStack(Stack):
             ],
         )
 
+        # CAMPPS QA - nonprod read-only for the team-hermod QA agents
+        self.campps_qa_permission_set = sso.CfnPermissionSet(
+            self,
+            "CamppsQaPermissionSet",
+            name="CAMPPSQAReadOnly",
+            description="Read-only nonprod access for team-hermod QA verification",
+            instance_arn=self.sso_instance_arn,
+            session_duration="PT1H",  # 1 hour: logged in per QA run, then out
+            managed_policies=["arn:aws:iam::aws:policy/job-function/ViewOnlyAccess"],
+            inline_policy=self.create_campps_qa_policy(),
+            tags=[
+                cdk.CfnTag(key="Role", value="QA"),
+                cdk.CfnTag(key="BusinessUnit", value="Apps"),
+                cdk.CfnTag(key="Project", value="CAMPPS"),
+                cdk.CfnTag(key="Environment", value="NonProd"),
+                cdk.CfnTag(key="AccessLevel", value="ReadOnly"),
+            ],
+        )
+
         # Read-Only Access - For contractors and temporary access
         self.readonly_permission_set = sso.CfnPermissionSet(
             self,
@@ -292,6 +311,17 @@ class SSOStack(Stack):
             ),
         )
 
+        self.campps_qa_group_id = CfnParameter(
+            self,
+            "CamppsQaGroupId",
+            type="String",
+            default="",
+            description=(
+                "Optional Identity Center group ID for team-hermod QA agents "
+                "(CAMPPS nonprod only)"
+            ),
+        )
+
         self.infiquetra_admins_group_id_provided = self.create_group_id_condition(
             "InfiquetraAdminsGroupIdProvided",
             self.infiquetra_admins_group_id,
@@ -309,6 +339,11 @@ class SSOStack(Stack):
                 "CamppsProdBreakGlassAdminsGroupIdProvided",
                 self.campps_prod_breakglass_admins_group_id,
             )
+        )
+
+        self.campps_qa_group_id_provided = self.create_group_id_condition(
+            "CamppsQaGroupIdProvided",
+            self.campps_qa_group_id,
         )
 
     def create_group_id_condition(
@@ -364,6 +399,13 @@ class SSOStack(Stack):
                 CAMPPS_PROD_ACCOUNT_ID,
                 self.campps_prod_breakglass_permission_set.attr_permission_set_arn,
                 self.campps_prod_breakglass_admins_group_id_provided,
+            ),
+            (
+                "CamppsQaNonprodAssignment",
+                self.campps_qa_group_id,
+                CAMPPS_NONPROD_ACCOUNT_ID,
+                self.campps_qa_permission_set.attr_permission_set_arn,
+                self.campps_qa_group_id_provided,
             ),
         ]
 
@@ -424,6 +466,123 @@ class SSOStack(Stack):
         }
 
         return campps_policy
+
+    def create_campps_qa_policy(self) -> dict:
+        """Create inline policy for the team-hermod CAMPPS QA permission set.
+
+        Account scoping comes from the nonprod-only assignment, not from a
+        policy condition (aws:ResourceAccount is absent on many List/Describe
+        calls and would deny most of ViewOnlyAccess).
+        """
+
+        return {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Sid": "CloudWatchLogsAndMetricsRead",
+                    "Effect": "Allow",
+                    "Action": [
+                        "logs:DescribeLogGroups",
+                        "logs:DescribeLogStreams",
+                        "logs:DescribeQueries",
+                        "logs:DescribeMetricFilters",
+                        "logs:GetLogEvents",
+                        "logs:FilterLogEvents",
+                        "logs:GetLogGroupFields",
+                        "logs:GetLogRecord",
+                        "logs:GetQueryResults",
+                        "logs:StartQuery",
+                        "logs:StopQuery",
+                        "logs:StartLiveTail",
+                        "logs:StopLiveTail",
+                        "cloudwatch:GetMetricData",
+                        "cloudwatch:GetMetricStatistics",
+                        "cloudwatch:ListMetrics",
+                        "cloudwatch:DescribeAlarms",
+                        "xray:GetTraceSummaries",
+                        "xray:BatchGetTraces",
+                        "xray:GetServiceGraph",
+                    ],
+                    "Resource": "*",
+                },
+                {
+                    "Sid": "DenyIAMAndIdentityChanges",
+                    "Effect": "Deny",
+                    "Action": [
+                        "iam:*",
+                        "sso:*",
+                        "sso-directory:*",
+                        "identitystore:*",
+                        "organizations:*",
+                        "account:*",
+                        "sts:AssumeRole",
+                        "sts:AssumeRoleWithSAML",
+                        "sts:AssumeRoleWithWebIdentity",
+                        "sts:GetFederationToken",
+                        "sts:GetSessionToken",
+                    ],
+                    "Resource": "*",
+                },
+                {
+                    "Sid": "DenyDataPlaneReadsAndWrites",
+                    "Effect": "Deny",
+                    "Action": [
+                        "s3:GetObject*",
+                        "s3:PutObject*",
+                        "s3:DeleteObject*",
+                        "s3:RestoreObject",
+                        "dynamodb:GetItem",
+                        "dynamodb:BatchGetItem",
+                        "dynamodb:Query",
+                        "dynamodb:Scan",
+                        "dynamodb:PartiQL*",
+                        "dynamodb:PutItem",
+                        "dynamodb:UpdateItem",
+                        "dynamodb:DeleteItem",
+                        "dynamodb:BatchWriteItem",
+                        "dynamodb:ExportTableToPointInTime",
+                        "secretsmanager:GetSecretValue",
+                        "secretsmanager:PutSecretValue",
+                        "ssm:GetParameter*",
+                        "ssm:PutParameter",
+                        "ssm:SendCommand",
+                        "ssm:StartSession",
+                        "kms:Decrypt",
+                        "kms:Encrypt",
+                        "kms:GenerateDataKey*",
+                        "lambda:InvokeFunction",
+                        "lambda:UpdateFunction*",
+                        "lambda:PutFunction*",
+                        "lambda:AddPermission",
+                        "apigateway:PUT",
+                        "apigateway:POST",
+                        "apigateway:PATCH",
+                        "apigateway:DELETE",
+                        "sqs:SendMessage*",
+                        "sqs:ReceiveMessage",
+                        "sqs:DeleteMessage*",
+                        "sqs:PurgeQueue",
+                        "sns:Publish",
+                        "events:PutEvents",
+                        "events:PutRule",
+                        "events:PutTargets",
+                        "states:StartExecution",
+                        "cognito-idp:Admin*",
+                        "ses:Send*",
+                        "cloudformation:CreateStack",
+                        "cloudformation:UpdateStack",
+                        "cloudformation:DeleteStack",
+                        "cloudformation:ExecuteChangeSet",
+                        "logs:PutLogEvents",
+                        "logs:DeleteLogGroup",
+                        "logs:DeleteLogStream",
+                        "logs:PutRetentionPolicy",
+                        "logs:CreateExportTask",
+                    ],
+                    "Resource": "*",
+                },
+            ],
+        }
 
     def create_outputs(self) -> None:
         """Create CloudFormation outputs for permission sets."""
@@ -507,6 +666,13 @@ class SSOStack(Stack):
 
         CfnOutput(
             self,
+            "CamppsQaPermissionSetArn",
+            value=self.campps_qa_permission_set.attr_permission_set_arn,
+            description="CAMPPS QA (nonprod read-only) Permission Set ARN",
+        )
+
+        CfnOutput(
+            self,
             "ReadOnlyPermissionSetArn",
             value=self.readonly_permission_set.attr_permission_set_arn,
             description="Read-Only Permission Set ARN",
@@ -543,5 +709,6 @@ class SSOStack(Stack):
             "consulting_admin": (
                 self.consulting_admin_permission_set.attr_permission_set_arn
             ),
+            "campps_qa": self.campps_qa_permission_set.attr_permission_set_arn,
             "readonly": self.readonly_permission_set.attr_permission_set_arn,
         }

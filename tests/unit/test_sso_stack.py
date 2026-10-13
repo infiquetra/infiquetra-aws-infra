@@ -77,7 +77,7 @@ def test_optional_group_parameters_exist() -> None:
 def test_group_assignments_target_expected_accounts() -> None:
     template = synth_template()
 
-    template.resource_count_is("AWS::SSO::Assignment", 5)
+    template.resource_count_is("AWS::SSO::Assignment", 6)
     template.has_resource_properties(
         "AWS::SSO::Assignment",
         {
@@ -158,3 +158,39 @@ def test_core_admin_assignment_uses_core_admin_permission_set() -> None:
             },
         },
     )
+
+
+def test_campps_qa_permission_set_is_short_lived_view_only() -> None:
+    template = synth_template()
+
+    template.has_resource_properties(
+        "AWS::SSO::PermissionSet",
+        {
+            "Name": "CAMPPSQAReadOnly",
+            "SessionDuration": "PT1H",
+            "ManagedPolicies": ["arn:aws:iam::aws:policy/job-function/ViewOnlyAccess"],
+        },
+    )
+
+
+def test_campps_qa_assignment_targets_only_nonprod() -> None:
+    template_json = synth_template().to_json()
+    resources = template_json["Resources"]
+    qa_logical_ids = [
+        logical_id
+        for logical_id, resource in resources.items()
+        if resource["Type"] == "AWS::SSO::PermissionSet"
+        and resource["Properties"]["Name"] == "CAMPPSQAReadOnly"
+    ]
+    assert len(qa_logical_ids) == 1
+    qa_assignments = [
+        resource
+        for resource in resources.values()
+        if resource["Type"] == "AWS::SSO::Assignment"
+        and resource["Properties"]["PermissionSetArn"]
+        == {"Fn::GetAtt": [qa_logical_ids[0], "PermissionSetArn"]}
+    ]
+
+    assert len(qa_assignments) == 1
+    assert qa_assignments[0]["Properties"]["TargetId"] == "477152411873"
+    assert qa_assignments[0]["Condition"] == "CamppsQaGroupIdProvided"
