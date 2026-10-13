@@ -194,3 +194,43 @@ def test_campps_qa_assignment_targets_only_nonprod() -> None:
     assert len(qa_assignments) == 1
     assert qa_assignments[0]["Properties"]["TargetId"] == "477152411873"
     assert qa_assignments[0]["Condition"] == "CamppsQaGroupIdProvided"
+
+
+def _qa_policy_statements() -> list[dict]:
+    import json
+
+    resources = synth_template().to_json()["Resources"]
+    qa = next(
+        r
+        for r in resources.values()
+        if r["Type"] == "AWS::SSO::PermissionSet"
+        and r["Properties"]["Name"] == "CAMPPSQAReadOnly"
+    )
+    policy = qa["Properties"]["InlinePolicy"]
+    policy = json.loads(policy) if isinstance(policy, str) else policy
+    statements: list[dict] = policy["Statement"]
+    return statements
+
+
+def test_campps_qa_s3_read_exception_is_limited_to_qa_mail_bucket() -> None:
+    bucket_arn = "arn:aws:s3:::infiquetra-campps-qa-mail-477152411873"
+    statements = _qa_policy_statements()
+
+    s3_allows = [
+        s
+        for s in statements
+        if s["Effect"] == "Allow" and any(str(a).startswith("s3:") for a in s["Action"])
+    ]
+    assert len(s3_allows) == 1
+    assert sorted(s3_allows[0]["Action"]) == ["s3:GetObject", "s3:ListBucket"]
+    assert sorted(s3_allows[0]["Resource"]) == [bucket_arn, f"{bucket_arn}/*"]
+
+    get_object_denies = [
+        s
+        for s in statements
+        if s["Effect"] == "Deny"
+        and any(str(a).startswith("s3:GetObject") for a in s["Action"])
+    ]
+    assert len(get_object_denies) == 1
+    assert "Resource" not in get_object_denies[0]
+    assert get_object_denies[0]["NotResource"] == [f"{bucket_arn}/*"]

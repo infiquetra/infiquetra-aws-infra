@@ -31,6 +31,7 @@ flowchart LR
 | 05 | [Security Controls](05-security-controls.md) | Service Control Policies (active on both workload accounts since 2026-05-02), MFA enforcement, what's actually blocked |
 | 06 | [Cost](06-cost.md) | Last 30/90 days actual spend, per-service pricing model, projections as workloads grow |
 | 07 | [What's Next](07-whats-next.md) | The minimum forward path: stop "getting set up", start building. Cross-references [`../engineering-journal/QUEUED.md`](../engineering-journal/QUEUED.md). |
+| 08 | [QA Inbound Mail](08-qa-inbound-mail.md) | SES catch-all on `qa.infiquetra.com` in campps-nonprod for team-hermod QA test inboxes; manual deploy, rule-set activation and DNS steps |
 
 ## At a glance
 
