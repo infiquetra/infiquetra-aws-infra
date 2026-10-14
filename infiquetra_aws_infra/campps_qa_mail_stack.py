@@ -1,9 +1,12 @@
 """SES inbound mail for team-hermod QA test inboxes (CAMPPS nonprod only)."""
 
+from pathlib import Path
 from typing import Any
 
 from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack
 from aws_cdk import aws_iam as iam
+from aws_cdk import aws_lambda as lambda_
+from aws_cdk import aws_logs as logs
 from aws_cdk import aws_s3 as s3
 from aws_cdk import aws_ses as ses
 from aws_cdk import aws_ses_actions as ses_actions
@@ -17,6 +20,8 @@ QA_MAIL_PREFIX = "inbound/"
 QA_MAIL_RULE_SET_NAME = "campps-qa-inbound"
 QA_MAIL_RULE_NAME = "qa-catch-all-to-s3"
 QA_MAIL_RETENTION_DAYS = 7
+QA_MAIL_READER_FUNCTION_NAME = "campps-qa-mail-reader"
+QA_MAIL_READER_SRC = Path(__file__).parent / "lambda_src" / "qa_mail_reader"
 SES_INBOUND_MX = f"inbound-smtp.{QA_MAIL_REGION}.amazonaws.com"
 
 
@@ -91,6 +96,8 @@ class CamppsQaMailStack(Stack):
         if bucket_policy.policy_dependable is not None:
             rule.node.add_dependency(bucket_policy.policy_dependable)
 
+        self.reader = self._create_reader(bucket)
+
         CfnOutput(self, "QaMailBucketName", value=bucket.bucket_name)
         CfnOutput(self, "QaMailRuleSetName", value=QA_MAIL_RULE_SET_NAME)
         CfnOutput(
@@ -102,3 +109,64 @@ class CamppsQaMailStack(Stack):
                 f"QaMailDkimCname{index}",
                 value=f"{record.name} CNAME {record.value}",
             )
+
+    def _create_reader(self, bucket: s3.Bucket) -> lambda_.Function:
+        """Read-only lookup behind an AWS_IAM function URL (inbound/ only)."""
+
+        role = iam.Role(
+            self,
+            "QaMailReaderRole",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            description="QA mail reader: read inbound/ in the QA mail bucket only",
+        )
+        role.add_to_policy(
+            iam.PolicyStatement(
+                sid="ListInboundOnly",
+                actions=["s3:ListBucket"],
+                resources=[bucket.bucket_arn],
+                conditions={"StringLike": {"s3:prefix": [f"{QA_MAIL_PREFIX}*"]}},
+            )
+        )
+        role.add_to_policy(
+            iam.PolicyStatement(
+                sid="ReadAndTagInboundObjects",
+                actions=[
+                    "s3:GetObject",
+                    "s3:GetObjectTagging",
+                    "s3:PutObjectTagging",
+                ],
+                resources=[bucket.arn_for_objects(f"{QA_MAIL_PREFIX}*")],
+            )
+        )
+
+        log_group = logs.LogGroup(
+            self,
+            "QaMailReaderLogs",
+            log_group_name=f"/aws/lambda/{QA_MAIL_READER_FUNCTION_NAME}",
+            retention=logs.RetentionDays.ONE_WEEK,
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+        role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["logs:CreateLogStream", "logs:PutLogEvents"],
+                resources=[log_group.log_group_arn],
+            )
+        )
+
+        reader = lambda_.Function(
+            self,
+            "QaMailReader",
+            function_name=QA_MAIL_READER_FUNCTION_NAME,
+            runtime=lambda_.Runtime.PYTHON_3_13,
+            handler="handler.handler",
+            code=lambda_.Code.from_asset(str(QA_MAIL_READER_SRC)),
+            role=role,
+            timeout=Duration.seconds(30),
+            memory_size=256,
+            log_group=log_group,
+            environment={"QA_MAIL_BUCKET": bucket.bucket_name},
+        )
+        url = reader.add_function_url(auth_type=lambda_.FunctionUrlAuthType.AWS_IAM)
+        CfnOutput(self, "QaMailReaderUrl", value=url.url)
+        CfnOutput(self, "QaMailReaderFunctionName", value=reader.function_name)
+        return reader

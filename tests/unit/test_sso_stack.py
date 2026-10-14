@@ -247,3 +247,37 @@ def test_campps_qa_group_is_not_a_parameter() -> None:
 
     assert "CamppsQaGroupId" not in template_json.get("Parameters", {})
     assert "CamppsQaGroupIdProvided" not in template_json.get("Conditions", {})
+
+
+def test_campps_qa_lambda_invoke_exception_is_limited_to_qa_mail_reader() -> None:
+    reader_arn = "arn:aws:lambda:us-east-1:477152411873:function:campps-qa-mail-reader"
+    statements = _qa_policy_statements()
+
+    lambda_allows = [
+        s
+        for s in statements
+        if s["Effect"] == "Allow"
+        and any(str(a).startswith("lambda:") for a in s["Action"])
+    ]
+    assert sorted(a for s in lambda_allows for a in s["Action"]) == [
+        "lambda:InvokeFunction",
+        "lambda:InvokeFunctionUrl",
+    ]
+    for s in lambda_allows:
+        assert s["Resource"] == [reader_arn]
+    invoke = next(s for s in lambda_allows if s["Action"] == ["lambda:InvokeFunction"])
+    assert invoke["Condition"] == {"Bool": {"lambda:InvokedViaFunctionUrl": "true"}}
+
+    invoke_denies = [
+        s
+        for s in statements
+        if s["Effect"] == "Deny"
+        and any(a in ("lambda:InvokeFunction", "lambda:*") for a in s["Action"])
+    ]
+    assert len(invoke_denies) == 1
+    assert invoke_denies[0]["NotResource"] == [reader_arn]
+    assert not any(
+        "lambda:InvokeFunctionUrl" in s["Action"]
+        for s in statements
+        if s["Effect"] == "Deny"
+    )

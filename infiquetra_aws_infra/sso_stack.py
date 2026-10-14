@@ -7,7 +7,12 @@ from aws_cdk import CfnCondition, CfnOutput, CfnParameter, Fn, Stack
 from aws_cdk import aws_sso as sso
 from constructs import Construct
 
-from .campps_qa_mail_stack import QA_MAIL_BUCKET_NAME
+from .campps_qa_mail_stack import (
+    QA_MAIL_ACCOUNT_ID,
+    QA_MAIL_BUCKET_NAME,
+    QA_MAIL_READER_FUNCTION_NAME,
+    QA_MAIL_REGION,
+)
 from .organization_stack import OrganizationStack
 
 MANAGEMENT_ACCOUNT_ID = "645166163764"
@@ -470,6 +475,10 @@ class SSOStack(Stack):
         """
 
         qa_mail_bucket_arn = f"arn:aws:s3:::{QA_MAIL_BUCKET_NAME}"
+        qa_mail_reader_arn = (
+            f"arn:aws:lambda:{QA_MAIL_REGION}:{QA_MAIL_ACCOUNT_ID}:"
+            f"function:{QA_MAIL_READER_FUNCTION_NAME}"
+        )
 
         return {
             "Version": "2012-10-17",
@@ -526,6 +535,28 @@ class SSOStack(Stack):
                     "Resource": [qa_mail_bucket_arn, f"{qa_mail_bucket_arn}/*"],
                 },
                 {
+                    "Sid": "QaMailReaderUrlInvoke",
+                    "Effect": "Allow",
+                    "Action": ["lambda:InvokeFunctionUrl"],
+                    "Resource": [qa_mail_reader_arn],
+                    "Condition": {
+                        "StringEquals": {"lambda:FunctionUrlAuthType": "AWS_IAM"}
+                    },
+                },
+                {
+                    "Sid": "QaMailReaderInvokeViaUrlOnly",
+                    "Effect": "Allow",
+                    "Action": ["lambda:InvokeFunction"],
+                    "Resource": [qa_mail_reader_arn],
+                    "Condition": {"Bool": {"lambda:InvokedViaFunctionUrl": "true"}},
+                },
+                {
+                    "Sid": "DenyLambdaInvokeExceptQaMailReader",
+                    "Effect": "Deny",
+                    "Action": ["lambda:InvokeFunction"],
+                    "NotResource": [qa_mail_reader_arn],
+                },
+                {
                     "Sid": "DenyS3ObjectReadsExceptQaMail",
                     "Effect": "Deny",
                     "Action": ["s3:GetObject*"],
@@ -557,7 +588,6 @@ class SSOStack(Stack):
                         "kms:Decrypt",
                         "kms:Encrypt",
                         "kms:GenerateDataKey*",
-                        "lambda:InvokeFunction",
                         "lambda:UpdateFunction*",
                         "lambda:PutFunction*",
                         "lambda:AddPermission",
