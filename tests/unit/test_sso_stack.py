@@ -264,7 +264,7 @@ def test_campps_qa_lambda_invoke_exception_is_limited_to_qa_mail_reader() -> Non
         "lambda:InvokeFunctionUrl",
     ]
     for s in lambda_allows:
-        assert s["Resource"] == [reader_arn]
+        assert s["Resource"] == [reader_arn, f"{reader_arn}:*"]
     invoke = next(s for s in lambda_allows if s["Action"] == ["lambda:InvokeFunction"])
     assert invoke["Condition"] == {"Bool": {"lambda:InvokedViaFunctionUrl": "true"}}
 
@@ -275,7 +275,7 @@ def test_campps_qa_lambda_invoke_exception_is_limited_to_qa_mail_reader() -> Non
         and any(a in ("lambda:InvokeFunction", "lambda:*") for a in s["Action"])
     ]
     assert len(invoke_denies) == 1
-    assert invoke_denies[0]["NotResource"] == [reader_arn]
+    assert invoke_denies[0]["NotResource"] == [reader_arn, f"{reader_arn}:*"]
     assert not any(
         "lambda:InvokeFunctionUrl" in s["Action"]
         for s in statements
