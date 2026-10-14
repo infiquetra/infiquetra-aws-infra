@@ -56,7 +56,7 @@ Two layers exist: **legacy** sets created when SSO was first turned on (2021), a
 | `ConsultingDeveloper` | `PT8H` | `PowerUserAccess` | Developer access for Consulting |
 | `ConsultingAdministrator` | `PT4H` | `AdministratorAccess` | Admin access for Consulting |
 | `ReadOnlyAccess` | `PT4H` | `ReadOnlyAccess` | Generic read-only |
-| `CAMPPSQAReadOnly` | `PT1H` | `ViewOnlyAccess` + CAMPPS QA inline policy | team-hermod QA agents, CAMPPS nonprod only (logs/metrics/X-Ray read; denies IAM/SSO/STS role assumption and data-plane reads/writes) |
+| `CAMPPSQAReadOnly` | `PT4H` | `ViewOnlyAccess` + CAMPPS QA inline policy | team-hermod QA agents, CAMPPS nonprod only (logs/metrics/X-Ray read; denies IAM/SSO/STS role assumption and data-plane reads/writes) |
 
 `★ Tier convention:`
 
@@ -221,11 +221,12 @@ aws iam get-role --role-name infiquetra-aws-infra-gha-role \
 
 A dedicated Identity Center user for the team-hermod QA agents, assigned **only** to
 `campps-nonprod` (`477152411873`) through a group. Credentials are short-lived SSO
-role credentials (`PT1H`) obtained via the device-code flow, exactly like human users.
+role credentials (`PT4H`) obtained via the device-code flow, exactly like human users.
 
-`PT1H` is intentionally shorter than the other tiers: the QA box logs in per test run
-and logs out when the run ends, so the credentials expire within an hour even if the
-logout step never runs.
+`PT4H` (raised from `PT1H` on 2026-10-13) is long enough for a full QA pilot run
+without re-approving a device code mid-run, and still shorter than the human tiers.
+The QA box logs in per test run and logs out when the run ends, so the credentials
+expire within four hours even if the logout step never runs.
 
 The only data-read exception is the QA mail bucket
 `infiquetra-campps-qa-mail-477152411873` (`s3:GetObject` + `s3:ListBucket`). The

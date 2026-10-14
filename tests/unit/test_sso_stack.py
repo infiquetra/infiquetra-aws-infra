@@ -162,14 +162,14 @@ def test_core_admin_assignment_uses_core_admin_permission_set() -> None:
     )
 
 
-def test_campps_qa_permission_set_is_short_lived_view_only() -> None:
+def test_campps_qa_permission_set_is_four_hour_view_only() -> None:
     template = synth_template()
 
     template.has_resource_properties(
         "AWS::SSO::PermissionSet",
         {
             "Name": "CAMPPSQAReadOnly",
-            "SessionDuration": "PT1H",
+            "SessionDuration": "PT4H",
             "ManagedPolicies": ["arn:aws:iam::aws:policy/job-function/ViewOnlyAccess"],
         },
     )
