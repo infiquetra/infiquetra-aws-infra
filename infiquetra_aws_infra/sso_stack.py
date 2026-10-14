@@ -479,6 +479,9 @@ class SSOStack(Stack):
             f"arn:aws:lambda:{QA_MAIL_REGION}:{QA_MAIL_ACCOUNT_ID}:"
             f"function:{QA_MAIL_READER_FUNCTION_NAME}"
         )
+        # Function URL invocations are authorized against the qualified ARN
+        # (e.g. ...:campps-qa-mail-reader:$LATEST), so cover both forms.
+        qa_mail_reader_arns = [qa_mail_reader_arn, f"{qa_mail_reader_arn}:*"]
 
         return {
             "Version": "2012-10-17",
@@ -538,7 +541,7 @@ class SSOStack(Stack):
                     "Sid": "QaMailReaderUrlInvoke",
                     "Effect": "Allow",
                     "Action": ["lambda:InvokeFunctionUrl"],
-                    "Resource": [qa_mail_reader_arn],
+                    "Resource": qa_mail_reader_arns,
                     "Condition": {
                         "StringEquals": {"lambda:FunctionUrlAuthType": "AWS_IAM"}
                     },
@@ -547,14 +550,14 @@ class SSOStack(Stack):
                     "Sid": "QaMailReaderInvokeViaUrlOnly",
                     "Effect": "Allow",
                     "Action": ["lambda:InvokeFunction"],
-                    "Resource": [qa_mail_reader_arn],
+                    "Resource": qa_mail_reader_arns,
                     "Condition": {"Bool": {"lambda:InvokedViaFunctionUrl": "true"}},
                 },
                 {
                     "Sid": "DenyLambdaInvokeExceptQaMailReader",
                     "Effect": "Deny",
                     "Action": ["lambda:InvokeFunction"],
-                    "NotResource": [qa_mail_reader_arn],
+                    "NotResource": qa_mail_reader_arns,
                 },
                 {
                     "Sid": "DenyS3ObjectReadsExceptQaMail",
