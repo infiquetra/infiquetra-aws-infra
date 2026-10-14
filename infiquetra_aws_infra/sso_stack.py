@@ -252,7 +252,7 @@ class SSOStack(Stack):
             name="CAMPPSQAReadOnly",
             description="Read-only nonprod access for team-hermod QA verification",
             instance_arn=self.sso_instance_arn,
-            session_duration="PT1H",  # 1 hour: logged in per QA run, then out
+            session_duration="PT4H",  # 4 hours: covers a full QA run; logged out after
             managed_policies=["arn:aws:iam::aws:policy/job-function/ViewOnlyAccess"],
             inline_policy=self.create_campps_qa_policy(),
             tags=[
