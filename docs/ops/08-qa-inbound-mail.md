@@ -61,3 +61,25 @@ and must be deployed by hand with nonprod admin credentials.
 ## Cost
 About $0: SES inbound is $0.10 per 1,000 emails plus $0.09 per 1,000 incoming
 256 KB chunks. S3 storage for 7 days of test mail costs pennies.
+
+## QA mail lookup (function URL)
+
+The box reaches S3 through a VPC endpoint whose policy blocks the QA bucket, so
+agents read mail through `campps-qa-mail-reader`, a Lambda behind an `AWS_IAM`
+function URL (stack output `QaMailReaderUrl`).
+
+- Lambda role: `s3:ListBucket` limited to prefix `inbound/*`, and
+  `s3:GetObject` / `GetObjectTagging` / `PutObjectTagging` on `inbound/*` only.
+  Message IDs are validated, so a request can never read outside `inbound/`.
+- `CAMPPSQAReadOnly` may call `lambda:InvokeFunctionUrl` (AWS_IAM) and
+  `lambda:InvokeFunction` (only via the URL) on this one function. The
+  `lambda:InvokeFunction` deny excludes it with `NotResource`.
+- Client: `tools/qa_mail.py` (SigV4 with the `campps-qa-nonprod` profile):
+  ```bash
+  export QA_MAIL_URL=<QaMailReaderUrl>
+  python3 tools/qa_mail.py list director+run1@qa.infiquetra.com --hours 2
+  python3 tools/qa_mail.py get <id> --mark-read
+  ```
+  `list` returns newest first: id, received, from, to, subject. `get` returns
+  headers, text, html, extracted links and read state. `--mark-read` adds the
+  S3 tag `qa-read=true`.
