@@ -1,24 +1,25 @@
 """Unit tests for the QA mail reader Lambda handler (no AWS calls)."""
 
+import importlib.util
 import io
 import json
-import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-sys.path.insert(
-    0,
-    str(
-        Path(__file__).resolve().parents[2]
-        / "infiquetra_aws_infra"
-        / "lambda_src"
-        / "qa_mail_reader"
-    ),
+_HANDLER_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "infiquetra_aws_infra"
+    / "lambda_src"
+    / "qa_mail_reader"
+    / "handler.py"
 )
-import handler
+_spec = importlib.util.spec_from_file_location("qa_mail_reader_handler", _HANDLER_PATH)
+assert _spec is not None and _spec.loader is not None
+handler: Any = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(handler)
 
 RAW = (
     b"Received: from mail.example.com by inbound-smtp for probe@qa.infiquetra.com;\r\n"
