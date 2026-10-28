@@ -54,6 +54,8 @@ COPPA_CONSENT_CI_READONLY_SUBJECTS: tuple[str, ...] = (
     "repo:infiquetra/campps-coppa-consent:pull_request",
 )
 
+COPPA_HORIZON_PROOF_POLICY_NAME = "campps-coppa-consent-nonprod-horizon-proof-policy"
+
 #: Dedicated GitHub Actions role for the campps-web-app nonprod live suites.
 #: Trust is the ``nonprod-live-tests`` environment, not the deploy environment.
 #: The nonprod stack is the only stack that mints it.
@@ -106,6 +108,13 @@ class CamppsDeployRolesStack(Stack):
             )
             for deploy_policy in deploy_policies:
                 deploy_role.add_managed_policy(deploy_policy)
+
+            horizon_proof_policy = self._create_coppa_horizon_proof_policy(
+                service_repository=service_repository,
+                target_environment=target_environment,
+            )
+            if horizon_proof_policy is not None:
+                deploy_role.add_managed_policy(horizon_proof_policy)
 
             seam_proof_policy = self._create_scope_seam_proof_policy(
                 service_repository=service_repository,
@@ -211,6 +220,64 @@ class CamppsDeployRolesStack(Stack):
                     f"{target_environment} deployments"
                 ),
             )
+
+    def _create_coppa_horizon_proof_policy(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+    ) -> iam.ManagedPolicy | None:
+        """Allow the consent CI proof to manage only its synthetic timers."""
+        if (
+            service_repository.name != "coppa-consent"
+            or target_environment != "nonprod"
+        ):
+            return None
+
+        schedule_prefix = (
+            "arn:aws:scheduler:us-east-1:477152411873:schedule/"
+            "campps-coppa-consent-nonprod-child-retention/ci-retention-horizon-*"
+        )
+        return iam.ManagedPolicy(
+            self,
+            "CoppaConsentHorizonProofPolicy",
+            managed_policy_name=COPPA_HORIZON_PROOF_POLICY_NAME,
+            statements=[
+                iam.PolicyStatement(
+                    sid="SyntheticSchedules",
+                    actions=[
+                        "scheduler:CreateSchedule",
+                        "scheduler:GetSchedule",
+                        "scheduler:DeleteSchedule",
+                    ],
+                    resources=[f"{schedule_prefix}-short", f"{schedule_prefix}-long"],
+                ),
+                # Neither list operation supports a resource ARN. The script
+                # bounds pagination and emits counts, not schedule names.
+                iam.PolicyStatement(
+                    sid="Inventory",
+                    actions=[
+                        "scheduler:ListSchedules",
+                        "servicequotas:ListServiceQuotas",
+                    ],
+                    resources=["*"],
+                    conditions={"StringEquals": {"aws:RequestedRegion": "us-east-1"}},
+                ),
+                iam.PolicyStatement(
+                    sid="SchedulerRole",
+                    actions=["iam:PassRole"],
+                    resources=[
+                        "arn:aws:iam::477152411873:role/"
+                        "campps-coppa-consent-nonprod-child-retention-scheduler"
+                    ],
+                    conditions={
+                        "StringEquals": {
+                            "iam:PassedToService": "scheduler.amazonaws.com"
+                        }
+                    },
+                ),
+            ],
+        )
 
     def _create_deploy_role(
         self,

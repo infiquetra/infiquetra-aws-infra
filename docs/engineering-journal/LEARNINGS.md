@@ -411,3 +411,14 @@ run `36210335406` then successfully assumed the management role and three
 workload roles, collected account alarm states and a fresh cost observation,
 and published the report to Forge. Production reported zero configured alarms
 in `us-east-1`, so the dashboard labels its alarm coverage unmonitored.
+# 2026-10-28 — CAMPPS role changes need their own CI deploy path
+
+The active `Deploy Infrastructure` workflow targets the management-account
+Organization and SSO stacks. It does not deploy `app_campps_bootstrap.py` or
+the nonproduction CAMPPS deploy-role stack. The existing guarded
+`campps_nonprod_deploy_roles.py` script uses local SSO and allows only one
+unrelated policy change. A green foundation deployment therefore cannot
+prove that a CAMPPS role change reached AWS; a reviewed nonproduction CI path
+and post-deploy role verification are needed when local deployment is excluded.
+Also, merging source changes triggers the management-account workflow by
+default, so operators must account for that trigger before merging.

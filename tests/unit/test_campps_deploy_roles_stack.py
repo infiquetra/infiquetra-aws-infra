@@ -2826,6 +2826,89 @@ def test_platform_nonprod_base_policies_are_unchanged() -> None:
     assert hashes == PLATFORM_NONPROD_BASE_POLICY_SHA256
 
 
+def test_coppa_horizon_proof_policy_is_scoped_to_synthetic_nonprod_schedules() -> None:
+    service = ServiceRepository(
+        name="coppa-consent", repository="infiquetra/campps-coppa-consent"
+    )
+    template = synth_template_for_repositories(service)
+    policy_id, policy = find_managed_policy_with_logical_id(
+        template, "campps-coppa-consent-nonprod-horizon-proof-policy"
+    )
+    statements = {
+        item["Sid"]: item
+        for item in policy["Properties"]["PolicyDocument"]["Statement"]
+    }
+    assert set(statements) == {"SyntheticSchedules", "Inventory", "SchedulerRole"}
+    schedules = statements["SyntheticSchedules"]
+    assert set(normalize_actions(schedules["Action"])) == {
+        "scheduler:CreateSchedule",
+        "scheduler:GetSchedule",
+        "scheduler:DeleteSchedule",
+    }
+    patterns = set(normalize_resources(schedules["Resource"]))
+    base = (
+        "arn:aws:scheduler:us-east-1:477152411873:schedule/"
+        "campps-coppa-consent-nonprod-child-retention/ci-retention-horizon-*"
+    )
+    assert patterns == {f"{base}-short", f"{base}-long"}
+    assert all(
+        any(fnmatchcase(candidate, pattern) for pattern in patterns)
+        for candidate in (f"{base[:-1]}123-short", f"{base[:-1]}123-long")
+    )
+    for forbidden in (
+        f"{base[:-1]}123-other",
+        base.replace("child-retention/", "other/") + "-short",
+        base.replace("us-east-1", "us-west-2") + "-long",
+        base.replace("477152411873", "000000000000") + "-long",
+    ):
+        assert not any(fnmatchcase(forbidden, pattern) for pattern in patterns)
+    inventory = statements["Inventory"]
+    assert set(normalize_actions(inventory["Action"])) == {
+        "scheduler:ListSchedules",
+        "servicequotas:ListServiceQuotas",
+    }
+    assert inventory["Resource"] == "*"
+    assert inventory["Condition"] == {
+        "StringEquals": {"aws:RequestedRegion": "us-east-1"}
+    }
+    passing = statements["SchedulerRole"]
+    assert passing["Action"] == "iam:PassRole"
+    assert passing["Resource"] == (
+        "arn:aws:iam::477152411873:role/"
+        "campps-coppa-consent-nonprod-child-retention-scheduler"
+    )
+    assert passing["Condition"] == {
+        "StringEquals": {"iam:PassedToService": "scheduler.amazonaws.com"}
+    }
+    role = find_deploy_role(template, service.role_name("nonprod"))
+    assert {"Ref": policy_id} in role["Properties"]["ManagedPolicyArns"]
+    assert "PermissionsBoundary" not in role["Properties"]
+    boundary = find_managed_policy(
+        template, service.permissions_boundary_name("nonprod")
+    )
+    assert "horizon" not in json.dumps(boundary)
+
+
+def test_coppa_horizon_proof_policy_is_absent_elsewhere() -> None:
+    service = ServiceRepository(
+        name="coppa-consent", repository="infiquetra/campps-coppa-consent"
+    )
+    unrelated = ServiceRepository(
+        name="tenant-setup", repository="infiquetra/campps-tenant-setup"
+    )
+    for repository, environment in (
+        (service, "staging"),
+        (service, "production"),
+        (unrelated, "nonprod"),
+    ):
+        template = synth_template_for_repositories(
+            repository, target_environment=environment
+        )
+        assert not any(
+            "horizon-proof-policy" in name for name in managed_policy_names(template)
+        )
+
+
 def test_staging_and_production_full_registry_synth_are_unchanged() -> None:
     """Higher-environment synth must match the pre-change template freeze."""
     expected: dict[DeployEnvironment, str] = {
