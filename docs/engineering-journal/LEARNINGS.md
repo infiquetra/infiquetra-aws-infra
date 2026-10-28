@@ -2,6 +2,36 @@
 
 ## 2026-10-28
 
+### Change-set description does not report its execution role
+
+**Evidence.** The pinned botocore 1.39.13 `DescribeChangeSet` response model
+and the AWS API documentation omit `RoleARN`; `CreateChangeSet` accepts it,
+and `DescribeStacks` reports the stack's role. A model-validated Stubber plan
+passes with the actual response shape and checks the exact creation role.
+**Mechanism.** Do not require an unsupported response field or claim it was
+verified there. The plan checks the live stack role, supplies that exact role
+to creation under the session-policy role condition, and binds the created ID
+to the reviewed receipt. Apply rechecks the live stack role before execution.
+If a future SDK exposes a role in the description, reject a conflicting value.
+**Validation.** Offline controls reject a changed live role and a conflicting
+future response; the pinned model cannot expose an unmodeled response member.
+
+### Change-set inspection can require a stack-scoped read
+
+**Evidence.** Nonproduction plan run 40688796005 created the intended change
+set but its `DescribeChangeSet` waiter was denied even with both approved name
+and ARN condition forms. The denial did not expose the service's condition
+context; the change set was not executed.
+**Mechanism.** The read must not depend on an unverified condition value. Allow
+`DescribeChangeSet` only on the exact nonproduction stack, while keeping the
+existing name and ARN conditions on execution and all creation restrictions.
+The receipt guard verifies the exact prefixed name, stack, revision, template,
+resource changes, and reviewed digest before execution.
+**Validation.** Offline controls allow the exact-stack read with absent or
+unexpected condition context, deny other stacks, accounts, and regions, and
+retain negative controls for execution and the four-resource receipt guard.
+The corrected plan and the execution permission still need live CI evidence.
+
 ### A change-set condition may need both name and ARN representations
 
 **Evidence.** Nonproduction plan run 40686904101 successfully chained into
