@@ -142,7 +142,16 @@ def _document(value: Any) -> dict[str, Any]:
     result = json.loads(value) if isinstance(value, str) else value
     if not isinstance(result, dict):
         raise GuardError("CloudFormation returned an invalid template")
-    return result
+
+    def plain(node: Any) -> Any:
+        if isinstance(node, dict):
+            return {key: plain(item) for key, item in node.items()}
+        if isinstance(node, list):
+            return [plain(item) for item in node]
+        return node
+
+    # Botocore may return OrderedDict subclasses; key order is not JSON meaning.
+    return {key: plain(item) for key, item in result.items()}
 
 
 def preserve_deployed_cdk_metadata(

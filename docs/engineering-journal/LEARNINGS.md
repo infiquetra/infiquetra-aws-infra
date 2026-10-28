@@ -2,6 +2,18 @@
 
 ## 2026-10-28
 
+### Normalize SDK template mappings at the JSON boundary
+
+**Evidence.** Nonproduction plan run 40690865837 reached the change-set
+template comparison but rejected templates whose canonical JSON was equal.
+The deployed metadata was an `OrderedDict`; copying it into the proposal made
+its equality sensitive to the different key order of the canonical upload.
+**Fix.** Normalize decoded template mappings recursively to ordinary dicts at
+the API boundary. Preserve every key, value, and array order; retain the full
+template comparison and all change-set and role guards.
+**Validation.** The ordered-metadata plan and apply regression failed before
+the fix and passes after it; scalar, key, and array-order mutations still fail.
+
 ### Change-set description does not report its execution role
 
 **Evidence.** The pinned botocore 1.39.13 `DescribeChangeSet` response model

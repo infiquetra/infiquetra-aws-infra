@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+from collections import OrderedDict
 from copy import deepcopy
 from datetime import UTC, datetime
 from fnmatch import fnmatchcase
@@ -411,6 +412,111 @@ def _plan() -> tuple[_CloudFormation, _S3, dict[str, Any]]:
     )
     assert effective == proposed
     return cfn, s3, receipt
+
+
+class _CanonicalTemplateCloudFormation(_CloudFormation):
+    """Model SDK mappings returned after the uploaded JSON is canonicalized."""
+
+    def __init__(self, old: dict[str, Any], proposed: dict[str, Any], s3: _S3) -> None:
+        super().__init__(old, proposed)
+        self.s3 = s3
+        self.mutation: str | None = None
+
+    def get_template(self, **kwargs: Any) -> dict[str, Any]:
+        if kwargs.get("ChangeSetName") or self.executions:
+            template = json.loads(
+                self.s3.puts[-1]["Body"], object_pairs_hook=OrderedDict
+            )
+            if self.mutation == "scalar":
+                template["Outputs"]["unchanged"]["Value"] = "tampered"
+            elif self.mutation == "key":
+                template["Outputs"]["other"] = template["Outputs"].pop("unchanged")
+            elif self.mutation == "list":
+                role = next(iter(guard.ROLE_IDS))
+                template["Resources"][role]["Properties"]["ManagedPolicyArns"].reverse()
+            return {"TemplateBody": template}
+        return {"TemplateBody": self.old}
+
+
+def _ordered_metadata_templates() -> tuple[dict[str, Any], dict[str, Any]]:
+    old, proposed = _templates()
+    old["Resources"]["CDKMetadata"] = OrderedDict(
+        [
+            ("Type", "AWS::CDK::Metadata"),
+            ("Properties", OrderedDict([("Analytics", "deployed")])),
+        ]
+    )
+    return old, proposed
+
+
+def test_document_normalizes_nested_mappings_without_changing_arrays_or_values() -> (
+    None
+):
+    source: OrderedDict[str, Any] = OrderedDict(
+        [
+            ("items", [OrderedDict([("second", 2), ("first", 1)]), None, False]),
+            ("nested", OrderedDict([("zero", 0), ("text", "value")])),
+        ]
+    )
+    result = guard._document(source)
+    assert type(result) is dict
+    assert type(result["items"][0]) is dict
+    assert type(result["nested"]) is dict
+    assert result == {
+        "items": [{"second": 2, "first": 1}, None, False],
+        "nested": {"zero": 0, "text": "value"},
+    }
+    assert guard._document(json.dumps(source)) == result
+    assert isinstance(source["items"][0], OrderedDict)
+
+
+def test_canonical_s3_order_with_ordered_metadata_plans_and_applies() -> None:
+    old, proposed = _ordered_metadata_templates()
+    s3 = _S3()
+    cfn = _CanonicalTemplateCloudFormation(old, proposed, s3)
+    receipt, effective = guard.plan(
+        cfn,
+        s3,
+        _Sts(),
+        head="a" * 40,
+        run_id="1234",
+        proposed=proposed,
+        head_guard=lambda: None,
+    )
+    assert type(effective["Resources"]["CDKMetadata"]) is dict
+    assert json.loads(s3.puts[0]["Body"]) == effective
+    assert (
+        guard.apply(
+            cfn,
+            _Sts(),
+            head="a" * 40,
+            plan_run_id="1234",
+            reviewed_digest=guard._digest(receipt),
+            proposed=proposed,
+            head_guard=lambda: None,
+        )
+        == receipt
+    )
+    assert len(cfn.executions) == 1
+
+
+@pytest.mark.parametrize("mutation", ["scalar", "key", "list"])
+def test_canonical_template_still_rejects_real_changes(mutation: str) -> None:
+    old, proposed = _ordered_metadata_templates()
+    s3 = _S3()
+    cfn = _CanonicalTemplateCloudFormation(old, proposed, s3)
+    cfn.mutation = mutation
+    with pytest.raises(guard.GuardError, match="template differs"):
+        guard.plan(
+            cfn,
+            s3,
+            _Sts(),
+            head="a" * 40,
+            run_id="1234",
+            proposed=proposed,
+            head_guard=lambda: None,
+        )
+    assert not cfn.executions
 
 
 def test_plan_and_reviewed_apply_are_bound_to_one_nonproduction_change_set() -> None:
