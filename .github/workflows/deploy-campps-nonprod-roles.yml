@@ -1,0 +1,112 @@
+name: Deploy CAMPPS nonprod deploy roles
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Prepare a change set, or apply a separately reviewed plan
+        required: true
+        type: choice
+        options: [plan, apply]
+      head_sha:
+        description: Full reviewed current-main commit SHA
+        required: true
+        type: string
+      plan_run_id:
+        description: Run ID of the reviewed plan (required for apply)
+        required: false
+        type: string
+      plan_digest:
+        description: SHA-256 review digest printed by the plan (required for apply)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: campps-nonprod-deploy-roles
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.repository == 'infiquetra/infiquetra-aws-infra' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      EXPECTED_HEAD: ${{ inputs.head_sha }}
+      PHASE: ${{ inputs.phase }}
+      PLAN_RUN_ID: ${{ inputs.plan_run_id }}
+      PLAN_DIGEST: ${{ inputs.plan_digest }}
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      CDK_DEFAULT_REGION: us-east-1
+      CDK_DEFAULT_ACCOUNT: '477152411873'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Set up Python dependencies
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Verify the reviewed main revision before obtaining credentials
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          git diff --quiet
+          git diff --cached --quiet
+          test -z "$(git status --porcelain)"
+          uv run python tools/nonprod_deploy_roles_ci.py check
+      - name: Prepare the scoped nonproduction session
+        id: identity
+        run: uv run python tools/nonprod_deploy_roles_ci.py identity
+      - name: Obtain the existing management GitHub identity
+        uses: aws-actions/configure-aws-credentials@00943011d9042930efac3dcd3a170e4273319bc8 # v5.1.0
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          inline-session-policy: ${{ steps.identity.outputs.management_policy }}
+          aws-region: us-east-1
+          allowed-account-ids: '645166163764'
+          role-duration-seconds: 3600
+      - name: Verify the exact existing management role
+        run: uv run python tools/nonprod_deploy_roles_ci.py check-management
+      - name: Chain into the existing nonproduction role with a restricted session
+        uses: aws-actions/configure-aws-credentials@00943011d9042930efac3dcd3a170e4273319bc8 # v5.1.0
+        with:
+          role-to-assume: ${{ steps.identity.outputs.role }}
+          role-chaining: true
+          role-skip-session-tagging: true
+          role-session-name: campps-nonprod-roles-${{ github.run_id }}
+          inline-session-policy: ${{ steps.identity.outputs.policy }}
+          aws-region: us-east-1
+          allowed-account-ids: '477152411873'
+          role-duration-seconds: 3600
+      - name: Synthesize the one existing nonproduction stack
+        run: uv run npx -y aws-cdk@2.1144.0 synth --app 'python3 app_campps_nonprod_roles_ci.py' CamppsNonProdDeployRolesStack --quiet --output cdk.out
+      - name: Prepare or apply the checked change set
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          git diff --quiet
+          git diff --cached --quiet
+          test -z "$(git status --porcelain)"
+          uv run python tools/nonprod_deploy_roles_ci.py run
+      - name: Preserve plan and template evidence
+        if: always() && inputs.phase == 'plan'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: campps-nonprod-deploy-roles-plan-${{ github.run_id }}
+          path: |
+            cdk.out/nonprod-role-plan.json
+            cdk.out/nonprod-role-effective-template.json
+            cdk.out/CamppsNonProdDeployRolesStack.template.json
+          if-no-files-found: warn
+          retention-days: 30

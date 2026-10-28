@@ -126,6 +126,27 @@ class GitHubOIDCStack(Stack):
 
         # Scoped permissions for CDK deployments, Organizations, and SSO
         policy_statements = [
+            # The nonprod role already trusts this management account. This
+            # statement is only a proposed bootstrap change until the
+            # management role's policy is updated through an approved path.
+            iam.PolicyStatement(
+                sid="AssumeCamppsNonprodRolesCi",
+                effect=iam.Effect.ALLOW,
+                actions=["sts:AssumeRole"],
+                resources=[
+                    self.format_arn(
+                        service="iam",
+                        region="",
+                        account="477152411873",
+                        resource="role",
+                        resource_name="org-admin",
+                        arn_format=cdk.ArnFormat.SLASH_RESOURCE_NAME,
+                    )
+                ],
+                conditions={
+                    "StringLike": {"sts:RoleSessionName": "campps-nonprod-roles-*"}
+                },
+            ),
             # CloudFormation permissions - scoped to CDK stacks
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,

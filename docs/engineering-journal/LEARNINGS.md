@@ -1,5 +1,23 @@
 # LEARNINGS
 
+## 2026-10-28
+
+### A trusted cross-account role still needs a caller grant
+
+**Evidence.** The nonproduction `org-admin` role trusts the management account,
+but read-only IAM simulation returned `implicitDeny` when the infrastructure
+GitHub role attempted `sts:AssumeRole`. A proposed grant scoped to that exact
+role and a CI session-name prefix simulated as allowed; other roles and session
+names remained denied. No grant was applied.
+**Mechanism.** Cross-account role assumption requires both the target trust and
+the caller's identity policy. The nonproduction stack's deployed CDK metadata
+also had a different analytics value from the current synthesis, adding a fifth
+template difference outside the four intended role-policy resources.
+**Generalizable rule.** Check both sides of an existing role chain before
+designing a new one. For a bounded change set, compare the deployed template,
+preserve analytics-only CDK metadata explicitly, and review the resulting exact
+resource changes and template digest before execution.
+
 ## 2026-09-30
 
 ### A substring of an Fn::Join ARN does not pin the resource list
