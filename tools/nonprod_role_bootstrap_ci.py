@@ -20,6 +20,7 @@ from typing import Any
 from urllib.parse import unquote
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from tools.nonprod_deploy_roles_ci import (
@@ -39,6 +40,13 @@ POLICY_NAME = "infiquetra-aws-infra-gha-cdk-policy"
 SID = "TemporaryCamppsNonprodRolesCi"
 MAX_DURATION = timedelta(hours=2)
 SCHEMA = "campps-temporary-nonprod-role-v1"
+
+
+def policy_version_writer(session: Any) -> Any:
+    """Do not retry a create whose successful response may have been lost."""
+    return session.client(
+        "iam", config=Config(retries={"mode": "standard", "total_max_attempts": 1})
+    )
 
 
 def _iam_arn(account: str, kind: str, name: str) -> str:
@@ -335,6 +343,7 @@ def activate(
     sts: Any,
     grant: dict[str, Any],
     *,
+    writer: Any,
     head: str,
     run_id: str,
     digest: str,
@@ -349,7 +358,7 @@ def activate(
     if snapshot(iam, sts) != plan["baseline"]:
         raise GuardError("policy changed immediately before activation")
     validate_plan(plan, now=datetime.now(UTC), require_live=True)
-    result = iam.create_policy_version(
+    result = writer.create_policy_version(
         PolicyArn=_iam_arn(MANAGEMENT_ACCOUNT, "policy", POLICY_NAME),
         PolicyDocument=_canonical(plan["candidate"]).decode(),
         SetAsDefault=True,
@@ -510,8 +519,9 @@ def main() -> None:
         check_head(head, os.environ)
 
     head_guard()
-    iam = boto3.Session(region_name=REGION).client("iam")
-    sts = boto3.Session(region_name=REGION).client("sts")
+    session = boto3.Session(region_name=REGION)
+    iam = session.client("iam")
+    sts = session.client("sts")
     root = Path(os.environ["RUNNER_TEMP"]) / "campps-role-bootstrap"
     run_id = _run_id(os.environ.get("GITHUB_RUN_ID", ""))
     now = datetime.now(UTC)
@@ -539,6 +549,7 @@ def main() -> None:
             iam,
             sts,
             _read(root / "grant.json"),
+            writer=policy_version_writer(session),
             head=head,
             run_id=run_id,
             digest=os.environ.get("PREPARED_DIGEST", ""),

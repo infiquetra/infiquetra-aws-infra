@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import sys
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs
 
+import boto3
 import pytest
 import yaml  # type: ignore[import-untyped]
+from botocore.exceptions import ReadTimeoutError
 
 from tools import nonprod_role_bootstrap_ci as bootstrap
 from tools.nonprod_deploy_roles_ci import GuardError, _digest
@@ -93,7 +97,7 @@ class FakeIam:
         }
 
     def create_policy_version(self, **kwargs: Any) -> dict[str, Any]:
-        version = "v3"
+        version = f"v{max(int(value[1:]) for value in self.versions) + 1}"
         self.versions[version] = json.loads(kwargs["PolicyDocument"])
         if kwargs["SetAsDefault"]:
             self.default = version
@@ -140,6 +144,7 @@ def activate(
         iam,
         sts,
         grant,
+        writer=iam,
         head=HEAD,
         run_id="34",
         digest=_digest(grant),
@@ -253,6 +258,75 @@ def test_cleanup_recovers_when_activation_receipt_was_lost() -> None:
     assert iam.versions == {"v2": ORIGINAL}
 
 
+def test_lost_create_reply_is_not_retried_and_receipt_restores_baseline(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    iam, sts, plan, grant, now = setup()
+    receipt_path = tmp_path / "campps-role-bootstrap" / "grant.json"
+    receipt_path.parent.mkdir()
+    receipt_path.write_text(json.dumps(grant))
+    sends: list[str] = []
+    real_session = boto3.Session(
+        aws_access_key_id="synthetic",
+        aws_secret_access_key="synthetic",
+        region_name="us-east-1",
+    )
+
+    def lose_successful_reply(request: Any) -> Any:
+        body = (
+            request.body.decode() if isinstance(request.body, bytes) else request.body
+        )
+        fields = parse_qs(body)
+        sends.append(fields["Action"][0])
+        assert fields["Action"] == ["CreatePolicyVersion"]
+        assert json.loads(fields["PolicyDocument"][0]) == plan["candidate"]
+        assert fields["SetAsDefault"] == ["true"]
+        iam.create_policy_version(
+            PolicyDocument=fields["PolicyDocument"][0], SetAsDefault=True
+        )
+        raise ReadTimeoutError(
+            endpoint_url="https://synthetic.invalid", error="lost successful reply"
+        )
+
+    class Session:
+        def client(self, service: str, **kwargs: Any) -> Any:
+            if service == "sts":
+                return sts
+            assert service == "iam"
+            if "config" not in kwargs:
+                return iam
+            writer = real_session.client("iam", config=kwargs["config"])
+            assert writer.meta.config.retries["total_max_attempts"] == 1
+            monkeypatch.setattr(
+                writer._endpoint.http_session, "send", lose_successful_reply
+            )
+            return writer
+
+    monkeypatch.setenv("AWS_MAX_ATTEMPTS", "7")
+    monkeypatch.setenv("AWS_RETRY_MODE", "adaptive")
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    monkeypatch.setenv("EXPECTED_HEAD", HEAD)
+    monkeypatch.setenv("GITHUB_RUN_ID", "34")
+    monkeypatch.setenv("PREPARED_DIGEST", _digest(grant))
+    monkeypatch.setattr(bootstrap.boto3, "Session", lambda **_: Session())
+    monkeypatch.setattr(bootstrap, "check_head", lambda *_: None)
+    monkeypatch.setattr(sys, "argv", ["nonprod_role_bootstrap_ci.py", "activate"])
+
+    with pytest.raises(ReadTimeoutError):
+        bootstrap.main()
+    assert sends == ["CreatePolicyVersion"]
+    assert iam.default == "v3"
+    assert iam.versions["v3"] == plan["candidate"]
+    preserved_receipt = bootstrap._read(receipt_path)
+    assert _digest(preserved_receipt) == _digest(grant)
+    assert (
+        cleanup(iam, sts, preserved_receipt, now)["removed_temporary_version"] == "v3"
+    )
+    assert iam.default == "v2"
+    assert iam.versions == {"v2": ORIGINAL}
+    assert iam.writes == [("create", "v3"), ("default", "v2"), ("delete", "v3")]
+
+
 def test_recovery_receipt_handles_a_write_that_never_happened() -> None:
     iam, sts, _, grant, now = setup()
     assert cleanup(iam, sts, grant, now)["removed_temporary_version"] is None
@@ -353,6 +427,7 @@ def test_changed_receipt_head_or_expiry_refuses_grant() -> None:
             iam,
             sts,
             grant,
+            writer=iam,
             head=HEAD,
             run_id="34",
             digest="0" * 64,
@@ -364,6 +439,7 @@ def test_changed_receipt_head_or_expiry_refuses_grant() -> None:
             iam,
             sts,
             grant,
+            writer=iam,
             head=HEAD,
             run_id="34",
             digest=_digest(grant),
@@ -400,6 +476,7 @@ def test_mutation_between_initial_check_and_write_is_refused() -> None:
             iam,
             sts,
             grant,
+            writer=iam,
             head=HEAD,
             run_id="34",
             digest=_digest(grant),
