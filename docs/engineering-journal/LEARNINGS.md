@@ -2,6 +2,45 @@
 
 ## 2026-10-28
 
+### Restrict role-template numbers when SDK parsing loses precision
+
+**Evidence.** JSON decimal literals such as `0.10000000000000001` and `0.1`
+can become the same binary float before the template guard runs; botocore
+also decodes the CloudFormation response this way. The reviewed role template
+contains integer numbers only.
+**Fix.** Refuse all floats at the shared template boundary, including SDK
+mapping values and underflow to zero. This deployment path supports integer
+numbers only; a future fractional template requires a separately reviewed
+parsing design. Integer, boolean, object-order and full-template checks remain.
+**Validation.** Twelve raw-JSON and SDK-decoded precision controls fail before
+the restriction and pass afterward. No IAM policies or AWS API calls change.
+
+### Template guards must distinguish JSON booleans from numbers
+
+**Evidence.** Python treats `True == 1` and `False == 0`, so ordinary
+dictionary equality let those substitutions pass in the allowed-change,
+change-set receipt, and post-apply template checks. It also treated a missing
+resource key like an added resource whose value was null.
+**Fix.** Compare normalized templates as canonical JSON, which keeps boolean
+and number representations distinct while ignoring object key order. Reject
+non-string object keys, duplicate JSON keys and non-JSON values at the
+template boundary; preserve list order and every allowed resource check.
+**Validation.** Both directions of boolean/number substitutions are refused
+in each guard, including metadata and attachment comparisons. Reordered objects
+still pass, and missing-versus-null resources and invalid JSON are refused.
+
+### Normalize SDK template mappings at the JSON boundary
+
+**Evidence.** Nonproduction plan run 40690865837 reached the change-set
+template comparison but rejected templates whose canonical JSON was equal.
+The deployed metadata was an `OrderedDict`; copying it into the proposal made
+its equality sensitive to the different key order of the canonical upload.
+**Fix.** Normalize decoded template mappings recursively to ordinary dicts at
+the API boundary. Preserve every key, value, and array order; retain the full
+template comparison and all change-set and role guards.
+**Validation.** The ordered-metadata plan and apply regression failed before
+the fix and passes after it; scalar, key, and array-order mutations still fail.
+
 ### Change-set description does not report its execution role
 
 **Evidence.** The pinned botocore 1.39.13 `DescribeChangeSet` response model
