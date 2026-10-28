@@ -281,8 +281,16 @@ class CamppsDeployRolesStack(Stack):
                     sid="SchedulerRole",
                     actions=["iam:PassRole"],
                     resources=[
-                        "arn:aws:iam::477152411873:role/"
-                        "campps-coppa-consent-nonprod-child-retention-scheduler"
+                        self.format_arn(
+                            service="iam",
+                            region="",
+                            account=CAMPPS_NONPROD_ACCOUNT_ID,
+                            resource="role",
+                            resource_name=(
+                                "campps-coppa-consent-nonprod-child-retention-scheduler"
+                            ),
+                            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                        )
                     ],
                     conditions={
                         "StringEquals": {

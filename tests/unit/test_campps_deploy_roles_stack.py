@@ -2873,10 +2873,17 @@ def test_coppa_horizon_proof_policy_is_scoped_to_synthetic_nonprod_schedules() -
     }
     passing = statements["SchedulerRole"]
     assert passing["Action"] == "iam:PassRole"
-    assert passing["Resource"] == (
-        "arn:aws:iam::477152411873:role/"
-        "campps-coppa-consent-nonprod-child-retention-scheduler"
-    )
+    assert passing["Resource"] == {
+        "Fn::Join": [
+            "",
+            [
+                "arn:",
+                {"Ref": "AWS::Partition"},
+                ":iam::477152411873:role/"
+                "campps-coppa-consent-nonprod-child-retention-scheduler",
+            ],
+        ]
+    }
     assert passing["Condition"] == {
         "StringEquals": {"iam:PassedToService": "scheduler.amazonaws.com"}
     }
