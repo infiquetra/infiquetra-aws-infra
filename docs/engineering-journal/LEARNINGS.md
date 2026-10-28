@@ -2,6 +2,20 @@
 
 ## 2026-10-28
 
+### Change-set description does not report its execution role
+
+**Evidence.** The pinned botocore 1.39.13 `DescribeChangeSet` response model
+and the AWS API documentation omit `RoleARN`; `CreateChangeSet` accepts it,
+and `DescribeStacks` reports the stack's role. A model-validated Stubber plan
+passes with the actual response shape and checks the exact creation role.
+**Mechanism.** Do not require an unsupported response field or claim it was
+verified there. The plan checks the live stack role, supplies that exact role
+to creation under the session-policy role condition, and binds the created ID
+to the reviewed receipt. Apply rechecks the live stack role before execution.
+If a future SDK exposes a role in the description, reject a conflicting value.
+**Validation.** Offline controls reject a changed live role and a conflicting
+future response; the pinned model cannot expose an unmodeled response member.
+
 ### Change-set inspection can require a stack-scoped read
 
 **Evidence.** Nonproduction plan run 40688796005 created the intended change

@@ -380,6 +380,9 @@ def _receipt(
         response.get("StackId") != stack["StackId"]
         or response.get("StackName") != STACK
         or response.get("ChangeSetName") != name
+        # DescribeChangeSet's current SDK model has no RoleARN member. If a
+        # future model exposes one, do not accept a conflicting execution role.
+        or ("RoleARN" in response and response["RoleARN"] != stack["RoleARN"])
         or response.get("Description") != f"head={head};template={template_hash}"
         or response.get("Capabilities") != ["CAPABILITY_NAMED_IAM"]
         or response.get("IncludeNestedStacks", False)

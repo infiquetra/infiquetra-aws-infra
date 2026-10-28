@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 from copy import deepcopy
+from datetime import UTC, datetime
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
@@ -437,6 +438,195 @@ def test_plan_and_reviewed_apply_are_bound_to_one_nonproduction_change_set() -> 
     assert cfn.executions == [
         {"StackName": guard.STACK, "ChangeSetName": f"{guard.CHANGESET_PREFIX}1234"}
     ]
+
+
+def test_plan_accepts_pinned_sdk_describe_shape_without_role_arn() -> None:
+    """Stubber validates real botocore response and request shapes, offline."""
+    old, proposed = _templates()
+    client = boto3.client(
+        "cloudformation",
+        region_name=guard.REGION,
+        aws_access_key_id="synthetic",
+        aws_secret_access_key="synthetic",
+    )
+    service = client.meta.service_model
+    describe_shape = service.operation_model("DescribeChangeSet").output_shape
+    create_shape = service.operation_model("CreateChangeSet").input_shape
+    assert describe_shape is not None and "RoleARN" not in describe_shape.members
+    assert create_shape is not None and "RoleARN" in create_shape.members
+    stack_id = guard._arn("cloudformation", f"stack/{guard.STACK}/synthetic")
+    role = guard._arn("iam", f"role/{guard.EXECUTION_ROLE_NAME}", region="")
+    name, head = f"{guard.CHANGESET_PREFIX}1234", "a" * 40
+    change_id = guard._arn("cloudformation", f"changeSet/{name}/synthetic")
+    digest = guard._digest(proposed)
+    parameters = [{"ParameterKey": "BootstrapVersion", "ParameterValue": "synthetic"}]
+    response = {
+        "Status": "CREATE_COMPLETE",
+        "ExecutionStatus": "AVAILABLE",
+        "StackId": stack_id,
+        "StackName": guard.STACK,
+        "ChangeSetName": name,
+        "ChangeSetId": change_id,
+        "Description": f"head={head};template={digest}",
+        "Capabilities": ["CAPABILITY_NAMED_IAM"],
+        "Parameters": parameters,
+        "Changes": _changes(),
+    }
+    with Stubber(client) as stub:
+        stub.add_response(
+            "describe_stacks",
+            {
+                "Stacks": [
+                    {
+                        "StackId": stack_id,
+                        "StackName": guard.STACK,
+                        "StackStatus": "UPDATE_COMPLETE",
+                        "CreationTime": datetime(2026, 1, 1, tzinfo=UTC),
+                        "RoleARN": role,
+                        "Parameters": parameters,
+                    }
+                ]
+            },
+            {"StackName": guard.STACK},
+        )
+        stub.add_response(
+            "get_template",
+            {"TemplateBody": json.dumps(old)},
+            {"StackName": guard.STACK, "TemplateStage": "Original"},
+        )
+        stub.add_response(
+            "create_change_set",
+            {"Id": change_id, "StackId": stack_id},
+            {
+                "StackName": guard.STACK,
+                "ChangeSetName": name,
+                "ChangeSetType": "UPDATE",
+                "Description": f"head={head};template={digest}",
+                "TemplateURL": (
+                    f"https://{guard.BUCKET}.s3.{guard.REGION}.amazonaws.com/"
+                    f"{guard.OBJECT_PREFIX}1234/{digest}.json"
+                ),
+                "Parameters": [
+                    {"ParameterKey": "BootstrapVersion", "UsePreviousValue": True}
+                ],
+                "Capabilities": ["CAPABILITY_NAMED_IAM"],
+                "RoleARN": role,
+            },
+        )
+        expected = {"StackName": guard.STACK, "ChangeSetName": name}
+        stub.add_response("describe_change_set", response, expected)
+        stub.add_response("describe_change_set", response, expected)
+        stub.add_response(
+            "get_template",
+            {"TemplateBody": json.dumps(proposed)},
+            {**expected, "TemplateStage": "Original"},
+        )
+        receipt, _ = guard.plan(
+            client,
+            _S3(),
+            _Sts(),
+            head=head,
+            run_id="1234",
+            proposed=proposed,
+            head_guard=lambda: None,
+        )
+        stub.assert_no_pending_responses()
+    assert receipt["change_set_id"] == change_id
+
+
+@pytest.mark.parametrize("when", ["before_plan", "before_apply", "before_execute"])
+def test_changed_stack_execution_role_is_rejected(when: str) -> None:
+    old, proposed = _templates()
+    cfn, s3 = _CloudFormation(old, proposed), _S3()
+    wrong_role = guard._arn("iam", "role/other-execution-role", region="")
+    if when == "before_plan":
+        cfn.role = wrong_role
+        with pytest.raises(guard.GuardError, match="execution role changed"):
+            guard.plan(
+                cfn,
+                s3,
+                _Sts(),
+                head="a" * 40,
+                run_id="1234",
+                proposed=proposed,
+                head_guard=lambda: None,
+            )
+        assert not s3.puts and cfn.plan_request is None
+        return
+    cfn, _, receipt = _plan()
+    calls = 0
+
+    def check() -> None:
+        nonlocal calls
+        calls += 1
+        if when == "before_apply" or calls == 2:
+            cfn.role = wrong_role
+
+    with pytest.raises(guard.GuardError, match="execution role changed"):
+        guard.apply(
+            cfn,
+            _Sts(),
+            head="a" * 40,
+            plan_run_id="1234",
+            reviewed_digest=guard._digest(receipt),
+            proposed=proposed,
+            head_guard=check,
+        )
+    assert not cfn.executions
+
+
+@pytest.mark.parametrize("returned_role", ["matching", "conflicting", "missing_value"])
+def test_future_describe_role_must_match_if_present(returned_role: str) -> None:
+    cfn, _, receipt = _plan()
+    describe = cfn.describe_change_set
+
+    def with_role(**kwargs: Any) -> dict[str, Any]:
+        response = describe(**kwargs)
+        if returned_role == "matching":
+            response["RoleARN"] = cfn.role
+        elif returned_role == "conflicting":
+            response["RoleARN"] = guard._arn(
+                "iam", "role/other-execution-role", region=""
+            )
+        else:
+            response["RoleARN"] = None
+        return response
+
+    cfn.describe_change_set = with_role  # type: ignore[method-assign]
+
+    def apply() -> dict[str, Any]:
+        return guard.apply(
+            cfn,
+            _Sts(),
+            head="a" * 40,
+            plan_run_id="1234",
+            reviewed_digest=guard._digest(receipt),
+            proposed=cfn.proposed,
+            head_guard=lambda: None,
+        )
+
+    if returned_role == "matching":
+        assert apply() == receipt
+    else:
+        with pytest.raises(guard.GuardError, match="reviewed stack or revision"):
+            apply()
+        assert not cfn.executions
+
+
+@pytest.mark.parametrize("role", ["correct", "wrong", "missing"])
+def test_create_change_set_policy_requires_the_exact_execution_role(role: str) -> None:
+    create = next(
+        s
+        for s in guard.session_policy()["Statement"]
+        if s["Action"] == "cloudformation:CreateChangeSet"
+    )
+    allowed_role = create["Condition"]["StringEquals"]["cloudformation:RoleArn"]
+    actual = {
+        "correct": guard._arn("iam", f"role/{guard.EXECUTION_ROLE_NAME}", region=""),
+        "wrong": guard._arn("iam", "role/other-execution-role", region=""),
+        "missing": None,
+    }[role]
+    assert (actual == allowed_role) is (role == "correct")
 
 
 @pytest.mark.parametrize(
