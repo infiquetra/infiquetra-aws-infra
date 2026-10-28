@@ -16,14 +16,15 @@ on:
       - '.github/workflows/pull-request-validation.yml'
       # Separate CAMPPS deploy-role changes do not modify the management app.
       - '.github/workflows/deploy-campps-nonprod-roles.yml'
+      - '.github/workflows/bootstrap-campps-nonprod-roles.yml'
       - 'app_campps_nonprod_roles_ci.py'
-      - 'github-oidc-bootstrap/github_oidc_bootstrap/github_oidc_stack.py'
-      - 'github-oidc-bootstrap/tests/unit/test_github_oidc_stack.py'
       - 'infiquetra_aws_infra/campps_deploy_roles_stack.py'
       - 'tools/__init__.py'
       - 'tools/nonprod_deploy_roles_ci.py'
+      - 'tools/nonprod_role_bootstrap_ci.py'
       - 'tests/unit/test_campps_deploy_roles_stack.py'
       - 'tests/unit/test_nonprod_deploy_roles_ci.py'
+      - 'tests/unit/test_nonprod_role_bootstrap_ci.py'
   workflow_dispatch:
     inputs:
       environment:

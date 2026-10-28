@@ -134,34 +134,6 @@ def test_management_role_has_only_foundation_deploy_policy() -> None:
     ]
 
 
-def test_management_role_can_assume_only_the_existing_nonprod_ci_target() -> None:
-    template = synth_template()
-    policies = template.find_resources("AWS::IAM::ManagedPolicy")
-    statements = [
-        statement
-        for policy in policies.values()
-        for statement in policy["Properties"]["PolicyDocument"]["Statement"]
-        if statement.get("Sid") == "AssumeCamppsNonprodRolesCi"
-    ]
-    assert len(statements) == 1
-    statement = statements[0]
-    assert statement["Effect"] == "Allow"
-    assert statement["Action"] == "sts:AssumeRole"
-    assert statement["Resource"] == {
-        "Fn::Join": [
-            "",
-            [
-                "arn:",
-                {"Ref": "AWS::Partition"},
-                ":iam::477152411873:role/org-admin",
-            ],
-        ]
-    }
-    assert statement["Condition"] == {
-        "StringLike": {"sts:RoleSessionName": "campps-nonprod-roles-*"}
-    }
-
-
 def test_no_inline_policy_resources_attach_to_management_role() -> None:
     template = synth_template()
     deploy_role_logical_id = find_deploy_role_logical_id(template)

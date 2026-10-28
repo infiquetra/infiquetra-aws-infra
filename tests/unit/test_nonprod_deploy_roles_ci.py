@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -11,6 +12,19 @@ import pytest
 import yaml  # type: ignore[import-untyped]
 
 from tools import nonprod_deploy_roles_ci as guard
+
+
+def test_management_bootstrap_source_has_no_persistent_assume_grant() -> None:
+    source = (
+        Path(__file__).parents[2]
+        / "github-oidc-bootstrap/github_oidc_bootstrap/github_oidc_stack.py"
+    ).read_text()
+    literals = {
+        node.value.lower()
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    assert "sts:assumerole" not in literals
 
 
 def _templates() -> tuple[dict[str, Any], dict[str, Any]]:
@@ -463,12 +477,13 @@ def test_management_workflow_excludes_only_this_path_when_all_files_match() -> N
         ".github/workflows/deploy-infrastructure.yml",
         ".github/workflows/pull-request-validation.yml",
         ".github/workflows/deploy-campps-nonprod-roles.yml",
+        ".github/workflows/bootstrap-campps-nonprod-roles.yml",
         "app_campps_nonprod_roles_ci.py",
-        "github-oidc-bootstrap/github_oidc_bootstrap/github_oidc_stack.py",
-        "github-oidc-bootstrap/tests/unit/test_github_oidc_stack.py",
         "tools/__init__.py",
         "tools/nonprod_deploy_roles_ci.py",
+        "tools/nonprod_role_bootstrap_ci.py",
         "tests/unit/test_nonprod_deploy_roles_ci.py",
+        "tests/unit/test_nonprod_role_bootstrap_ci.py",
     }
     assert pr178_files <= ignored and ci_files <= ignored
     assert "infiquetra_aws_infra/organization_stack.py" not in ignored
