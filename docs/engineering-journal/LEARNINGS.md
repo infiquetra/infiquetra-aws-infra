@@ -2,6 +2,25 @@
 
 ## 2026-10-28
 
+### A temporary policy exception needs a recovery receipt before activation
+
+**Evidence.** Read-only simulation showed the existing infrastructure GitHub
+role can version its own managed policy but cannot call `ListEntitiesForPolicy`.
+The live policy reports one attachment and zero boundary uses, while the role
+lists that exact policy. Simulating an added nonproduction assume statement
+allowed the expected session before its UTC expiry and denied it afterward.
+
+**Mechanism.** The policy attachment count plus the role's attached-policy
+inventory proves the sole attachment without a broader list grant. IAM has no
+conditional policy-version write, and an accepted write can outlive a failed CI
+runner. A receipt uploaded before activation lets cleanup identify the precise
+temporary version and restore the original. Expiring the permission prevents new
+assumptions; sessions already issued can last until their own expiration.
+
+**Generalizable rule.** Pin and review the original version and candidate, bound
+the exception with AWS time, record recovery evidence before the write, and
+fail cleanup closed if the policy or attachment inventory changed.
+
 ### A trusted cross-account role still needs a caller grant
 
 **Evidence.** The nonproduction `org-admin` role trusts the management account,

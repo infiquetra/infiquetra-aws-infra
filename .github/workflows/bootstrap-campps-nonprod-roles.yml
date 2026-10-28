@@ -1,0 +1,143 @@
+name: Temporary CAMPPS nonprod role bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Inspect, grant temporarily, or restore the original policy
+        required: true
+        type: choice
+        options: [plan, grant, cleanup]
+      head_sha:
+        description: Full reviewed current-main commit SHA
+        required: true
+        type: string
+      duration_minutes:
+        description: Exception duration for plan (1 to 120 minutes)
+        required: false
+        type: string
+        default: '120'
+      receipt_run_id:
+        description: Reviewed plan run for grant, or grant run for cleanup
+        required: false
+        type: string
+      receipt_digest:
+        description: SHA-256 of the reviewed plan or grant receipt
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: campps-nonprod-deploy-roles
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    if: github.repository == 'infiquetra/infiquetra-aws-infra' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      EXPECTED_HEAD: ${{ inputs.head_sha }}
+      PHASE: ${{ inputs.phase }}
+      DURATION_MINUTES: ${{ inputs.duration_minutes }}
+      RECEIPT_RUN_ID: ${{ inputs.receipt_run_id }}
+      RECEIPT_DIGEST: ${{ inputs.receipt_digest }}
+      GITHUB_TOKEN: ${{ github.token }}
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Set up Python dependencies
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: '3.13'
+      - name: Verify the reviewed current main before obtaining credentials
+        run: |
+          git diff --quiet
+          git diff --cached --quiet
+          test -z "$(git status --porcelain)"
+          uv run --frozen python tools/nonprod_deploy_roles_ci.py check
+      - name: Restrict the management session
+        id: identity
+        run: uv run --frozen python tools/nonprod_role_bootstrap_ci.py identity
+      - name: Obtain the existing management GitHub identity
+        uses: aws-actions/configure-aws-credentials@00943011d9042930efac3dcd3a170e4273319bc8 # v5.1.0
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          inline-session-policy: ${{ steps.identity.outputs.policy }}
+          aws-region: us-east-1
+          allowed-account-ids: '645166163764'
+          role-duration-seconds: 3600
+      - name: Inspect and record the original policy and temporary candidate
+        if: inputs.phase == 'plan'
+        run: uv run --frozen python tools/nonprod_role_bootstrap_ci.py plan
+      - name: Preserve the reviewed plan
+        if: inputs.phase == 'plan'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: campps-bootstrap-plan-${{ github.run_id }}
+          path: ${{ runner.temp }}/campps-role-bootstrap/plan.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Download the reviewed plan
+        if: inputs.phase == 'grant'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: campps-bootstrap-plan-${{ inputs.receipt_run_id }}
+          path: ${{ runner.temp }}/campps-role-bootstrap/download
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.receipt_run_id }}
+      - name: Recheck the plan and prepare the recovery receipt
+        if: inputs.phase == 'grant'
+        id: prepare
+        run: uv run --frozen python tools/nonprod_role_bootstrap_ci.py prepare
+      - name: Preserve the recovery receipt before activation
+        if: inputs.phase == 'grant'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: campps-bootstrap-grant-${{ github.run_id }}
+          path: ${{ runner.temp }}/campps-role-bootstrap/grant.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Activate only the reviewed temporary policy
+        if: inputs.phase == 'grant'
+        env:
+          PREPARED_DIGEST: ${{ steps.prepare.outputs.receipt_digest }}
+        run: uv run --frozen python tools/nonprod_role_bootstrap_ci.py activate
+      - name: Preserve activation evidence
+        if: always() && inputs.phase == 'grant'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: campps-bootstrap-activation-${{ github.run_id }}
+          path: ${{ runner.temp }}/campps-role-bootstrap/activation.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Download the reviewed recovery receipt
+        if: inputs.phase == 'cleanup'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: campps-bootstrap-grant-${{ inputs.receipt_run_id }}
+          path: ${{ runner.temp }}/campps-role-bootstrap/download
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.receipt_run_id }}
+      - name: Restore and verify the recorded policy baseline
+        if: inputs.phase == 'cleanup'
+        run: uv run --frozen python tools/nonprod_role_bootstrap_ci.py cleanup
+      - name: Preserve cleanup evidence
+        if: always() && inputs.phase == 'cleanup'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: campps-bootstrap-cleanup-${{ github.run_id }}
+          path: ${{ runner.temp }}/campps-role-bootstrap/cleanup.json
+          if-no-files-found: warn
+          retention-days: 30
