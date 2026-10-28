@@ -7,6 +7,7 @@ import json
 from collections import OrderedDict
 from copy import deepcopy
 from datetime import UTC, datetime
+from decimal import Decimal
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
@@ -92,6 +93,91 @@ def test_other_metadata_changes_are_refused() -> None:
     synthesized["Resources"]["CDKMetadata"]["Properties"]["Unexpected"] = "changed"
     with pytest.raises(guard.GuardError):
         guard.preserve_deployed_cdk_metadata(old, synthesized)
+
+
+@pytest.mark.parametrize(
+    ("before", "after"), [(True, 1), (1, True), (False, 0), (0, False)]
+)
+@pytest.mark.parametrize(
+    "location",
+    [
+        "top_level",
+        "other_resource",
+        "role_property",
+        "role_metadata",
+        "attachment",
+        "cdk_metadata",
+        "cdk_property",
+    ],
+)
+def test_allowed_changes_reject_boolean_number_substitution(
+    before: Any, after: Any, location: str
+) -> None:
+    old, proposed = _templates()
+    role = next(iter(guard.ROLE_IDS))
+    if location == "top_level":
+        a, b = old["Outputs"]["unchanged"], proposed["Outputs"]["unchanged"]
+    elif location == "other_resource":
+        a, b = old["Resources"]["CDKMetadata"], proposed["Resources"]["CDKMetadata"]
+    elif location == "role_property":
+        a, b = (
+            old["Resources"][role]["Properties"],
+            proposed["Resources"][role]["Properties"],
+        )
+    elif location == "role_metadata":
+        a, b = old["Resources"][role], proposed["Resources"][role]
+    elif location == "attachment":
+        old["Resources"][role]["Properties"]["ManagedPolicyArns"].insert(
+            0, {"Value": before}
+        )
+        proposed["Resources"][role]["Properties"]["ManagedPolicyArns"].insert(
+            0, {"Value": after}
+        )
+        a = b = None
+    elif location == "cdk_metadata":
+        a, b = old["Resources"]["CDKMetadata"], proposed["Resources"]["CDKMetadata"]
+    else:
+        a = old["Resources"]["CDKMetadata"]["Properties"]
+        b = proposed["Resources"]["CDKMetadata"]["Properties"]
+    if a is not None and b is not None:
+        a["Probe"], b["Probe"] = before, after
+    with pytest.raises(guard.GuardError):
+        if location.startswith("cdk_"):
+            guard.preserve_deployed_cdk_metadata(old, proposed)
+        else:
+            guard.validate_template_changes(old, proposed)
+
+
+def test_allowed_changes_accept_reordered_json_objects() -> None:
+    old, proposed = _templates()
+    old = json.loads(json.dumps(old, sort_keys=True), object_pairs_hook=OrderedDict)
+    assert guard.validate_template_changes(old, proposed) == guard.EXPECTED_RESOURCE_IDS
+
+
+def test_allowed_changes_reject_a_new_null_resource_key() -> None:
+    old, proposed = _templates()
+    proposed["Resources"]["Unexpected"] = None
+    with pytest.raises(guard.GuardError):
+        guard.validate_template_changes(old, proposed)
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"value": float("nan")},
+        {"value": float("inf")},
+        {"value": float("-inf")},
+        {"value": Decimal("1")},
+        {"value": (1, 2)},
+        {"nested": {1: "not a JSON object key"}},
+        '{"value": NaN}',
+        '{"value": Infinity}',
+        '{"x": 1, "x": 2}',
+    ],
+)
+def test_document_rejects_non_json_or_ambiguous_values(invalid: Any) -> None:
+    with pytest.raises(guard.GuardError):
+        guard._document(invalid)
 
 
 @pytest.mark.parametrize("change", ["role_trust", "extra_resource", "output"])
@@ -398,6 +484,78 @@ class _CloudFormation:
         return _Waiter()
 
 
+class _BooleanNumberTemplateCloudFormation(_CloudFormation):
+    def __init__(
+        self, old: dict[str, Any], proposed: dict[str, Any], replacement: Any
+    ) -> None:
+        super().__init__(old, proposed)
+        self.replacement = replacement
+        self.mutation_stage = ""
+
+    def get_template(self, **kwargs: Any) -> dict[str, Any]:
+        response = super().get_template(**kwargs)
+        should_mutate = (
+            self.mutation_stage == "receipt" and kwargs.get("ChangeSetName")
+        ) or (
+            self.mutation_stage == "post_apply"
+            and self.executions
+            and not kwargs.get("ChangeSetName")
+        )
+        if should_mutate:
+            template = deepcopy(response["TemplateBody"])
+            template["Outputs"]["unchanged"]["Probe"] = self.replacement
+            response = {"TemplateBody": template}
+        return response
+
+
+@pytest.mark.parametrize(
+    ("before", "after"), [(True, 1), (1, True), (False, 0), (0, False)]
+)
+@pytest.mark.parametrize("stage", ["receipt", "post_apply"])
+def test_template_guards_reject_boolean_number_substitution(
+    before: Any, after: Any, stage: str
+) -> None:
+    old, proposed = _templates()
+    old["Outputs"]["unchanged"]["Probe"] = before
+    proposed["Outputs"]["unchanged"]["Probe"] = before
+    cfn = _BooleanNumberTemplateCloudFormation(old, proposed, after)
+    if stage == "receipt":
+        cfn.mutation_stage = stage
+        with pytest.raises(guard.GuardError, match="change set template differs"):
+            guard.plan(
+                cfn,
+                _S3(),
+                _Sts(),
+                head="a" * 40,
+                run_id="1234",
+                proposed=proposed,
+                head_guard=lambda: None,
+            )
+        assert not cfn.executions
+    else:
+        receipt, _ = guard.plan(
+            cfn,
+            _S3(),
+            _Sts(),
+            head="a" * 40,
+            run_id="1234",
+            proposed=proposed,
+            head_guard=lambda: None,
+        )
+        cfn.mutation_stage = stage
+        with pytest.raises(guard.GuardError, match="updated stack template differs"):
+            guard.apply(
+                cfn,
+                _Sts(),
+                head="a" * 40,
+                plan_run_id="1234",
+                reviewed_digest=guard._digest(receipt),
+                proposed=proposed,
+                head_guard=lambda: None,
+            )
+        assert len(cfn.executions) == 1  # The post-apply check detects the drift.
+
+
 def _plan() -> tuple[_CloudFormation, _S3, dict[str, Any]]:
     old, proposed = _templates()
     cfn, s3 = _CloudFormation(old, proposed), _S3()
@@ -544,6 +702,28 @@ def test_plan_and_reviewed_apply_are_bound_to_one_nonproduction_change_set() -> 
     assert cfn.executions == [
         {"StackName": guard.STACK, "ChangeSetName": f"{guard.CHANGESET_PREFIX}1234"}
     ]
+
+
+@pytest.mark.parametrize("invalid", [{1: "value"}, float("nan")])
+def test_plan_rejects_invalid_template_values_before_creating_a_plan(
+    invalid: Any,
+) -> None:
+    old, proposed = _templates()
+    proposed["Resources"][next(iter(guard.POLICY_IDS))]["Properties"]["Invalid"] = (
+        invalid
+    )
+    cfn, s3 = _CloudFormation(old, proposed), _S3()
+    with pytest.raises(guard.GuardError):
+        guard.plan(
+            cfn,
+            s3,
+            _Sts(),
+            head="a" * 40,
+            run_id="1234",
+            proposed=proposed,
+            head_guard=lambda: None,
+        )
+    assert not s3.puts and cfn.plan_request is None
 
 
 def test_plan_accepts_pinned_sdk_describe_shape_without_role_arn() -> None:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
+import math
 import os
 import re
 import sys
@@ -131,33 +132,67 @@ def required_management_grant() -> dict[str, Any]:
 
 
 def _canonical(value: Any) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode()
 
 
 def _digest(value: Any) -> str:
     return hashlib.sha256(_canonical(value)).hexdigest()
 
 
+def _json_value(node: Any) -> Any:
+    """Normalize JSON mappings without coercing keys, values or arrays."""
+    if isinstance(node, dict):
+        if any(not isinstance(key, str) for key in node):
+            raise GuardError("template JSON object contains a non-string key")
+        return {key: _json_value(item) for key, item in node.items()}
+    if isinstance(node, list):
+        return [_json_value(item) for item in node]
+    if node is None or type(node) in (str, bool, int):
+        return node
+    if type(node) is float and math.isfinite(node):
+        return node
+    raise GuardError("template contains a non-JSON value")
+
+
 def _document(value: Any) -> dict[str, Any]:
-    result = json.loads(value) if isinstance(value, str) else value
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in result:
+                raise GuardError("template JSON object contains a duplicate key")
+            result[key] = item
+        return result
+
+    try:
+        result = (
+            json.loads(value, object_pairs_hook=unique_object)
+            if isinstance(value, str)
+            else value
+        )
+    except ValueError as error:
+        raise GuardError("CloudFormation returned an invalid template") from error
     if not isinstance(result, dict):
         raise GuardError("CloudFormation returned an invalid template")
-
-    def plain(node: Any) -> Any:
-        if isinstance(node, dict):
-            return {key: plain(item) for key, item in node.items()}
-        if isinstance(node, list):
-            return [plain(item) for item in node]
-        return node
-
     # Botocore may return OrderedDict subclasses; key order is not JSON meaning.
-    return {key: plain(item) for key, item in result.items()}
+    normalized = _json_value(result)
+    if not isinstance(normalized, dict):
+        raise GuardError("CloudFormation returned an invalid template")
+    return normalized
+
+
+def _template_equal(left: Any, right: Any) -> bool:
+    """Compare every JSON value by type and content, ignoring object key order."""
+    return _canonical(_json_value(left)) == _canonical(_json_value(right))
 
 
 def preserve_deployed_cdk_metadata(
     deployed: Mapping[str, Any], synthesized: Mapping[str, Any]
 ) -> dict[str, Any]:
     """Keep the existing analytics-only metadata so it is not a fifth change."""
+    deployed = _document(dict(deployed))
+    synthesized = _document(dict(synthesized))
     old = deployed.get("Resources", {}).get("CDKMetadata")
     new = synthesized.get("Resources", {}).get("CDKMetadata")
     if not isinstance(old, dict) or not isinstance(new, dict):
@@ -168,10 +203,14 @@ def preserve_deployed_cdk_metadata(
     if not isinstance(old_props, dict) or not isinstance(new_props, dict):
         raise GuardError("CDK metadata properties are invalid")
     if (
-        {k: v for k, v in old.items() if k != "Properties"}
-        != {k: v for k, v in new.items() if k != "Properties"}
-        or {k: v for k, v in old_props.items() if k != "Analytics"}
-        != {k: v for k, v in new_props.items() if k != "Analytics"}
+        not _template_equal(
+            {k: v for k, v in old.items() if k != "Properties"},
+            {k: v for k, v in new.items() if k != "Properties"},
+        )
+        or not _template_equal(
+            {k: v for k, v in old_props.items() if k != "Analytics"},
+            {k: v for k, v in new_props.items() if k != "Analytics"},
+        )
         or not isinstance(old_props.get("Analytics"), str)
         or not isinstance(new_props.get("Analytics"), str)
     ):
@@ -185,15 +224,22 @@ def validate_template_changes(
     deployed: Mapping[str, Any], proposed: Mapping[str, Any]
 ) -> frozenset[str]:
     """Reject unrelated template changes, removals and role modifications."""
-    if {k: v for k, v in deployed.items() if k != "Resources"} != {
-        k: v for k, v in proposed.items() if k != "Resources"
-    }:
+    deployed = _document(dict(deployed))
+    proposed = _document(dict(proposed))
+    if not _template_equal(
+        {k: v for k, v in deployed.items() if k != "Resources"},
+        {k: v for k, v in proposed.items() if k != "Resources"},
+    ):
         raise GuardError("top-level template content changed")
     old = deployed.get("Resources")
     new = proposed.get("Resources")
     if not isinstance(old, dict) or not isinstance(new, dict):
         raise GuardError("template resources are missing")
-    changed = frozenset(k for k in old.keys() | new.keys() if old.get(k) != new.get(k))
+    changed = frozenset(
+        k
+        for k in old.keys() | new.keys()
+        if k not in old or k not in new or not _template_equal(old[k], new[k])
+    )
     if changed != EXPECTED_RESOURCE_IDS:
         raise GuardError(f"unexpected changed resources: {sorted(changed)}")
     for role_id, policy_id in ROLE_POLICIES.items():
@@ -205,27 +251,42 @@ def validate_template_changes(
             or after.get("Type") != before["Type"]
         ):
             raise GuardError("unexpected deploy role type")
-        if {k: v for k, v in before.items() if k != "Properties"} != {
-            k: v for k, v in after.items() if k != "Properties"
-        }:
+        if not _template_equal(
+            {k: v for k, v in before.items() if k != "Properties"},
+            {k: v for k, v in after.items() if k != "Properties"},
+        ):
             raise GuardError("deploy role metadata changed")
         before_props, after_props = (
             before.get("Properties", {}),
             after.get("Properties", {}),
         )
-        if {k: v for k, v in before_props.items() if k != "ManagedPolicyArns"} != {
-            k: v for k, v in after_props.items() if k != "ManagedPolicyArns"
-        }:
+        if not isinstance(before_props, dict) or not isinstance(after_props, dict):
+            raise GuardError("deploy role properties are invalid")
+        if not _template_equal(
+            {k: v for k, v in before_props.items() if k != "ManagedPolicyArns"},
+            {k: v for k, v in after_props.items() if k != "ManagedPolicyArns"},
+        ):
             raise GuardError("deploy role properties other than its attachment changed")
         old_attachments = before_props.get("ManagedPolicyArns", [])
         new_attachments = after_props.get("ManagedPolicyArns", [])
         if (
             not isinstance(old_attachments, list)
             or not isinstance(new_attachments, list)
-            or {"Ref": policy_id} in old_attachments
-            or new_attachments.count({"Ref": policy_id}) != 1
-            or [entry for entry in new_attachments if entry != {"Ref": policy_id}]
-            != old_attachments
+            or any(
+                _template_equal(entry, {"Ref": policy_id}) for entry in old_attachments
+            )
+            or sum(
+                _template_equal(entry, {"Ref": policy_id}) for entry in new_attachments
+            )
+            != 1
+            or not _template_equal(
+                [
+                    entry
+                    for entry in new_attachments
+                    if not _template_equal(entry, {"Ref": policy_id})
+                ],
+                old_attachments,
+            )
         ):
             raise GuardError(
                 "deploy role attachments differ from the reviewed addition"
@@ -425,7 +486,7 @@ def _receipt(
             "TemplateBody"
         ]
     )
-    if actual != proposed:
+    if not _template_equal(actual, proposed):
         raise GuardError("change set template differs from the synthesized template")
     return {
         "account": ACCOUNT,
@@ -455,6 +516,7 @@ def plan(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Create, inspect and return one bounded nonproduction change set."""
     run_id = _run_id(run_id)
+    proposed = _document(proposed)
     head_guard()
     stack = _stack(cfn, sts, REGION)
     deployed = _document(
@@ -526,6 +588,7 @@ def apply(
 ) -> dict[str, Any]:
     """Execute only the previously reviewed, still-current change set."""
     name = f"{CHANGESET_PREFIX}{_run_id(plan_run_id)}"
+    proposed = _document(proposed)
     if not re.fullmatch(r"[0-9a-f]{64}", reviewed_digest):
         raise GuardError("reviewed plan digest must be a SHA-256")
     head_guard()
@@ -554,7 +617,7 @@ def apply(
     after = _document(
         cfn.get_template(StackName=STACK, TemplateStage="Original")["TemplateBody"]
     )
-    if after != proposed:
+    if not _template_equal(after, proposed):
         raise GuardError("updated stack template differs from the reviewed template")
     return receipt
 

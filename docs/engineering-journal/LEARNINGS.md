@@ -2,6 +2,20 @@
 
 ## 2026-10-28
 
+### Template guards must distinguish JSON booleans from numbers
+
+**Evidence.** Python treats `True == 1` and `False == 0`, so ordinary
+dictionary equality let those substitutions pass in the allowed-change,
+change-set receipt, and post-apply template checks. It also treated a missing
+resource key like an added resource whose value was null.
+**Fix.** Compare normalized templates as canonical JSON, which keeps boolean
+and number representations distinct while ignoring object key order. Reject
+non-string object keys, duplicate JSON keys and non-JSON values at the
+template boundary; preserve list order and every allowed resource check.
+**Validation.** Both directions of boolean/number substitutions are refused
+in each guard, including metadata and attachment comparisons. Reordered objects
+still pass, and missing-versus-null resources and invalid JSON are refused.
+
 ### Normalize SDK template mappings at the JSON boundary
 
 **Evidence.** Nonproduction plan run 40690865837 reached the change-set
