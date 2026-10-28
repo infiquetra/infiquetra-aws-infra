@@ -86,7 +86,10 @@ def session_policy() -> dict[str, Any]:
                 "Resource": stack,
                 "Condition": {
                     "StringLike": {
-                        "cloudformation:ChangeSetName": f"{CHANGESET_PREFIX}*"
+                        "cloudformation:ChangeSetName": [
+                            f"{CHANGESET_PREFIX}*",
+                            _arn("cloudformation", f"changeSet/{CHANGESET_PREFIX}*/*"),
+                        ]
                     }
                 },
             },

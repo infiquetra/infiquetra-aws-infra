@@ -2,6 +2,26 @@
 
 ## 2026-10-28
 
+### A change-set condition may need both name and ARN representations
+
+**Evidence.** Nonproduction plan run 40686904101 successfully chained into
+the target role and created a change set, then its `DescribeChangeSet` waiter
+was denied on the exact target stack by the session policy. The pinned SDK
+waiter sends the approved simple name and stack; its service model also accepts
+a change-set ARN for describe and execute. AWS service authorization metadata
+lists the stack resource and `cloudformation:ChangeSetName` condition for both.
+**Mechanism.** The observed denial does not reveal the actual IAM condition
+value. A service-resolved change-set ARN is one plausible representation that
+the original simple-name-only condition cannot match.
+**Fix.** Accept the existing CI name prefix as either a simple name or a
+change-set ARN in the exact nonproduction account and region, only for describe
+and execute. The stack resource, create conditions and reviewed change-set
+guards remain unchanged.
+**Validation.** Offline policy controls test both forms and refuse other names,
+accounts, regions and stacks. Pinned botocore waiter and execute calls are
+stubbed against both API forms. A corrected nonproduction plan is still needed
+to establish the live condition value and whether this change resolves denial.
+
 ### A role-chaining action validates the source account before assumption
 
 **Evidence.** Nonproduction plan run 40683700693 stopped before synthesis or
