@@ -62,6 +62,8 @@ def session_policy() -> dict[str, Any]:
                 "Action": [
                     "cloudformation:DescribeStacks",
                     "cloudformation:GetTemplate",
+                    # The receipt checks the exact prefixed name before execute.
+                    "cloudformation:DescribeChangeSet",
                 ],
                 "Resource": stack,
             },
@@ -80,7 +82,6 @@ def session_policy() -> dict[str, Any]:
             {
                 "Effect": "Allow",
                 "Action": [
-                    "cloudformation:DescribeChangeSet",
                     "cloudformation:ExecuteChangeSet",
                 ],
                 "Resource": stack,

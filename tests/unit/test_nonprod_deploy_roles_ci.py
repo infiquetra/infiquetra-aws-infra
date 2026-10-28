@@ -496,7 +496,7 @@ def test_apply_refuses_if_main_moves_before_execution() -> None:
     assert not cfn.executions
 
 
-@pytest.mark.parametrize("mutation", ["parameters", "tags", "nested"])
+@pytest.mark.parametrize("mutation", ["parameters", "tags", "nested", "name", "prefix"])
 def test_apply_refuses_unreviewed_stack_configuration(mutation: str) -> None:
     cfn, _, receipt = _plan()
     describe = cfn.describe_change_set
@@ -507,6 +507,10 @@ def test_apply_refuses_unreviewed_stack_configuration(mutation: str) -> None:
             response["Parameters"][0]["ParameterValue"] = "changed"
         elif mutation == "tags":
             response["Tags"] = [{"Key": "unexpected", "Value": "changed"}]
+        elif mutation == "name":
+            response["ChangeSetName"] = f"{guard.CHANGESET_PREFIX}9999"
+        elif mutation == "prefix":
+            response["ChangeSetName"] = "other-change-set"
         else:
             response["IncludeNestedStacks"] = True
         return response
@@ -668,16 +672,30 @@ def test_changeset_session_policy_keeps_create_and_target_stack_bounded() -> Non
             },
         },
     }
-    inspect = next(
+    describe = next(
         s
         for s in statements
         if isinstance(s["Action"], list)
         and "cloudformation:DescribeChangeSet" in s["Action"]
     )
-    assert inspect == {
+    assert describe == {
         "Effect": "Allow",
         "Action": [
+            "cloudformation:DescribeStacks",
+            "cloudformation:GetTemplate",
             "cloudformation:DescribeChangeSet",
+        ],
+        "Resource": guard._arn("cloudformation", f"stack/{guard.STACK}/*"),
+    }
+    execute = next(
+        s
+        for s in statements
+        if isinstance(s["Action"], list)
+        and "cloudformation:ExecuteChangeSet" in s["Action"]
+    )
+    assert execute == {
+        "Effect": "Allow",
+        "Action": [
             "cloudformation:ExecuteChangeSet",
         ],
         "Resource": guard._arn("cloudformation", f"stack/{guard.STACK}/*"),
@@ -694,7 +712,71 @@ def test_changeset_session_policy_keeps_create_and_target_stack_bounded() -> Non
     }
 
 
-@pytest.mark.parametrize("action", ["DescribeChangeSet", "ExecuteChangeSet"])
+@pytest.mark.parametrize(
+    ("resource", "condition_value", "allowed"),
+    [
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:stack/{guard.STACK}/id",
+            None,
+            True,
+        ),
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:stack/{guard.STACK}/id",
+            f"{guard.CHANGESET_PREFIX}1234",
+            True,
+        ),
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:stack/{guard.STACK}/id",
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:changeSet/{guard.CHANGESET_PREFIX}1234/id",
+            True,
+        ),
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:stack/{guard.STACK}/id",
+            "other-change-set",
+            True,
+        ),
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:stack/OtherStack/id",
+            None,
+            False,
+        ),
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:000000000000:stack/{guard.STACK}/id",
+            None,
+            False,
+        ),
+        (
+            f"arn:aws:cloudformation:us-west-2:{guard.ACCOUNT}:stack/{guard.STACK}/id",
+            None,
+            False,
+        ),
+    ],
+)
+def test_describe_change_set_is_readable_only_on_the_exact_stack(
+    resource: str, condition_value: str | None, allowed: bool
+) -> None:
+    """Model missing or unexpected condition context without AWS calls."""
+    statement = next(
+        s
+        for s in guard.session_policy()["Statement"]
+        if "cloudformation:DescribeChangeSet" in s["Action"]
+    )
+    patterns = (
+        statement.get("Condition", {})
+        .get("StringLike", {})
+        .get("cloudformation:ChangeSetName")
+    )
+    if isinstance(patterns, str):
+        patterns = [patterns]
+    condition_matches = patterns is None or (
+        condition_value is not None
+        and any(fnmatchcase(condition_value, pattern) for pattern in patterns)
+    )
+    result = fnmatchcase(resource, statement["Resource"]) and condition_matches
+    assert result is allowed
+
+
+@pytest.mark.parametrize("action", ["ExecuteChangeSet"])
 @pytest.mark.parametrize(
     ("resource", "condition_value", "allowed"),
     [
