@@ -56,6 +56,13 @@ COPPA_CONSENT_CI_READONLY_SUBJECTS: tuple[str, ...] = (
 
 COPPA_HORIZON_PROOF_POLICY_NAME = "campps-coppa-consent-nonprod-horizon-proof-policy"
 
+#: Verified by the lead against the nonprod environment configuration after
+#: tenant-setup fixture repair run 40658035352 on 2026-10-28. The workflow's
+#: CAMPPS_SCOPED_SESSION_FIXTURE_TENANT_ID must match this literal. A changed
+#: fixture fails its first table read until this grant is separately reviewed.
+TENANT_SCOPED_SESSION_FIXTURE_ID = "526f523a-88b9-4d43-a118-8e02c5bdffe0"
+TENANT_FIXTURE_REPAIR_POLICY_NAME = "campps-tenant-setup-nonprod-fixture-repair-policy"
+
 #: Dedicated GitHub Actions role for the campps-web-app nonprod live suites.
 #: Trust is the ``nonprod-live-tests`` environment, not the deploy environment.
 #: The nonprod stack is the only stack that mints it.
@@ -115,6 +122,13 @@ class CamppsDeployRolesStack(Stack):
             )
             if horizon_proof_policy is not None:
                 deploy_role.add_managed_policy(horizon_proof_policy)
+
+            fixture_repair_policy = self._create_tenant_fixture_repair_policy(
+                service_repository=service_repository,
+                target_environment=target_environment,
+            )
+            if fixture_repair_policy is not None:
+                deploy_role.add_managed_policy(fixture_repair_policy)
 
             seam_proof_policy = self._create_scope_seam_proof_policy(
                 service_repository=service_repository,
@@ -274,6 +288,84 @@ class CamppsDeployRolesStack(Stack):
                         "StringEquals": {
                             "iam:PassedToService": "scheduler.amazonaws.com"
                         }
+                    },
+                ),
+            ],
+        )
+
+    def _create_tenant_fixture_repair_policy(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+    ) -> iam.ManagedPolicy | None:
+        """Allow the guarded CI repair to touch one verified synthetic tenant."""
+        if service_repository.name != "tenant-setup" or target_environment != "nonprod":
+            return None
+
+        tenant_key = f"TENANT#{TENANT_SCOPED_SESSION_FIXTURE_ID}"
+        table_arn = (
+            "arn:aws:dynamodb:us-east-1:477152411873:table/campps-tenant-setup-nonprod"
+        )
+
+        def leading_keys(*keys: str, transactional: bool = False) -> dict[str, Any]:
+            condition: dict[str, Any] = {
+                "ForAllValues:StringEquals": {"dynamodb:LeadingKeys": list(keys)},
+                # ForAllValues alone matches a missing multivalue context key.
+                "Null": {"dynamodb:LeadingKeys": "false"},
+            }
+            if transactional:
+                condition["StringEquals"] = {
+                    "dynamodb:EnclosingOperation": "TransactWriteItems"
+                }
+            return condition
+
+        return iam.ManagedPolicy(
+            self,
+            "TenantFixtureRepairPolicy",
+            managed_policy_name=TENANT_FIXTURE_REPAIR_POLICY_NAME,
+            statements=[
+                iam.PolicyStatement(
+                    sid="FixtureReads",
+                    actions=["dynamodb:GetItem", "dynamodb:Query"],
+                    resources=[table_arn],
+                    conditions=leading_keys(tenant_key),
+                ),
+                # DynamoDB authorizes transactional puts and updates with the
+                # corresponding item actions, not a TransactWriteItems action.
+                iam.PolicyStatement(
+                    sid="FixturePuts",
+                    actions=["dynamodb:PutItem"],
+                    resources=[table_arn],
+                    conditions=leading_keys(
+                        tenant_key, f"{tenant_key}#ADMIN_AUDIT", transactional=True
+                    ),
+                ),
+                iam.PolicyStatement(
+                    sid="FixtureUpdates",
+                    actions=["dynamodb:UpdateItem"],
+                    resources=[table_arn],
+                    conditions=leading_keys(tenant_key, transactional=True),
+                ),
+                # The table uses the platform customer-managed key. Keep access
+                # service-mediated and bound to this table and account.
+                iam.PolicyStatement(
+                    sid="TableKey",
+                    actions=["kms:Decrypt", "kms:GenerateDataKey"],
+                    resources=["*"],
+                    conditions={
+                        "StringEquals": {
+                            "kms:ViaService": "dynamodb.us-east-1.amazonaws.com",
+                            "kms:EncryptionContext:aws:dynamodb:tableName": (
+                                "campps-tenant-setup-nonprod"
+                            ),
+                            "kms:EncryptionContext:aws:dynamodb:subscriberId": (
+                                CAMPPS_NONPROD_ACCOUNT_ID
+                            ),
+                        },
+                        "ForAnyValue:StringEquals": {
+                            "kms:ResourceAliases": "alias/campps-platform-nonprod-pii"
+                        },
                     },
                 ),
             ],
