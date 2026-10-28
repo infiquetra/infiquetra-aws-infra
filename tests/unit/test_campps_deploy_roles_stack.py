@@ -2896,11 +2896,12 @@ def test_coppa_horizon_proof_policy_is_absent_elsewhere() -> None:
     unrelated = ServiceRepository(
         name="tenant-setup", repository="infiquetra/campps-tenant-setup"
     )
-    for repository, environment in (
+    cases: tuple[tuple[ServiceRepository, DeployEnvironment], ...] = (
         (service, "staging"),
         (service, "production"),
         (unrelated, "nonprod"),
-    ):
+    )
+    for repository, environment in cases:
         template = synth_template_for_repositories(
             repository, target_environment=environment
         )
