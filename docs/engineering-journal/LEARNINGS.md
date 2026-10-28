@@ -2,6 +2,19 @@
 
 ## 2026-10-28
 
+### Restrict role-template numbers when SDK parsing loses precision
+
+**Evidence.** JSON decimal literals such as `0.10000000000000001` and `0.1`
+can become the same binary float before the template guard runs; botocore
+also decodes the CloudFormation response this way. The reviewed role template
+contains integer numbers only.
+**Fix.** Refuse all floats at the shared template boundary, including SDK
+mapping values and underflow to zero. This deployment path supports integer
+numbers only; a future fractional template requires a separately reviewed
+parsing design. Integer, boolean, object-order and full-template checks remain.
+**Validation.** Twelve raw-JSON and SDK-decoded precision controls fail before
+the restriction and pass afterward. No IAM policies or AWS API calls change.
+
 ### Template guards must distinguish JSON booleans from numbers
 
 **Evidence.** Python treats `True == 1` and `False == 0`, so ordinary

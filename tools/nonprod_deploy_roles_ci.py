@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
-import math
 import os
 import re
 import sys
@@ -151,8 +150,11 @@ def _json_value(node: Any) -> Any:
         return [_json_value(item) for item in node]
     if node is None or type(node) in (str, bool, int):
         return node
-    if type(node) is float and math.isfinite(node):
-        return node
+    if type(node) is float:
+        # GetTemplate's SDK decoder may already have rounded a JSON decimal.
+        # The reviewed role template needs integers only; reject all floats
+        # rather than compare values whose original precision is unavailable.
+        raise GuardError("fractional numbers are unsupported in this role template")
     raise GuardError("template contains a non-JSON value")
 
 

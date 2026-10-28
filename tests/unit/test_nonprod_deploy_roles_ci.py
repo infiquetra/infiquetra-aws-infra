@@ -180,6 +180,22 @@ def test_document_rejects_non_json_or_ambiguous_values(invalid: Any) -> None:
         guard._document(invalid)
 
 
+@pytest.mark.parametrize(
+    "literal", ["0.10000000000000001", "0.1", "1e-9999", "0.0", "1.0", "1e20"]
+)
+@pytest.mark.parametrize("sdk_decoded", [False, True])
+def test_role_template_boundary_refuses_numbers_with_uncertain_precision(
+    literal: str, sdk_decoded: bool
+) -> None:
+    # Botocore already decodes GetTemplate bodies; rounded floats cannot be
+    # recovered later. This integer-only role template must fail closed for both
+    # raw JSON and the SDK mapping, including underflow to zero.
+    raw = '{"Metadata": {"Probe": ' + literal + "}}"
+    value = json.loads(raw) if sdk_decoded else raw
+    with pytest.raises(guard.GuardError, match="fractional"):
+        guard._document(value)
+
+
 @pytest.mark.parametrize("change", ["role_trust", "extra_resource", "output"])
 def test_other_template_changes_are_refused(change: str) -> None:
     old, proposed = _templates()
