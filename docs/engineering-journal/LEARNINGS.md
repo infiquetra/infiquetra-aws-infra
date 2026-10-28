@@ -2,6 +2,25 @@
 
 ## 2026-10-28
 
+### A role-chaining action validates the source account before assumption
+
+**Evidence.** Nonproduction plan run 40683700693 stopped before synthesis or
+deployment: the pinned AWS credential action checked the management source
+account against a target-only allowed-account list and refused the chain. The
+temporary grant was subsequently restored by cleanup run 40683951413.
+**Mechanism.** In `role-chaining` mode, the action validates existing source
+credentials before it calls `AssumeRole`. Its account allowlist is not an
+assertion that the eventual credentials belong to the destination role.
+**Fix.** Admit only the known management and nonproduction accounts at that
+precheck. Immediately after chaining, verify the exact nonproduction account,
+assumed role and region before synthesis; reuse the same identity guard for
+the later stack check. Session policies, the four-resource change-set guard,
+and temporary-grant activation and cleanup are unchanged.
+**Validation.** A bounded stand-in reproduces the target-only precheck failure
+and accepts the two required accounts. Unit controls reject management,
+wrong roles and wrong regions before any resource API, and assert workflow
+ordering and management-foundation trigger exclusions.
+
 ### A temporary policy exception needs a recovery receipt before activation
 
 **Evidence.** Read-only simulation showed the existing infrastructure GitHub
