@@ -5,11 +5,14 @@ from __future__ import annotations
 import ast
 import json
 from copy import deepcopy
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
+import boto3
 import pytest
 import yaml  # type: ignore[import-untyped]
+from botocore.stub import Stubber
 
 from tools import nonprod_deploy_roles_ci as guard
 
@@ -639,6 +642,161 @@ def test_session_and_missing_management_grant_name_only_nonprod_resources() -> N
     assert (
         "cloudformation:DeleteStack" not in text and "iam:AttachRolePolicy" not in text
     )
+
+
+def test_changeset_session_policy_keeps_create_and_target_stack_bounded() -> None:
+    statements = guard.session_policy()["Statement"]
+    create = next(
+        s for s in statements if s["Action"] == "cloudformation:CreateChangeSet"
+    )
+    assert create == {
+        "Effect": "Allow",
+        "Action": "cloudformation:CreateChangeSet",
+        "Resource": guard._arn("cloudformation", f"stack/{guard.STACK}/*"),
+        "Condition": {
+            "StringLike": {
+                "cloudformation:ChangeSetName": f"{guard.CHANGESET_PREFIX}*",
+                "cloudformation:TemplateUrl": (
+                    f"https://{guard.BUCKET}.s3.{guard.REGION}.amazonaws.com/"
+                    f"{guard.OBJECT_PREFIX}*"
+                ),
+            },
+            "StringEquals": {
+                "cloudformation:RoleArn": guard._arn(
+                    "iam", f"role/{guard.EXECUTION_ROLE_NAME}", region=""
+                )
+            },
+        },
+    }
+    inspect = next(
+        s
+        for s in statements
+        if isinstance(s["Action"], list)
+        and "cloudformation:DescribeChangeSet" in s["Action"]
+    )
+    assert inspect == {
+        "Effect": "Allow",
+        "Action": [
+            "cloudformation:DescribeChangeSet",
+            "cloudformation:ExecuteChangeSet",
+        ],
+        "Resource": guard._arn("cloudformation", f"stack/{guard.STACK}/*"),
+        "Condition": {
+            "StringLike": {
+                "cloudformation:ChangeSetName": [
+                    f"{guard.CHANGESET_PREFIX}*",
+                    guard._arn(
+                        "cloudformation", f"changeSet/{guard.CHANGESET_PREFIX}*/*"
+                    ),
+                ]
+            }
+        },
+    }
+
+
+@pytest.mark.parametrize("action", ["DescribeChangeSet", "ExecuteChangeSet"])
+@pytest.mark.parametrize(
+    ("resource", "condition_value", "allowed"),
+    [
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:stack/{guard.STACK}/id",
+            f"{guard.CHANGESET_PREFIX}1234",
+            True,
+        ),
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:stack/{guard.STACK}/id",
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:changeSet/{guard.CHANGESET_PREFIX}1234/uuid",
+            True,
+        ),
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:stack/{guard.STACK}/id",
+            "other-change-set",
+            False,
+        ),
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:stack/{guard.STACK}/id",
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:changeSet/other-123/uuid",
+            False,
+        ),
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:stack/{guard.STACK}/id",
+            f"arn:aws:cloudformation:{guard.REGION}:000000000000:changeSet/{guard.CHANGESET_PREFIX}1234/uuid",
+            False,
+        ),
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:stack/{guard.STACK}/id",
+            f"arn:aws:cloudformation:us-west-2:{guard.ACCOUNT}:changeSet/{guard.CHANGESET_PREFIX}1234/uuid",
+            False,
+        ),
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:stack/OtherStack/id",
+            f"{guard.CHANGESET_PREFIX}1234",
+            False,
+        ),
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:000000000000:stack/{guard.STACK}/id",
+            f"{guard.CHANGESET_PREFIX}1234",
+            False,
+        ),
+        (
+            f"arn:aws:cloudformation:us-west-2:{guard.ACCOUNT}:stack/{guard.STACK}/id",
+            f"{guard.CHANGESET_PREFIX}1234",
+            False,
+        ),
+        (
+            f"arn:aws:cloudformation:{guard.REGION}:{guard.ACCOUNT}:stack/{guard.STACK}/id",
+            "",
+            False,
+        ),
+    ],
+)
+def test_local_changeset_policy_simulation(
+    action: str, resource: str, condition_value: str, allowed: bool
+) -> None:
+    """Simulate the single StringLike/resource allow; no AWS calls are made."""
+    statements = guard.session_policy()["Statement"]
+    statement = next(
+        s
+        for s in statements
+        if isinstance(s["Action"], list) and f"cloudformation:{action}" in s["Action"]
+    )
+    patterns = statement["Condition"]["StringLike"]["cloudformation:ChangeSetName"]
+    patterns = [patterns] if isinstance(patterns, str) else patterns
+    result = fnmatchcase(resource, statement["Resource"]) and any(
+        fnmatchcase(condition_value, pattern) for pattern in patterns
+    )
+    assert result is allowed
+
+
+@pytest.mark.parametrize("representation", ["name", "arn"])
+def test_pinned_cloudformation_waiter_and_execute_accept_both_request_forms(
+    representation: str,
+) -> None:
+    name = f"{guard.CHANGESET_PREFIX}1234"
+    change = (
+        name
+        if representation == "name"
+        else guard._arn("cloudformation", f"changeSet/{name}/synthetic-id")
+    )
+    client = boto3.client(
+        "cloudformation",
+        region_name=guard.REGION,
+        aws_access_key_id="synthetic",
+        aws_secret_access_key="synthetic",
+    )
+    expected = {"StackName": guard.STACK, "ChangeSetName": change}
+    with Stubber(client) as stub:
+        stub.add_response(
+            "describe_change_set", {"Status": "CREATE_COMPLETE"}, expected
+        )
+        client.get_waiter("change_set_create_complete").wait(
+            StackName=guard.STACK,
+            ChangeSetName=change,
+            WaiterConfig={"Delay": 0, "MaxAttempts": 1},
+        )
+        stub.add_response("execute_change_set", {}, expected)
+        client.execute_change_set(StackName=guard.STACK, ChangeSetName=change)
+        stub.assert_no_pending_responses()
 
 
 def test_management_workflow_excludes_only_this_path_when_all_files_match() -> None:
