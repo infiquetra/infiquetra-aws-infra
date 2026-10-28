@@ -318,15 +318,24 @@ def check_head(expected: str, environ: Mapping[str, str]) -> None:
         raise GuardError("remote main has moved since the reviewed head")
 
 
-def _stack(cfn: Any, sts: Any, region: str) -> dict[str, Any]:
+def check_nonprod(sts: Any, region: str | None) -> None:
+    """Verify the target credentials before accessing any nonprod resources."""
+    if region != REGION:
+        raise GuardError("credentials or region are not nonproduction")
     identity = sts.get_caller_identity()
-    principal = str(identity.get("Arn", "")).split(":", 5)[-1]
+    arn = str(identity.get("Arn", ""))
+    prefix = f"arn:aws:sts::{ACCOUNT}:assumed-role/{ROLE_NAME}/"
+    session_name = arn.removeprefix(prefix)
     if (
-        region != REGION
-        or identity.get("Account") != ACCOUNT
-        or not principal.startswith(f"assumed-role/{ROLE_NAME}/")
+        identity.get("Account") != ACCOUNT
+        or not arn.startswith(prefix)
+        or not re.fullmatch(r"[A-Za-z0-9+=,.@_-]{2,64}", session_name)
     ):
         raise GuardError("credentials or region are not nonproduction")
+
+
+def _stack(cfn: Any, sts: Any, region: str) -> dict[str, Any]:
+    check_nonprod(sts, region)
     stacks = cfn.describe_stacks(StackName=STACK).get("Stacks", [])
     if len(stacks) != 1:
         raise GuardError("the exact target stack was not found")
@@ -556,8 +565,22 @@ def main() -> int:
         ):
             raise GuardError("unexpected management GitHub identity")
         return 0
+    if command == ["check-nonprod"]:
+        required = {
+            "AWS_REGION": REGION,
+            "AWS_DEFAULT_REGION": REGION,
+            "CDK_DEFAULT_REGION": REGION,
+            "CDK_DEFAULT_ACCOUNT": ACCOUNT,
+        }
+        if any(os.environ.get(key) != value for key, value in required.items()):
+            raise GuardError("credentials or region are not nonproduction")
+        session = boto3.Session()
+        check_nonprod(session.client("sts"), session.region_name)
+        return 0
     if command != ["run"]:
-        raise GuardError("expected check, identity, check-management or run")
+        raise GuardError(
+            "expected check, identity, check-management, check-nonprod or run"
+        )
     expected = os.environ.get("EXPECTED_HEAD", "")
     guard = lambda: check_head(expected, os.environ)  # noqa: E731
     guard()

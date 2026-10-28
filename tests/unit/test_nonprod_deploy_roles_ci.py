@@ -143,6 +143,186 @@ class _Sts:
         }
 
 
+@pytest.mark.parametrize(
+    ("account", "arn", "region", "allowed"),
+    [
+        (
+            guard.ACCOUNT,
+            f"arn:aws:sts::{guard.ACCOUNT}:assumed-role/org-admin/campps-nonprod-roles-123",
+            guard.REGION,
+            True,
+        ),
+        (
+            guard.MANAGEMENT_ACCOUNT,
+            f"arn:aws:sts::{guard.MANAGEMENT_ACCOUNT}:assumed-role/infiquetra-aws-infra-gha-role/run",
+            guard.REGION,
+            False,
+        ),
+        (
+            guard.ACCOUNT,
+            f"arn:aws:sts::{guard.ACCOUNT}:assumed-role/other-role/run",
+            guard.REGION,
+            False,
+        ),
+        (
+            guard.ACCOUNT,
+            f"arn:aws:sts::{guard.ACCOUNT}:assumed-role/org-admin-extra/run",
+            guard.REGION,
+            False,
+        ),
+        (
+            guard.ACCOUNT,
+            f"arn:aws:sts::{guard.ACCOUNT}:assumed-role/org-admin/",
+            guard.REGION,
+            False,
+        ),
+        (
+            guard.ACCOUNT,
+            f"arn:aws:sts::{guard.MANAGEMENT_ACCOUNT}:assumed-role/org-admin/run",
+            guard.REGION,
+            False,
+        ),
+        (
+            guard.ACCOUNT,
+            f"arn:aws:sts::{guard.ACCOUNT}:assumed-role/org-admin/run",
+            "us-west-2",
+            False,
+        ),
+    ],
+)
+def test_nonprod_identity_accepts_only_exact_account_role_and_region(
+    account: str, arn: str, region: str, allowed: bool
+) -> None:
+    class Sts:
+        def get_caller_identity(self) -> dict[str, str]:
+            return {"Account": account, "Arn": arn}
+
+    if allowed:
+        guard.check_nonprod(Sts(), region)
+    else:
+        with pytest.raises(guard.GuardError, match="not nonproduction"):
+            guard.check_nonprod(Sts(), region)
+
+
+def test_check_nonprod_command_checks_environment_before_any_resource_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    class Session:
+        region_name = guard.REGION
+
+        def client(self, name: str) -> Any:
+            calls.append(name)
+            assert name == "sts"
+            return _Sts()
+
+    for name, value in {
+        "AWS_REGION": guard.REGION,
+        "AWS_DEFAULT_REGION": guard.REGION,
+        "CDK_DEFAULT_REGION": guard.REGION,
+        "CDK_DEFAULT_ACCOUNT": guard.ACCOUNT,
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(guard.boto3, "Session", Session)
+    monkeypatch.setattr(guard.sys, "argv", ["guard", "check-nonprod"])
+    assert guard.main() == 0
+    assert calls == ["sts"]
+
+
+@pytest.mark.parametrize(
+    ("account", "arn"),
+    [
+        (
+            guard.MANAGEMENT_ACCOUNT,
+            f"arn:aws:sts::{guard.MANAGEMENT_ACCOUNT}:assumed-role/infiquetra-aws-infra-gha-role/run",
+        ),
+        (guard.ACCOUNT, f"arn:aws:sts::{guard.ACCOUNT}:assumed-role/other-role/run"),
+    ],
+)
+def test_check_nonprod_command_rejects_source_or_wrong_target_role(
+    monkeypatch: pytest.MonkeyPatch, account: str, arn: str
+) -> None:
+    calls: list[str] = []
+
+    class Sts:
+        def get_caller_identity(self) -> dict[str, str]:
+            return {"Account": account, "Arn": arn}
+
+    class Session:
+        region_name = guard.REGION
+
+        def client(self, name: str) -> Sts:
+            calls.append(name)
+            assert name == "sts"
+            return Sts()
+
+    for name, value in {
+        "AWS_REGION": guard.REGION,
+        "AWS_DEFAULT_REGION": guard.REGION,
+        "CDK_DEFAULT_REGION": guard.REGION,
+        "CDK_DEFAULT_ACCOUNT": guard.ACCOUNT,
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(guard.boto3, "Session", Session)
+    monkeypatch.setattr(guard.sys, "argv", ["guard", "check-nonprod"])
+    with pytest.raises(guard.GuardError, match="not nonproduction"):
+        guard.main()
+    assert calls == ["sts"]
+
+
+def test_check_nonprod_command_rejects_wrong_session_region_before_sts_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Sts:
+        def get_caller_identity(self) -> Any:
+            pytest.fail("wrong session region must fail before an AWS request")
+
+    class Session:
+        region_name = "us-west-2"
+
+        def client(self, name: str) -> Sts:
+            assert name == "sts"
+            return Sts()
+
+    for name, value in {
+        "AWS_REGION": guard.REGION,
+        "AWS_DEFAULT_REGION": guard.REGION,
+        "CDK_DEFAULT_REGION": guard.REGION,
+        "CDK_DEFAULT_ACCOUNT": guard.ACCOUNT,
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(guard.boto3, "Session", Session)
+    monkeypatch.setattr(guard.sys, "argv", ["guard", "check-nonprod"])
+    with pytest.raises(guard.GuardError, match="not nonproduction"):
+        guard.main()
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("AWS_REGION", "us-west-2"),
+        ("AWS_DEFAULT_REGION", ""),
+        ("CDK_DEFAULT_REGION", "us-west-2"),
+        ("CDK_DEFAULT_ACCOUNT", guard.MANAGEMENT_ACCOUNT),
+    ],
+)
+def test_check_nonprod_command_rejects_wrong_environment(
+    monkeypatch: pytest.MonkeyPatch, key: str, value: str
+) -> None:
+    for name, expected in {
+        "AWS_REGION": guard.REGION,
+        "AWS_DEFAULT_REGION": guard.REGION,
+        "CDK_DEFAULT_REGION": guard.REGION,
+        "CDK_DEFAULT_ACCOUNT": guard.ACCOUNT,
+    }.items():
+        monkeypatch.setenv(name, expected)
+    monkeypatch.setenv(key, value)
+    monkeypatch.setattr(guard.sys, "argv", ["guard", "check-nonprod"])
+    with pytest.raises(guard.GuardError, match="not nonproduction"):
+        guard.main()
+
+
 class _S3:
     def __init__(self) -> None:
         self.puts: list[dict[str, Any]] = []
@@ -486,6 +666,12 @@ def test_management_workflow_excludes_only_this_path_when_all_files_match() -> N
         "tests/unit/test_nonprod_role_bootstrap_ci.py",
     }
     assert pr178_files <= ignored and ci_files <= ignored
+    assert {
+        ".github/workflows/deploy-campps-nonprod-roles.yml",
+        "tools/nonprod_deploy_roles_ci.py",
+        "tests/unit/test_nonprod_deploy_roles_ci.py",
+        "docs/engineering-journal/LEARNINGS.md",
+    } <= ignored
     assert "infiquetra_aws_infra/organization_stack.py" not in ignored
     assert "infiquetra_aws_infra/sso_stack.py" not in ignored
     assert "app.py" not in ignored
@@ -550,7 +736,36 @@ def test_deploy_workflow_is_manual_main_only_and_uses_restricted_session() -> No
         credentials[1]["with"]["inline-session-policy"]
         == "${{ steps.identity.outputs.policy }}"
     )
-    assert credentials[1]["with"]["allowed-account-ids"] == guard.ACCOUNT
+    assert credentials[1]["with"]["allowed-account-ids"] == (
+        f"{guard.MANAGEMENT_ACCOUNT},{guard.ACCOUNT}"
+    )
+    chain_index = steps.index(credentials[1])
+    assert steps[chain_index + 1]["run"] == (
+        "uv run python tools/nonprod_deploy_roles_ci.py check-nonprod"
+    )
+    assert "synth --app" in steps[chain_index + 2]["run"]
+
+
+def test_pinned_action_precheck_requires_source_and_target_account_ids() -> None:
+    """Bounded stand-in for v5.1.0's pre-assume allowed-account validation."""
+    workflow = yaml.safe_load(
+        (
+            Path(__file__).parents[2]
+            / ".github/workflows/deploy-campps-nonprod-roles.yml"
+        ).read_text()
+    )
+    steps = workflow["jobs"]["deploy"]["steps"]
+    action = next(step for step in steps if step.get("with", {}).get("role-chaining"))
+    current = action["with"]["allowed-account-ids"]
+
+    def precheck(source: str, allowed: str) -> bool:
+        return source in {value.strip() for value in allowed.split(",")}
+
+    # v5.1 validates current source credentials before the target role is assumed.
+    assert not precheck(guard.MANAGEMENT_ACCOUNT, guard.ACCOUNT)
+    assert precheck(guard.MANAGEMENT_ACCOUNT, current)
+    assert precheck(guard.ACCOUNT, current)
+    assert not precheck("000000000000", current)
 
 
 def test_pr_validation_runs_the_guard_without_aws_credentials() -> None:
