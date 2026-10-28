@@ -2826,6 +2826,97 @@ def test_platform_nonprod_base_policies_are_unchanged() -> None:
     assert hashes == PLATFORM_NONPROD_BASE_POLICY_SHA256
 
 
+def test_coppa_horizon_proof_policy_is_scoped_to_synthetic_nonprod_schedules() -> None:
+    service = ServiceRepository(
+        name="coppa-consent", repository="infiquetra/campps-coppa-consent"
+    )
+    template = synth_template_for_repositories(service)
+    policy_id, policy = find_managed_policy_with_logical_id(
+        template, "campps-coppa-consent-nonprod-horizon-proof-policy"
+    )
+    statements = {
+        item["Sid"]: item
+        for item in policy["Properties"]["PolicyDocument"]["Statement"]
+    }
+    assert set(statements) == {"SyntheticSchedules", "Inventory", "SchedulerRole"}
+    schedules = statements["SyntheticSchedules"]
+    assert set(normalize_actions(schedules["Action"])) == {
+        "scheduler:CreateSchedule",
+        "scheduler:GetSchedule",
+        "scheduler:DeleteSchedule",
+    }
+    patterns = set(normalize_resources(schedules["Resource"]))
+    base = (
+        "arn:aws:scheduler:us-east-1:477152411873:schedule/"
+        "campps-coppa-consent-nonprod-child-retention/ci-retention-horizon-*"
+    )
+    assert patterns == {f"{base}-short", f"{base}-long"}
+    assert all(
+        any(fnmatchcase(candidate, pattern) for pattern in patterns)
+        for candidate in (f"{base[:-1]}123-short", f"{base[:-1]}123-long")
+    )
+    for forbidden in (
+        f"{base[:-1]}123-other",
+        base.replace("child-retention/", "other/") + "-short",
+        base.replace("us-east-1", "us-west-2") + "-long",
+        base.replace("477152411873", "000000000000") + "-long",
+    ):
+        assert not any(fnmatchcase(forbidden, pattern) for pattern in patterns)
+    inventory = statements["Inventory"]
+    assert set(normalize_actions(inventory["Action"])) == {
+        "scheduler:ListSchedules",
+        "servicequotas:ListServiceQuotas",
+    }
+    assert inventory["Resource"] == "*"
+    assert inventory["Condition"] == {
+        "StringEquals": {"aws:RequestedRegion": "us-east-1"}
+    }
+    passing = statements["SchedulerRole"]
+    assert passing["Action"] == "iam:PassRole"
+    assert passing["Resource"] == {
+        "Fn::Join": [
+            "",
+            [
+                "arn:",
+                {"Ref": "AWS::Partition"},
+                ":iam::477152411873:role/"
+                "campps-coppa-consent-nonprod-child-retention-scheduler",
+            ],
+        ]
+    }
+    assert passing["Condition"] == {
+        "StringEquals": {"iam:PassedToService": "scheduler.amazonaws.com"}
+    }
+    role = find_deploy_role(template, service.role_name("nonprod"))
+    assert {"Ref": policy_id} in role["Properties"]["ManagedPolicyArns"]
+    assert "PermissionsBoundary" not in role["Properties"]
+    boundary = find_managed_policy(
+        template, service.permissions_boundary_name("nonprod")
+    )
+    assert "horizon" not in json.dumps(boundary)
+
+
+def test_coppa_horizon_proof_policy_is_absent_elsewhere() -> None:
+    service = ServiceRepository(
+        name="coppa-consent", repository="infiquetra/campps-coppa-consent"
+    )
+    unrelated = ServiceRepository(
+        name="tenant-setup", repository="infiquetra/campps-tenant-setup"
+    )
+    cases: tuple[tuple[ServiceRepository, DeployEnvironment], ...] = (
+        (service, "staging"),
+        (service, "production"),
+        (unrelated, "nonprod"),
+    )
+    for repository, environment in cases:
+        template = synth_template_for_repositories(
+            repository, target_environment=environment
+        )
+        assert not any(
+            "horizon-proof-policy" in name for name in managed_policy_names(template)
+        )
+
+
 def test_staging_and_production_full_registry_synth_are_unchanged() -> None:
     """Higher-environment synth must match the pre-change template freeze."""
     expected: dict[DeployEnvironment, str] = {
@@ -2839,3 +2930,118 @@ def test_staging_and_production_full_registry_synth_are_unchanged() -> None:
         )
         assert_no_platform_e2e_canary_health_policy(template)
         assert canonical_json_sha256(template.to_json()) == digest, environment
+
+
+def test_tenant_fixture_repair_policy_limits_data_and_key_access() -> None:
+    template = synth_template_for_repositories(TENANT_SETUP_REPO)
+    policy_id, policy = find_managed_policy_with_logical_id(
+        template, "campps-tenant-setup-nonprod-fixture-repair-policy"
+    )
+    statements = {
+        item["Sid"]: item
+        for item in policy["Properties"]["PolicyDocument"]["Statement"]
+    }
+    assert set(statements) == {
+        "FixtureReads",
+        "FixturePuts",
+        "FixtureUpdates",
+        "TableKey",
+    }
+    fixture = "TENANT#526f523a-88b9-4d43-a118-8e02c5bdffe0"
+    table = "arn:aws:dynamodb:us-east-1:477152411873:table/campps-tenant-setup-nonprod"
+    for sid, actions, keys in (
+        ("FixtureReads", {"dynamodb:GetItem", "dynamodb:Query"}, [fixture]),
+        ("FixturePuts", {"dynamodb:PutItem"}, [fixture, f"{fixture}#ADMIN_AUDIT"]),
+        ("FixtureUpdates", {"dynamodb:UpdateItem"}, [fixture]),
+    ):
+        statement = statements[sid]
+        assert set(normalize_actions(statement["Action"])) == actions
+        assert statement["Resource"] == table
+        condition = statement["Condition"]
+        assert condition["ForAllValues:StringEquals"]["dynamodb:LeadingKeys"] == keys
+        assert condition["Null"]["dynamodb:LeadingKeys"] == "false"
+        if sid != "FixtureReads":
+            assert condition["StringEquals"]["dynamodb:EnclosingOperation"] == (
+                "TransactWriteItems"
+            )
+        else:
+            assert "StringEquals" not in condition
+    key = statements["TableKey"]
+    assert set(normalize_actions(key["Action"])) == {
+        "kms:Decrypt",
+        "kms:GenerateDataKey",
+    }
+    assert key["Resource"] == "*"
+    assert key["Condition"] == {
+        "StringEquals": {
+            "kms:ViaService": "dynamodb.us-east-1.amazonaws.com",
+            "kms:EncryptionContext:aws:dynamodb:tableName": (
+                "campps-tenant-setup-nonprod"
+            ),
+            "kms:EncryptionContext:aws:dynamodb:subscriberId": "477152411873",
+        },
+        "ForAnyValue:StringEquals": {
+            "kms:ResourceAliases": "alias/campps-platform-nonprod-pii"
+        },
+    }
+    role = find_deploy_role(template, TENANT_SETUP_REPO.role_name("nonprod"))
+    assert {"Ref": policy_id} in role["Properties"]["ManagedPolicyArns"]
+    assert "PermissionsBoundary" not in role["Properties"]
+    boundary = find_managed_policy(
+        template, TENANT_SETUP_REPO.permissions_boundary_name("nonprod")
+    )
+    assert fixture not in json.dumps(boundary)
+
+
+def test_tenant_fixture_repair_reuses_existing_nonprod_bus_grant() -> None:
+    template = synth_template_for_repositories(TENANT_SETUP_REPO)
+    policy = find_managed_policy(template, SEAM_PROOF_POLICY_NAME)
+    producer = next(
+        item
+        for item in policy["Properties"]["PolicyDocument"]["Statement"]
+        if item.get("Sid") == "ScopeSeamProducerEmit"
+    )
+    assert producer["Action"] == "events:PutEvents"
+    assert producer["Resource"] == {
+        "Fn::Join": [
+            "",
+            [
+                "arn:",
+                {"Ref": "AWS::Partition"},
+                ":events:us-east-1:477152411873:event-bus/campps-platform-nonprod",
+            ],
+        ]
+    }
+    # This pre-existing grant has no event-type or tenant-payload condition.
+    assert "Condition" not in producer
+    repair = find_managed_policy(
+        template, "campps-tenant-setup-nonprod-fixture-repair-policy"
+    )
+    assert "events:PutEvents" not in json.dumps(repair)
+
+
+def test_tenant_fixture_repair_policy_is_absent_elsewhere() -> None:
+    cases: tuple[tuple[ServiceRepository, DeployEnvironment], ...] = (
+        (TENANT_SETUP_REPO, "staging"),
+        (TENANT_SETUP_REPO, "production"),
+        (
+            ServiceRepository(
+                name="coppa-consent", repository="infiquetra/campps-coppa-consent"
+            ),
+            "nonprod",
+        ),
+        (
+            ServiceRepository(
+                name="identity-access", repository="infiquetra/campps-identity-access"
+            ),
+            "nonprod",
+        ),
+    )
+    for service, environment in cases:
+        template = synth_template_for_repositories(
+            service, target_environment=environment
+        )
+        assert (
+            "campps-tenant-setup-nonprod-fixture-repair-policy"
+            not in managed_policy_names(template)
+        )
