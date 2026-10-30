@@ -12,8 +12,10 @@ on:
       - 'tests/unit/test_heimdall_monitoring_stack.py'
       - 'docs/engineering-journal/DECISIONS.md'
       - 'docs/engineering-journal/LEARNINGS.md'
+      - 'docs/engineering-journal/README.md'
       - '.github/workflows/deploy-infrastructure.yml'
       - '.github/workflows/pull-request-validation.yml'
+      - 'tests/unit/test_pr_validation_ci.py'
       # Separate CAMPPS deploy-role changes do not modify the management app.
       - '.github/workflows/deploy-campps-nonprod-roles.yml'
       - '.github/workflows/bootstrap-campps-nonprod-roles.yml'
