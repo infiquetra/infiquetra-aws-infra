@@ -37,7 +37,7 @@ jobs:
         id: ruff-lint
         working-directory: ${{ inputs.working-directory }}
         run: |
-          echo "## 🧹 Code Quality Results" >> $GITHUB_STEP_SUMMARY
+          echo '## 🧹 Code Quality Results' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Ruff linting (includes import sorting)
@@ -82,10 +82,14 @@ jobs:
       - name: 📊 Set final status
         id: final-status
         if: always()
+        env:
+          CI_RUFF_LINT_STATUS: ${{ steps.ruff-lint.outputs.status }}
+          CI_RUFF_FORMAT_STATUS: ${{ steps.ruff-format.outputs.status }}
+          CI_MYPY_STATUS: ${{ steps.mypy.outputs.status }}
         run: |
-          if [[ "${{ steps.ruff-lint.outputs.status }}" == "pass" ]] && \
-             [[ "${{ steps.ruff-format.outputs.status }}" == "pass" ]] && \
-             [[ "${{ steps.mypy.outputs.status }}" == "pass" ]]; then
+          if [[ "$CI_RUFF_LINT_STATUS" == "pass" ]] && \
+             [[ "$CI_RUFF_FORMAT_STATUS" == "pass" ]] && \
+             [[ "$CI_MYPY_STATUS" == "pass" ]]; then
             echo "status=pass" >> $GITHUB_OUTPUT
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### ✅ All code quality checks passed!" >> $GITHUB_STEP_SUMMARY

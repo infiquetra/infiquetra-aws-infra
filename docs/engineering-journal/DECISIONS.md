@@ -1,5 +1,45 @@
 # DECISIONS
 
+## 2026-10-30
+
+### Preserve shell values while avoiding pinned nested-parser failures
+
+**Cause.** Semgrep 1.183.0 can reject valid double-quoted non-BMP log labels
+while its YAML rules parse a run scalar as Bash. Focused original/quote variants
+also expose a distinct failure on GitHub expressions embedded in shell source.
+The recorded current-source baseline has 20 internal and eight partial-parsing
+errors; not all share the emoji cause. No rule or error is suppressed.
+
+**Decision.** Change only fourteen demonstrated log expressions to adjacent
+single-quoted literal/double-quoted expansion forms. Bind expressions as step env
+data in nine demonstrated failing blocks, retaining the exact expressions and
+intended string/boolean values and quoting their shell use. Version selectors and
+tag transport URLs remain single arguments. Inputs, callers, output/status names,
+conditions, roles, permissions, actual CDK commands and scanner helpers remain.
+No workflow, deployment or cloud command was executed to compare representations.
+
+**Controls.** Inert Bash printf/argument/log controls verify literal argument and
+stdout identity, including spaces, quotes and shell-looking variable data. Typed
+approval and three-producer quality conditions retain their meaning. Syntax is
+checked without execution. Two bounded scans of the exact failing rules establish
+the causes and show zero errors for the proposal while still detecting the inert
+unsafe eval/pipe controls. This does not by itself establish the full catalogue.
+Five exact action/workflow/test paths join deployment exclusions; removal and
+mixed foundation/runtime/unknown-path controls retain foundation selection.
+
+**Warning visibility and limits.** Findings remain advisory; genuine tool/report
+errors still fail admission. Step-env transport can remediate interpolation
+warnings at those converted steps: retain every baseline finding in the comparison
+ledger and distinguish source remediation from lost targets or suppressed rules.
+Unchanged mutable-action, unsafe pipe and Python findings are not waived. Exactly
+one actual-source qualification with the same frozen 1,074-rule catalogue and
+Semgrep build is authorized; its full target/finding/residual-error comparison is
+the result, not permission to retry or accept errors. Privileged CDK/Checkov and
+hosted admission/cache/deployment-boundary qualification remain separate gates.
+
+**Refs.** `tests/unit/test_workflow_parser_compat.py`;
+`tests/unit/test_ci_scanners.py`; `tools/ci_scanners.py`.
+
 ## 2026-10-29
 
 ### Scanner execution errors block admission; valid findings remain advisory

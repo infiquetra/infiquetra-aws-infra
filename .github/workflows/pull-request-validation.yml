@@ -145,7 +145,7 @@ jobs:
           VALIDATION_ACTOR: ${{ github.actor }}
         run: |
           {
-            echo "# 🎯 Pull Request Validation Summary"
+            echo '# 🎯 Pull Request Validation Summary'
             echo ""
             echo "## Results"
             echo ""
@@ -195,7 +195,7 @@ jobs:
             fi
 
             echo ""
-            echo "## 📝 Details"
+            echo '## 📝 Details'
             echo ""
             printf '%s\n' "**Commit**: $VALIDATION_SHA"
             printf '%s\n' "**Branch**: $VALIDATION_BRANCH"
@@ -211,7 +211,7 @@ jobs:
                [[ "$UNIT_TESTS_RESULT" == "success" ]]; then
               echo "---"
               echo ""
-              echo "### 🚀 Ready for merge and deployment!"
+              echo '### 🚀 Ready for merge and deployment!'
             else
               echo "---"
               echo ""

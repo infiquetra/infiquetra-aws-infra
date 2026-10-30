@@ -64,7 +64,7 @@ jobs:
         id: cdk-synth
         working-directory: ${{ inputs.working-directory }}
         run: |
-          echo "## 🏗️ CDK Synthesis Results" >> $GITHUB_STEP_SUMMARY
+          echo '## 🏗️ CDK Synthesis Results' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if uv run cdk synth --all; then
@@ -82,7 +82,7 @@ jobs:
         run: |
           TEMPLATE_COUNT=$(find cdk.out -name "*.template.json" -type f | wc -l | tr -d ' ')
           echo "count=$TEMPLATE_COUNT" >> $GITHUB_OUTPUT
-          echo "📄 **Templates generated**: $TEMPLATE_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo '📄 **Templates generated**: '"$TEMPLATE_COUNT" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Run CloudFormation linting
         id: cfn-lint
@@ -112,7 +112,7 @@ jobs:
         id: cost-estimate
         run: |
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 💰 Cost Estimation" >> $GITHUB_STEP_SUMMARY
+          echo '## 💰 Cost Estimation' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### AWS Organizations Stack" >> $GITHUB_STEP_SUMMARY
           echo "- **Cost**: Free (AWS Organizations is free)" >> $GITHUB_STEP_SUMMARY
@@ -122,7 +122,7 @@ jobs:
           echo "- **Cost**: Free (up to 5GB of logs)" >> $GITHUB_STEP_SUMMARY
           echo "- AWS Identity Center is included at no additional cost" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 💡 Additional Costs May Apply For:" >> $GITHUB_STEP_SUMMARY
+          echo '### 💡 Additional Costs May Apply For:' >> $GITHUB_STEP_SUMMARY
           echo "- CloudTrail logs (standard pricing)" >> $GITHUB_STEP_SUMMARY
           echo "- CloudWatch logs (based on ingestion and retention)" >> $GITHUB_STEP_SUMMARY
           echo "- Data transfer (if applicable)" >> $GITHUB_STEP_SUMMARY
