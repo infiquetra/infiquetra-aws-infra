@@ -2,6 +2,30 @@
 
 ## 2026-10-29
 
+### Resolve unit imports and pass summary inputs as environment data
+
+**Author.** Codex
+**Evidence.** Candidate `898edf3` failed outside collection because pytest's
+console entry point did not expose the repository's `tools` namespace. Its
+summary also interpolated branch text into Bash before checking unit results;
+a valid branch containing shell syntax could exit successfully before admission.
+**Decision.** Use `uv run --frozen python -m pytest tests/unit/` so Python starts
+with the project root on its import path. Pass all summary metadata, producer
+outputs and results through the step environment, with quoted shell expansions
+and fixed `printf` formats for displayed data. Retain all six success checks.
+**Rejected alternatives.** Excluding guard modules would lose coverage. A broad
+`PYTHONPATH` override would obscure the invocation defect. Escaping one branch
+payload would leave other shell substitutions and producer outputs exposed.
+**Validation.** Both guard imports resolve without `PYTHONPATH`; 89 actual-shell,
+command-boundary and index-drift controls pass, including all 43 earlier cases.
+Hostile refs are validated with Git; multiline metadata and output payloads
+remain literal and cannot bypass a failed result or execute a command. Full
+outside CDK execution and hosted graph qualification remain required.
+**Revisit when.** Packaging or summary execution changes; preserve the complete
+unit target and model environment transport in the regression harness.
+**Refs.** `.github/workflows/pull-request-validation.yml`;
+`tests/unit/test_pr_validation_ci.py`.
+
 ### Require the complete offline unit suite in PR validation
 
 **Author.** Codex
