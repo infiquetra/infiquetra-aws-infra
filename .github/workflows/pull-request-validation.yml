@@ -96,10 +96,31 @@ jobs:
       - name: Synthesize only the nonproduction deploy-role stack
         run: uv run --frozen npx -y aws-cdk@2.1144.0 synth --app 'python3 app_campps_nonprod_roles_ci.py' CamppsNonProdDeployRolesStack --quiet
 
+  unit-tests:
+    name: 🧪 Offline Unit Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: '3.13'
+      - name: Verify reviewed dependency files
+        id: verify-dependencies
+        # The shared setup runs uv sync; reject any manifest or lock rewrite.
+        run: git diff --exit-code -- pyproject.toml uv.lock
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Test the complete offline unit suite
+        id: unit-tests
+        run: uv run --frozen python -m pytest tests/unit/
+
   validation-summary:
     name: 📋 Validation Summary
     runs-on: ubuntu-latest
-    needs: [code-quality, security-scan, cdk-synthesis, monitoring-iam, nonprod-role-ci-guards]
+    needs: [code-quality, security-scan, cdk-synthesis, monitoring-iam, nonprod-role-ci-guards, unit-tests]
     if: always()
 
     permissions:
@@ -108,68 +129,93 @@ jobs:
 
     steps:
       - name: 📊 Generate validation summary
+        env:
+          CODE_QUALITY_RESULT: ${{ needs.code-quality.result }}
+          SECURITY_SCAN_RESULT: ${{ needs.security-scan.result }}
+          CDK_SYNTHESIS_RESULT: ${{ needs.cdk-synthesis.result }}
+          MONITORING_IAM_RESULT: ${{ needs.monitoring-iam.result }}
+          NONPROD_ROLE_CI_GUARDS_RESULT: ${{ needs.nonprod-role-ci-guards.result }}
+          UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
+          QUALITY_STATUS: ${{ needs.code-quality.outputs.quality-status }}
+          SECURITY_FINDINGS_COUNT: ${{ needs.security-scan.outputs.security-findings-count }}
+          SYNTHESIS_STATUS: ${{ needs.cdk-synthesis.outputs.synthesis-status }}
+          TEMPLATE_COUNT: ${{ needs.cdk-synthesis.outputs.template-count }}
+          VALIDATION_SHA: ${{ github.sha }}
+          VALIDATION_BRANCH: ${{ github.head_ref || github.ref_name }}
+          VALIDATION_ACTOR: ${{ github.actor }}
         run: |
-          echo "# 🎯 Pull Request Validation Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "# 🎯 Pull Request Validation Summary"
+            echo ""
+            echo "## Results"
+            echo ""
 
-          # Code Quality
-          if [[ "${{ needs.code-quality.outputs.quality-status }}" == "pass" ]]; then
-            echo "✅ **Code Quality**: All checks passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Code Quality**: Some checks failed" >> $GITHUB_STEP_SUMMARY
-          fi
+            # Code Quality
+            if [[ "$QUALITY_STATUS" == "pass" ]]; then
+              echo "✅ **Code Quality**: All checks passed"
+            else
+              echo "❌ **Code Quality**: Some checks failed"
+            fi
 
-          # Security Scan
-          FINDINGS="${{ needs.security-scan.outputs.security-findings-count }}"
-          if [[ "$FINDINGS" == "0" ]]; then
-            echo "✅ **Security Scan**: No issues found" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ **Security Scan**: $FINDINGS finding(s) detected (review artifacts)" >> $GITHUB_STEP_SUMMARY
-          fi
+            # Security Scan
+            if [[ "$SECURITY_SCAN_RESULT" != "success" ]]; then
+              echo "❌ **Security Scan**: Validation failed"
+            elif [[ "$SECURITY_FINDINGS_COUNT" == "0" ]]; then
+              echo "✅ **Security Scan**: No issues found"
+            else
+              printf '%s\n' "⚠️ **Security Scan**: $SECURITY_FINDINGS_COUNT finding(s) detected (review artifacts)"
+            fi
 
-          # CDK Synthesis
-          if [[ "${{ needs.cdk-synthesis.outputs.synthesis-status }}" == "pass" ]]; then
-            TEMPLATES="${{ needs.cdk-synthesis.outputs.template-count }}"
-            echo "✅ **CDK Synthesis**: Successful ($TEMPLATES template(s) generated)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **CDK Synthesis**: Failed" >> $GITHUB_STEP_SUMMARY
-          fi
+            # CDK Synthesis
+            if [[ "$SYNTHESIS_STATUS" == "pass" ]]; then
+              printf '%s\n' "✅ **CDK Synthesis**: Successful ($TEMPLATE_COUNT template(s) generated)"
+            else
+              echo "❌ **CDK Synthesis**: Failed"
+            fi
 
-          # Monitoring IAM
-          if [[ "${{ needs.monitoring-iam.result }}" == "success" ]]; then
-            echo "✅ **Monitoring IAM**: Tests, synthesis, and lint passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Monitoring IAM**: Validation failed" >> $GITHUB_STEP_SUMMARY
-          fi
+            # Monitoring IAM
+            if [[ "$MONITORING_IAM_RESULT" == "success" ]]; then
+              echo "✅ **Monitoring IAM**: Tests, synthesis, and lint passed"
+            else
+              echo "❌ **Monitoring IAM**: Validation failed"
+            fi
 
-          # Nonproduction deploy-role CI guards
-          if [[ "${{ needs.nonprod-role-ci-guards.result }}" == "success" ]]; then
-            echo "✅ **Nonprod deploy-role CI guards**: Tests and synthesis passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Nonprod deploy-role CI guards**: Validation failed" >> $GITHUB_STEP_SUMMARY
-          fi
+            # Nonproduction deploy-role CI guards
+            if [[ "$NONPROD_ROLE_CI_GUARDS_RESULT" == "success" ]]; then
+              echo "✅ **Nonprod deploy-role CI guards**: Tests and synthesis passed"
+            else
+              echo "❌ **Nonprod deploy-role CI guards**: Validation failed"
+            fi
 
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 📝 Details" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch**: ${{ github.head_ref || github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+            # Complete offline unit suite
+            if [[ "$UNIT_TESTS_RESULT" == "success" ]]; then
+              echo "✅ **Offline Unit Tests**: Complete suite passed"
+            else
+              echo "❌ **Offline Unit Tests**: Validation failed"
+            fi
 
-          # Overall status
-          if [[ "${{ needs.code-quality.result }}" == "success" ]] && \
-             [[ "${{ needs.cdk-synthesis.result }}" == "success" ]] && \
-             [[ "${{ needs.monitoring-iam.result }}" == "success" ]] && \
-             [[ "${{ needs.nonprod-role-ci-guards.result }}" == "success" ]]; then
-            echo "---" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 🚀 Ready for merge and deployment!" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "---" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### ⚠️ Please address the issues above before merging" >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
+            echo ""
+            echo "## 📝 Details"
+            echo ""
+            printf '%s\n' "**Commit**: $VALIDATION_SHA"
+            printf '%s\n' "**Branch**: $VALIDATION_BRANCH"
+            printf '%s\n' "**Triggered by**: $VALIDATION_ACTOR"
+            echo ""
+
+            # Overall status
+            if [[ "$CODE_QUALITY_RESULT" == "success" ]] && \
+               [[ "$SECURITY_SCAN_RESULT" == "success" ]] && \
+               [[ "$CDK_SYNTHESIS_RESULT" == "success" ]] && \
+               [[ "$MONITORING_IAM_RESULT" == "success" ]] && \
+               [[ "$NONPROD_ROLE_CI_GUARDS_RESULT" == "success" ]] && \
+               [[ "$UNIT_TESTS_RESULT" == "success" ]]; then
+              echo "---"
+              echo ""
+              echo "### 🚀 Ready for merge and deployment!"
+            else
+              echo "---"
+              echo ""
+              echo "### ⚠️ Please address the issues above before merging"
+              exit 1
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
