@@ -96,10 +96,31 @@ jobs:
       - name: Synthesize only the nonproduction deploy-role stack
         run: uv run --frozen npx -y aws-cdk@2.1144.0 synth --app 'python3 app_campps_nonprod_roles_ci.py' CamppsNonProdDeployRolesStack --quiet
 
+  unit-tests:
+    name: 🧪 Offline Unit Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: '3.13'
+      - name: Verify reviewed dependency files
+        id: verify-dependencies
+        # The shared setup runs uv sync; reject any manifest or lock rewrite.
+        run: git diff --exit-code -- pyproject.toml uv.lock
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Test the complete offline unit suite
+        id: unit-tests
+        run: uv run --frozen pytest tests/unit/
+
   validation-summary:
     name: 📋 Validation Summary
     runs-on: ubuntu-latest
-    needs: [code-quality, security-scan, cdk-synthesis, monitoring-iam, nonprod-role-ci-guards]
+    needs: [code-quality, security-scan, cdk-synthesis, monitoring-iam, nonprod-role-ci-guards, unit-tests]
     if: always()
 
     permissions:
@@ -123,7 +144,9 @@ jobs:
 
           # Security Scan
           FINDINGS="${{ needs.security-scan.outputs.security-findings-count }}"
-          if [[ "$FINDINGS" == "0" ]]; then
+          if [[ "${{ needs.security-scan.result }}" != "success" ]]; then
+            echo "❌ **Security Scan**: Validation failed" >> $GITHUB_STEP_SUMMARY
+          elif [[ "$FINDINGS" == "0" ]]; then
             echo "✅ **Security Scan**: No issues found" >> $GITHUB_STEP_SUMMARY
           else
             echo "⚠️ **Security Scan**: $FINDINGS finding(s) detected (review artifacts)" >> $GITHUB_STEP_SUMMARY
@@ -151,6 +174,13 @@ jobs:
             echo "❌ **Nonprod deploy-role CI guards**: Validation failed" >> $GITHUB_STEP_SUMMARY
           fi
 
+          # Complete offline unit suite
+          if [[ "${{ needs.unit-tests.result }}" == "success" ]]; then
+            echo "✅ **Offline Unit Tests**: Complete suite passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Offline Unit Tests**: Validation failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 📝 Details" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -161,9 +191,11 @@ jobs:
 
           # Overall status
           if [[ "${{ needs.code-quality.result }}" == "success" ]] && \
+             [[ "${{ needs.security-scan.result }}" == "success" ]] && \
              [[ "${{ needs.cdk-synthesis.result }}" == "success" ]] && \
              [[ "${{ needs.monitoring-iam.result }}" == "success" ]] && \
-             [[ "${{ needs.nonprod-role-ci-guards.result }}" == "success" ]]; then
+             [[ "${{ needs.nonprod-role-ci-guards.result }}" == "success" ]] && \
+             [[ "${{ needs.unit-tests.result }}" == "success" ]]; then
             echo "---" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 🚀 Ready for merge and deployment!" >> $GITHUB_STEP_SUMMARY

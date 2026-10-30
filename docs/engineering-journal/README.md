@@ -31,6 +31,7 @@ Each of the four core files has a block-quote intro at the top with its own form
 
 ## Quick navigation by topic
 
+- Complete offline PR unit suite and explicit producer admission → [DECISIONS](DECISIONS.md#require-the-complete-offline-unit-suite-in-pr-validation) 2026-10-29
 - WorkSpaces orphaned Simple AD directory ($432/yr waste) → [LEARNINGS](LEARNINGS.md) 2026-04-27
 - SCP `Principal` field rejection → [LEARNINGS](LEARNINGS.md) 2026-04-25
 - `SERVICE_CONTROL_POLICY` per-root enablement → [LEARNINGS](LEARNINGS.md) 2026-04-25

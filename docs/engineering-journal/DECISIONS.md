@@ -1,5 +1,31 @@
 # DECISIONS
 
+## 2026-10-29
+
+### Require the complete offline unit suite in PR validation
+
+**Author.** Codex
+**Decision.** Add an unconditional hosted `tests/unit/` job with read-only
+repository access and Python 3.13. Reuse the existing Python setup, reject
+manifest or lock rewrites, then run pytest with the frozen dependency lock.
+The existing always-running Validation Summary requires explicit success from
+this job and all five original producers, including Security Scanning.
+**Rationale.** Selected test commands left Organization, SSO and deploy-role
+assertions outside PR validation. Running the directory also admits future
+offline modules. Advisory scanner findings retain their existing policy.
+**Rejected alternatives.** A fixed module list would repeat the coverage gap.
+Fixture sharing or removal of overlapping jobs needs separate evidence of
+assertion equivalence. Live credential and change-set tests stay in the
+explicit nonproduction deployment validation lane.
+**Validation.** Behavioral controls execute the workflow's summary shell with
+successful, failed, cancelled, skipped and missing producer results. Additional
+controls exercise dependency drift and unit-command failure propagation.
+Full CDK pytest and hosted graph proof remain required before integration.
+**Revisit when.** Measured fixture reuse or job consolidation preserves every
+assertion and the existing required check identities.
+**Refs.** `.github/workflows/pull-request-validation.yml`;
+`tests/unit/test_pr_validation_ci.py`.
+
 ## 2026-10-04
 
 ### Let tenant-setup's nonprod deploy role read the consolidated e2e store (OD-13)
