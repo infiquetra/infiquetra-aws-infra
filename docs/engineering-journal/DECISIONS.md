@@ -2,6 +2,41 @@
 
 ## 2026-10-29
 
+### Scanner execution errors block admission; valid findings remain advisory
+
+**Author.** Codex
+**Decision.** Preserve the current advisory finding policy for Bandit, Semgrep
+and Checkov. Require genuine execution, supported report schemas, consistent
+counts and nonempty scan targets. Accept a finding exit only when it matches
+the fixed CLI invocation and a complete validated report; execution, parsing,
+missing-report and integrity failures fail the producer and required summary.
+**Rationale.** Semgrep can return zero with scan errors: the reviewed report has
+21 findings and 36 internal-matching/partial-parsing errors. These are distinct
+from policy findings. Checkov's output-path option creates a directory, even
+when its name ends in `.json`; its actual report is `results_json.json` inside.
+**Ownership.** Source security runs Bandit and Semgrep. Synthesis owns the sole
+CloudFormation Checkov scan, verifies resource coverage, preserves its report
+directory, and includes that scan in final synthesis admission. Receipts and
+diagnostic logs remain artifacts; summaries report execution and finding policy
+without echoing source snippets. Dynamic step results travel as environment data.
+**Rejected alternatives.** Blanket soft-fail, treating missing reports as zero,
+or accepting arbitrary nonzero exits would preserve false greens. Findings are
+not newly suppressed or made blocking. The unused source-job Checkov branch
+cannot establish template coverage and is removed.
+**Deployment boundary.** Only the four exact scanner helper/test/workflow paths
+are added to the existing deployment exclusions. Mixed foundation/runtime edits
+still select deployment. GitHub's diff-timeout fallback can still run a workflow;
+the owning operator must verify the final diff and observe ordinary pushes.
+**Validation.** Actual workflow/helper controls inject CLI and report failures,
+retain valid advisory findings, check final producer admission and exercise exact
+deployment exclusions with removal and mixed-change controls. Real scanner and
+hosted graph qualification remain separate from the CLI transport shims.
+**Revisit when.** A scanner/report family changes or a separately approved finding
+severity policy replaces the current advisory policy.
+**Refs.** `tools/ci_scanners.py`; `tests/unit/test_ci_scanners.py`;
+[Semgrep exits](https://docs.semgrep.dev/cli-reference#exit-codes),
+[Checkov output paths](https://www.checkov.io/2.Basics/CLI%20Command%20Reference.html).
+
 ### Resolve unit imports and pass summary inputs as environment data
 
 **Author.** Codex

@@ -102,24 +102,11 @@ jobs:
       - name: 🛡️ Run Checkov on CloudFormation templates
         id: checkov
         working-directory: ${{ inputs.working-directory }}
-        continue-on-error: true
+        # Scan genuine synthesized output even when the independent lint fails.
+        if: ${{ !cancelled() && steps.cdk-synth.outcome == 'success' }}
         run: |
           pip install checkov
-          checkov -d cdk.out --framework cloudformation --output json --output-file checkov-cfn-report.json || true
-
-          if [ -f checkov-cfn-report.json ]; then
-            FAILED=$(jq '.summary.failed' checkov-cfn-report.json 2>/dev/null || echo "0")
-            PASSED=$(jq '.summary.passed' checkov-cfn-report.json 2>/dev/null || echo "0")
-
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 🛡️ CloudFormation Security Checks" >> $GITHUB_STEP_SUMMARY
-            echo "- **Passed**: $PASSED" >> $GITHUB_STEP_SUMMARY
-            echo "- **Failed**: $FAILED" >> $GITHUB_STEP_SUMMARY
-
-            if [ "$FAILED" -gt 0 ]; then
-              echo "⚠️ Review checkov report for details" >> $GITHUB_STEP_SUMMARY
-            fi
-          fi
+          uv run --frozen python "$GITHUB_WORKSPACE/tools/ci_scanners.py" checkov
 
       - name: 💰 Cost Estimation
         id: cost-estimate
@@ -147,21 +134,20 @@ jobs:
           name: cdk-artifacts
           path: |
             ${{ inputs.working-directory }}/cdk.out/
-            ${{ inputs.working-directory }}/checkov-cfn-report.json
+            ${{ inputs.working-directory }}/checkov-cfn-report.json/
+            ${{ inputs.working-directory }}/checkov-execution.json
+            ${{ inputs.working-directory }}/checkov-scanner.log
+            ${{ inputs.working-directory }}/checkov-version.log
           if-no-files-found: warn
 
       - name: 📊 Set final status
         id: final-status
         if: always()
-        run: |
-          if [[ "${{ steps.cdk-synth.outputs.status }}" == "pass" ]] && \
-             [[ "${{ steps.cfn-lint.outputs.status }}" == "pass" ]]; then
-            echo "status=pass" >> $GITHUB_OUTPUT
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### ✅ CDK synthesis and validation successful!" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "status=fail" >> $GITHUB_OUTPUT
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### ❌ CDK synthesis or validation failed" >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          CDK_SYNTH_OUTCOME: ${{ steps.cdk-synth.outcome }}
+          CFN_LINT_OUTCOME: ${{ steps.cfn-lint.outcome }}
+          CHECKOV_OUTCOME: ${{ steps.checkov.outcome }}
+          CDK_SYNTH_STATUS: ${{ steps.cdk-synth.outputs.status }}
+          CFN_LINT_STATUS: ${{ steps.cfn-lint.outputs.status }}
+        run: uv run --frozen python "$GITHUB_WORKSPACE/tools/ci_scanners.py" synthesis-summary

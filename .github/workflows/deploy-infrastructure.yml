@@ -16,6 +16,11 @@ on:
       - '.github/workflows/deploy-infrastructure.yml'
       - '.github/workflows/pull-request-validation.yml'
       - 'tests/unit/test_pr_validation_ci.py'
+      # Exact CI scanner paths do not change management-account infrastructure.
+      - '.github/workflows/reusable-security-scan.yml'
+      - '.github/workflows/reusable-cdk-synthesis.yml'
+      - 'tools/ci_scanners.py'
+      - 'tests/unit/test_ci_scanners.py'
       # Separate CAMPPS deploy-role changes do not modify the management app.
       - '.github/workflows/deploy-campps-nonprod-roles.yml'
       - '.github/workflows/bootstrap-campps-nonprod-roles.yml'
