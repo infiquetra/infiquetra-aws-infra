@@ -233,11 +233,16 @@ def test_quality_gate_condition_still_requires_three_passes(
 
 
 PARSER_PATHS = {
+    ".github/workflows/reusable-code-quality.yml",
+    "tests/unit/test_workflow_parser_compat.py",
+}
+
+DEPLOYMENT_PATHS = {
     ".github/actions/setup-aws-credentials/action.yml",
     ".github/actions/setup-node-cdk/action.yml",
     ".github/workflows/reusable-aws-deployment.yml",
-    ".github/workflows/reusable-code-quality.yml",
-    "tests/unit/test_workflow_parser_compat.py",
+    ".github/actions/setup-python-uv/action.yml",
+    "uv.lock",
 }
 
 
@@ -248,6 +253,10 @@ def test_exact_parser_filter_keeps_mixed_and_unknown_infrastructure_selected() -
     ignored = document[True]["push"]["paths-ignore"]
     assert all(not any(character in path for character in "*?!") for path in ignored)
     assert set(ignored) >= PARSER_PATHS
+    for deployment in DEPLOYMENT_PATHS:
+        assert deployment not in ignored
+        assert any(path not in ignored for path in {deployment})
+        assert any(path not in ignored for path in PARSER_PATHS | {deployment})
     assert not any(path not in ignored for path in PARSER_PATHS)
     for removed in PARSER_PATHS:
         assert any(path not in set(ignored) - {removed} for path in PARSER_PATHS)

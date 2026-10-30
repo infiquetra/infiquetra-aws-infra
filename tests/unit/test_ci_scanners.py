@@ -6,6 +6,7 @@ Fixtures use the observed Bandit 1.9/Semgrep 1/Checkov 3 report schemas.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -64,10 +65,10 @@ def _report(tool: str, findings: int = 0) -> dict[str, Any]:
             ],
         }
 
-    def check(state: str) -> dict[str, Any]:
+    def check(state: str, index: int = 0) -> dict[str, Any]:
         return {
-            "check_id": "CKV_AWS_1",
-            "resource": "Sample",
+            "check_id": f"CKV_AWS_{index + 1}",
+            "resource": "AWS::S3::Bucket.Sample",
             "file_path": "/Sample.template.json",
             "check_result": {"result": state},
         }
@@ -76,7 +77,7 @@ def _report(tool: str, findings: int = 0) -> dict[str, Any]:
         "check_type": "cloudformation",
         "results": {
             "passed_checks": [check("PASSED")],
-            "failed_checks": [check("FAILED") for _ in range(findings)],
+            "failed_checks": [check("FAILED", i + 1) for i in range(findings)],
             "skipped_checks": [],
             "parsing_errors": [],
         },
@@ -102,13 +103,64 @@ def _targets(path: Path) -> None:
 def directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.chdir(tmp_path)
     _targets(tmp_path)
+    (tmp_path / "sample.py").write_text("print(1)\n")
+    (tmp_path / "pyproject.toml").write_text("[tool.bandit]\n")
     return tmp_path
+
+
+def _fixture_scope(tool: str, findings: int = 0) -> dict[str, Any]:
+    targets = ["cdk.out/Sample.template.json"] if tool == "checkov" else ["sample.py"]
+    return {
+        "schema": 1,
+        "tool": tool,
+        "version": VERSIONS[tool],
+        "argv": scanners.COMMANDS[tool][3:]
+        if tool == "bandit"
+        else scanners.COMMANDS[tool][1:],
+        "root": str(Path.cwd().resolve()),
+        "mode": "scan",
+        "targets": targets,
+        "target_sha256": {
+            p: hashlib.sha256(Path(p).read_bytes()).hexdigest()
+            if Path(p).is_file()
+            else "0" * 64
+            for p in targets
+        },
+        "config_sha256": hashlib.sha256(
+            Path("pyproject.toml").read_bytes()
+        ).hexdigest(),
+        "rules_sha256": "0" * 64,
+        "rule_ids": ["fixture.rule"],
+        "resources": [["Sample.template.json", "AWS::S3::Bucket.Sample"]],
+        "checks": [
+            ["Sample.template.json", "AWS::S3::Bucket.Sample", f"CKV_AWS_{i + 1}"]
+            for i in range(findings + 1)
+        ],
+        "evaluations": [
+            [
+                "Sample.template.json",
+                "AWS::S3::Bucket.Sample",
+                f"CKV_AWS_{i + 1}",
+                "PASSED" if i == 0 else "FAILED",
+            ]
+            for i in range(findings + 1)
+        ],
+        "evaluation_errors": [],
+        "graph_rule_ids": [],
+        "graph_coverage_limit": "fixture graph coverage limit",
+    }
 
 
 def _write(tool: str, value: Any) -> None:
     path = scanners.REPORTS[tool]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value))
+    report = value[0] if isinstance(value, list) else value
+    count = (
+        report.get("summary", {}).get("failed", 0) if isinstance(report, dict) else 0
+    )
+    count = count if type(count) is int and 0 <= count <= 2 else 0
+    scanners._scope_path(tool).write_text(json.dumps(_fixture_scope(tool, count)))
 
 
 @pytest.mark.parametrize("tool", SCANNERS)
@@ -232,21 +284,31 @@ tool = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
 with pathlib.Path(os.environ['SCAN_TRACE']).open('a') as f:
     f.write(json.dumps([tool, *args]) + '\\n')
+if tool == 'python':
+    assert pathlib.Path(args.pop(0)).name == 'ci_scanner_plan.py'
+    tool = args.pop(0)
+    os.execv(str(pathlib.Path(sys.argv[0]).parent / tool), [tool, *args])
 if tool == 'uv':
     assert args.pop(0) == 'run'
     if args[0] == '--frozen': args.pop(0)
     program = args.pop(0)
-    if program == 'python': os.execv(sys.executable, [sys.executable, *args])
+    if program == 'python':
+        if pathlib.Path(args[0]).name == 'ci_scanner_plan.py':
+            child = str(pathlib.Path(sys.argv[0]).parent / 'python')
+            os.execv(child, ['python', *args])
+        os.execv(sys.executable, [sys.executable, *args])
     assert program == 'bandit'
     os.execv(str(pathlib.Path(sys.argv[0]).parent / 'bandit'), ['bandit', *args])
 if tool == 'pip':
-    assert args == ['install', 'checkov']
+    assert args == ['install', 'checkov==3.4.0']
     sys.exit(0)
 cfg = json.loads(pathlib.Path(os.environ['SCAN_CONFIG']).read_text())[tool]
 if args == ['--version']:
     if cfg['mode'] == 'version-error': sys.exit(2)
     print('9.0.0' if cfg['mode'] == 'unknown-version' else cfg['version'])
     sys.exit(0)
+if 'CI_SCANNER_PLAN' in os.environ:
+    pathlib.Path(os.environ['CI_SCANNER_PLAN']).write_text(json.dumps(cfg['scope']))
 if cfg['mode'] != 'missing-report':
     path = pathlib.Path(cfg['report_path'])
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -260,7 +322,7 @@ def _cli_environment(
 ) -> dict[str, str]:
     binary = path / "bin"
     binary.mkdir()
-    config = {}
+    config: dict[str, dict[str, Any]] = {}
     for tool in SCANNERS:
         config[tool] = {
             "mode": "valid",
@@ -270,8 +332,10 @@ def _cli_environment(
             "report_path": str(scanners.REPORTS[tool]),
         }
         config[tool].update((changes or {}).get(tool, {}))
+        count = config[tool]["report"].get("summary", {}).get("failed", 0)
+        config[tool]["scope"] = _fixture_scope(tool, count)
     (path / "config.json").write_text(json.dumps(config))
-    for tool in (*SCANNERS, "uv", "pip"):
+    for tool in (*SCANNERS, "uv", "pip", "python"):
         program = binary / tool
         program.write_text(f"#!{sys.executable}\n" + DRIVER)
         program.chmod(0o755)

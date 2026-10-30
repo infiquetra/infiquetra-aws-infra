@@ -2,6 +2,38 @@
 
 ## 2026-10-30
 
+### Preserve deployment dependencies and prove scanner scope independently
+
+**Decision.** Remove the three permanent exclusions for the reusable foundation
+deployer and AWS credential/CDK tool actions. Standalone changes to those files
+again select the baseline foundation push workflow. Retain only additions owned
+by source validation, synthesis validation and tests. No commit/SHA bypass or
+workflow disable replaces the trigger. Integration may run the existing pipeline;
+the coordinating operator owns its timing after qualification.
+
+**Scanner boundary.** Report totals cannot establish completeness. Run exact
+supported scanner versions in their installed environments and record discovery
+before execution: Bandit's real file discovery and Semgrep's rule-aware engine
+plan. Semgrep's normal auto configuration is resolved once within the same CLI
+invocation; the adapter records that actual rule identity, not a second lookup.
+Normalized report targets must equal the plan, including ignored/non-applicable
+semantics. Bind planned source hashes, command, version and scope digest to the
+execution receipt. Missing, duplicated, extra or invalid targets fail closed.
+
+**Checkov.** Independently enumerate parsed CloudFormation resources and their
+registered applicable checks. Verify actual registry execution and report check
+identities. Preserve explicit UNKNOWN results that Checkov's serializer omits;
+check exceptions are execution failures, not acceptable UNKNOWN results. Do not
+invent checks for unsupported resource types. Per-resource graph-check
+applicability remains unproved and is explicit in receipts and summaries.
+
+**Preservation.** Previous interpolation/Unicode fixes, genuine advisory findings,
+reusable contracts and strict required checks remain. The earlier five-path
+parser-exclusion decision below is superseded for deployment dependencies.
+Focused source/report controls precede the single authorized final fixed-catalogue
+scan; exact-head hosted qualification and fresh review remain integration gates.
+
+
 ### Preserve shell values while avoiding pinned nested-parser failures
 
 **Cause.** Semgrep 1.183.0 can reject valid double-quoted non-BMP log labels

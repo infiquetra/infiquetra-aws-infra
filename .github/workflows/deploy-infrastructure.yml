@@ -20,11 +20,10 @@ on:
       - '.github/workflows/reusable-security-scan.yml'
       - '.github/workflows/reusable-cdk-synthesis.yml'
       - 'tools/ci_scanners.py'
+      - 'tools/ci_scanner_plan.py'
+      - 'tests/unit/test_ci_scanner_scope.py'
       - 'tests/unit/test_ci_scanners.py'
-      # Exact parser-compatibility workflow/action/test paths are source-only.
-      - '.github/actions/setup-aws-credentials/action.yml'
-      - '.github/actions/setup-node-cdk/action.yml'
-      - '.github/workflows/reusable-aws-deployment.yml'
+      # These quality/test paths are not used by foundation deployment.
       - '.github/workflows/reusable-code-quality.yml'
       - 'tests/unit/test_workflow_parser_compat.py'
       # Separate CAMPPS deploy-role changes do not modify the management app.

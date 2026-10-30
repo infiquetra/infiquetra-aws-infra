@@ -105,7 +105,7 @@ jobs:
         # Scan genuine synthesized output even when the independent lint fails.
         if: ${{ !cancelled() && steps.cdk-synth.outcome == 'success' }}
         run: |
-          pip install checkov
+          pip install checkov==3.4.0
           uv run --frozen python "$GITHUB_WORKSPACE/tools/ci_scanners.py" checkov
 
       - name: 💰 Cost Estimation
@@ -136,6 +136,7 @@ jobs:
             ${{ inputs.working-directory }}/cdk.out/
             ${{ inputs.working-directory }}/checkov-cfn-report.json/
             ${{ inputs.working-directory }}/checkov-execution.json
+            ${{ inputs.working-directory }}/checkov-scope.json
             ${{ inputs.working-directory }}/checkov-scanner.log
             ${{ inputs.working-directory }}/checkov-version.log
           if-no-files-found: warn

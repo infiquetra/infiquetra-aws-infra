@@ -44,7 +44,7 @@ jobs:
 
       - name: 🔧 Install security tools
         run: |
-          pip install semgrep
+          pip install semgrep==1.183.0
           echo "✅ Installed security scanning tools"
 
       # Valid findings remain advisory; execution/report failures fail the job.
@@ -78,7 +78,9 @@ jobs:
             ${{ inputs.working-directory }}/bandit-report.json
             ${{ inputs.working-directory }}/semgrep-report.json
             ${{ inputs.working-directory }}/bandit-execution.json
+            ${{ inputs.working-directory }}/bandit-scope.json
             ${{ inputs.working-directory }}/semgrep-execution.json
+            ${{ inputs.working-directory }}/semgrep-scope.json
             ${{ inputs.working-directory }}/bandit-scanner.log
             ${{ inputs.working-directory }}/semgrep-scanner.log
             ${{ inputs.working-directory }}/bandit-version.log
