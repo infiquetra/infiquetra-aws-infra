@@ -36,8 +36,10 @@ runs:
     - name: 🔍 Get AWS account ID
       id: get-account-id
       shell: bash
+      env:
+        CI_AWS_REGION: ${{ inputs.aws-region }}
       run: |
         ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
         echo "account-id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
         echo "✅ Authenticated to AWS account: $ACCOUNT_ID"
-        echo "📍 Region: ${{ inputs.aws-region }}"
+        echo '📍 Region: '"$CI_AWS_REGION"

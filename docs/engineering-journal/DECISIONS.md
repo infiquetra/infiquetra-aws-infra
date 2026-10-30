@@ -1,6 +1,120 @@
 # DECISIONS
 
+## 2026-10-30
+
+### Preserve deployment dependencies and prove scanner scope independently
+
+**Decision.** Remove the three permanent exclusions for the reusable foundation
+deployer and AWS credential/CDK tool actions. Standalone changes to those files
+again select the baseline foundation push workflow. Retain only additions owned
+by source validation, synthesis validation and tests. No commit/SHA bypass or
+workflow disable replaces the trigger. Integration may run the existing pipeline;
+the coordinating operator owns its timing after qualification.
+
+**Scanner boundary.** Report totals cannot establish completeness. Run exact
+supported scanner versions in their installed environments and record discovery
+before execution: Bandit's real file discovery and Semgrep's rule-aware engine
+plan. Semgrep's normal auto configuration is resolved once within the same CLI
+invocation; the adapter records that actual rule identity, not a second lookup.
+Normalized report targets must equal the plan, including ignored/non-applicable
+semantics. Bind planned source hashes, command, version and scope digest to the
+execution receipt. Missing, duplicated, extra or invalid targets fail closed.
+
+**Checkov.** Independently enumerate parsed CloudFormation resources and their
+registered applicable checks. Verify actual registry execution and report check
+identities. Observe graph workers at their native boundary, including exceptions
+that the pinned SDK's futures otherwise swallow. Require every selected worker
+to finish and return its result, including an empty result for inapplicable
+checks. Bind native post-filter resource outcomes to exact report identities and
+states; missing, extra, duplicate or changed records fail closed. Preserve explicit
+UNKNOWN results that Checkov's serializer omits, admitting only CKV_AWS_62/63 on
+IAM users, groups or roles whose original source and evaluated configuration both
+prove an absent or empty inline-policy list. Malformed policy shapes, other
+UNKNOWNs and check exceptions fail closed. Do not invent checks for unsupported
+resource types. These pinned SDK observations need renewed qualification if the
+scanner version or its native filtering/report projection changes.
+
+**Preservation.** Previous interpolation/Unicode fixes, genuine advisory findings,
+reusable contracts and strict required checks remain. The earlier five-path
+parser-exclusion decision below is superseded for deployment dependencies.
+Focused source/report controls precede the single authorized final fixed-catalogue
+scan; exact-head hosted qualification and fresh review remain integration gates.
+
+
+### Preserve shell values while avoiding pinned nested-parser failures
+
+**Cause.** Semgrep 1.183.0 can reject valid double-quoted non-BMP log labels
+while its YAML rules parse a run scalar as Bash. Focused original/quote variants
+also expose a distinct failure on GitHub expressions embedded in shell source.
+The recorded current-source baseline has 20 internal and eight partial-parsing
+errors; not all share the emoji cause. No rule or error is suppressed.
+
+**Decision.** Change only fourteen demonstrated log expressions to adjacent
+single-quoted literal/double-quoted expansion forms. Bind expressions as step env
+data in nine demonstrated failing blocks, retaining the exact expressions and
+intended string/boolean values and quoting their shell use. Version selectors and
+tag transport URLs remain single arguments. Inputs, callers, output/status names,
+conditions, roles, permissions, actual CDK commands and scanner helpers remain.
+No workflow, deployment or cloud command was executed to compare representations.
+
+**Controls.** Inert Bash printf/argument/log controls verify literal argument and
+stdout identity, including spaces, quotes and shell-looking variable data. Typed
+approval and three-producer quality conditions retain their meaning. Syntax is
+checked without execution. Two bounded scans of the exact failing rules establish
+the causes and show zero errors for the proposal while still detecting the inert
+unsafe eval/pipe controls. This does not by itself establish the full catalogue.
+Five exact action/workflow/test paths join deployment exclusions; removal and
+mixed foundation/runtime/unknown-path controls retain foundation selection.
+
+**Warning visibility and limits.** Findings remain advisory; genuine tool/report
+errors still fail admission. Step-env transport can remediate interpolation
+warnings at those converted steps: retain every baseline finding in the comparison
+ledger and distinguish source remediation from lost targets or suppressed rules.
+Unchanged mutable-action, unsafe pipe and Python findings are not waived. Exactly
+one actual-source qualification with the same frozen 1,074-rule catalogue and
+Semgrep build is authorized; its full target/finding/residual-error comparison is
+the result, not permission to retry or accept errors. Privileged CDK/Checkov and
+hosted admission/cache/deployment-boundary qualification remain separate gates.
+
+**Refs.** `tests/unit/test_workflow_parser_compat.py`;
+`tests/unit/test_ci_scanners.py`; `tools/ci_scanners.py`.
+
 ## 2026-10-29
+
+### Scanner execution errors block admission; valid findings remain advisory
+
+**Author.** Codex
+**Decision.** Preserve the current advisory finding policy for Bandit, Semgrep
+and Checkov. Require genuine execution, supported report schemas, consistent
+counts and nonempty scan targets. Accept a finding exit only when it matches
+the fixed CLI invocation and a complete validated report; execution, parsing,
+missing-report and integrity failures fail the producer and required summary.
+**Rationale.** Semgrep can return zero with scan errors: the reviewed report has
+21 findings and 36 internal-matching/partial-parsing errors. These are distinct
+from policy findings. Checkov's output-path option creates a directory, even
+when its name ends in `.json`; its actual report is `results_json.json` inside.
+**Ownership.** Source security runs Bandit and Semgrep. Synthesis owns the sole
+CloudFormation Checkov scan, verifies resource coverage, preserves its report
+directory, and includes that scan in final synthesis admission. Receipts and
+diagnostic logs remain artifacts; summaries report execution and finding policy
+without echoing source snippets. Dynamic step results travel as environment data.
+**Rejected alternatives.** Blanket soft-fail, treating missing reports as zero,
+or accepting arbitrary nonzero exits would preserve false greens. Findings are
+not newly suppressed or made blocking. The unused source-job Checkov branch
+cannot establish template coverage and is removed.
+**Deployment boundary.** Only the four exact scanner helper/test/workflow paths
+are added to the existing deployment exclusions. Mixed foundation/runtime edits
+still select deployment. GitHub's diff-timeout fallback can still run a workflow;
+the owning operator must verify the final diff and observe ordinary pushes.
+**Validation.** Actual workflow/helper controls inject CLI and report failures,
+retain valid advisory findings, check final producer admission and exercise exact
+deployment exclusions with removal and mixed-change controls. Real scanner and
+hosted graph qualification remain separate from the CLI transport shims.
+**Revisit when.** A scanner/report family changes or a separately approved finding
+severity policy replaces the current advisory policy.
+**Refs.** `tools/ci_scanners.py`; `tests/unit/test_ci_scanners.py`;
+[Semgrep exits](https://docs.semgrep.dev/cli-reference#exit-codes),
+[Checkov output paths](https://www.checkov.io/2.Basics/CLI%20Command%20Reference.html).
 
 ### Resolve unit imports and pass summary inputs as environment data
 

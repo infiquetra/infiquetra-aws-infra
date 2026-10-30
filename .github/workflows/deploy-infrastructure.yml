@@ -16,6 +16,16 @@ on:
       - '.github/workflows/deploy-infrastructure.yml'
       - '.github/workflows/pull-request-validation.yml'
       - 'tests/unit/test_pr_validation_ci.py'
+      # Exact CI scanner paths do not change management-account infrastructure.
+      - '.github/workflows/reusable-security-scan.yml'
+      - '.github/workflows/reusable-cdk-synthesis.yml'
+      - 'tools/ci_scanners.py'
+      - 'tools/ci_scanner_plan.py'
+      - 'tests/unit/test_ci_scanner_scope.py'
+      - 'tests/unit/test_ci_scanners.py'
+      # These quality/test paths are not used by foundation deployment.
+      - '.github/workflows/reusable-code-quality.yml'
+      - 'tests/unit/test_workflow_parser_compat.py'
       # Separate CAMPPS deploy-role changes do not modify the management app.
       - '.github/workflows/deploy-campps-nonprod-roles.yml'
       - '.github/workflows/bootstrap-campps-nonprod-roles.yml'
@@ -88,18 +98,25 @@ jobs:
 
     steps:
       - name: 📊 Deployment results
+        env:
+          CI_DEPLOYMENT_STATUS: ${{ needs.deploy.outputs.deployment-status }}
+          CI_DEPLOYMENT_TAG: ${{ needs.deploy.outputs.deployment-tag }}
+          CI_ENVIRONMENT: ${{ inputs.environment || 'production' }}
+          CI_STACK: ${{ inputs.stack || 'all' }}
+          CI_COMMIT_SHA: ${{ github.sha }}
+          CI_ACTOR: ${{ github.actor }}
         run: |
-          echo "# 🎯 Deployment Results" >> $GITHUB_STEP_SUMMARY
+          echo '# 🎯 Deployment Results' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          STATUS="${{ needs.deploy.outputs.deployment-status }}"
-          TAG="${{ needs.deploy.outputs.deployment-tag }}"
+          STATUS="$CI_DEPLOYMENT_STATUS"
+          TAG="$CI_DEPLOYMENT_TAG"
 
           if [[ "$STATUS" == "success" ]]; then
             echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Deployment label**: ${{ inputs.environment || 'production' }}" >> $GITHUB_STEP_SUMMARY
-            echo "**Stack**: ${{ inputs.stack || 'all' }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Deployment label**: $CI_ENVIRONMENT" >> $GITHUB_STEP_SUMMARY
+            echo "**Stack**: $CI_STACK" >> $GITHUB_STEP_SUMMARY
 
             if [[ "$TAG" != "" ]]; then
               echo "**Tag**: \`$TAG\`" >> $GITHUB_STEP_SUMMARY
@@ -118,6 +135,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: $CI_COMMIT_SHA" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by**: $CI_ACTOR" >> $GITHUB_STEP_SUMMARY
           echo "**Time**: $(date -u)" >> $GITHUB_STEP_SUMMARY

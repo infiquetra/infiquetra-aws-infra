@@ -88,16 +88,21 @@ jobs:
       - name: 🏢 Deploy Organization Stack
         id: deploy-org
         if: ${{ inputs.stack == 'organization' || inputs.stack == 'all' }}
+        env:
+          CI_ENVIRONMENT: ${{ inputs.environment }}
+          CI_AWS_ACCOUNT: ${{ inputs.aws-account }}
+          CI_AWS_REGION: ${{ inputs.aws-region }}
+          CI_REQUIRE_APPROVAL: ${{ inputs.require-approval }}
         run: |
-          echo "## 🏢 Deploying Organization Stack" >> $GITHUB_STEP_SUMMARY
+          echo '## 🏢 Deploying Organization Stack' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Deployment label**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Account**: ${{ inputs.aws-account }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Region**: ${{ inputs.aws-region }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment label**: $CI_ENVIRONMENT" >> $GITHUB_STEP_SUMMARY
+          echo "**Account**: $CI_AWS_ACCOUNT" >> $GITHUB_STEP_SUMMARY
+          echo "**Region**: $CI_AWS_REGION" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           APPROVAL_FLAG="--require-approval never"
-          if [[ "${{ inputs.require-approval }}" == "true" ]]; then
+          if [[ "$CI_REQUIRE_APPROVAL" == "true" ]]; then
             APPROVAL_FLAG=""
           fi
 
@@ -109,21 +114,25 @@ jobs:
             echo "status=failure" >> $GITHUB_OUTPUT
             exit 1
           fi
-
       - name: 👥 Deploy SSO Stack
         id: deploy-sso
         if: ${{ inputs.stack == 'sso' || inputs.stack == 'all' }}
+        env:
+          CI_ENVIRONMENT: ${{ inputs.environment }}
+          CI_AWS_ACCOUNT: ${{ inputs.aws-account }}
+          CI_AWS_REGION: ${{ inputs.aws-region }}
+          CI_REQUIRE_APPROVAL: ${{ inputs.require-approval }}
         run: |
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 👥 Deploying SSO Stack" >> $GITHUB_STEP_SUMMARY
+          echo '## 👥 Deploying SSO Stack' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Deployment label**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Account**: ${{ inputs.aws-account }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Region**: ${{ inputs.aws-region }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment label**: $CI_ENVIRONMENT" >> $GITHUB_STEP_SUMMARY
+          echo "**Account**: $CI_AWS_ACCOUNT" >> $GITHUB_STEP_SUMMARY
+          echo "**Region**: $CI_AWS_REGION" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           APPROVAL_FLAG="--require-approval never"
-          if [[ "${{ inputs.require-approval }}" == "true" ]]; then
+          if [[ "$CI_REQUIRE_APPROVAL" == "true" ]]; then
             APPROVAL_FLAG=""
           fi
 
@@ -135,51 +144,65 @@ jobs:
             echo "status=failure" >> $GITHUB_OUTPUT
             exit 1
           fi
-
       - name: 🏷️ Create deployment tag
         id: create-tag
         if: success() && inputs.environment == 'production'
+        env:
+          CI_COMMIT_SHA: ${{ github.sha }}
+          CI_ENVIRONMENT: ${{ inputs.environment }}
+          CI_STACK: ${{ inputs.stack }}
+          CI_GITHUB_TOKEN: ${{ github.token }}
+          CI_REPOSITORY: ${{ github.repository }}
         run: |
           TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          SHORT_SHA=$(echo "$CI_COMMIT_SHA" | cut -c1-7)
           TAG_NAME="deploy-${TIMESTAMP}-${SHORT_SHA}"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG_NAME" -m "Deployment to ${{ inputs.environment }} on ${TIMESTAMP} - ${{ inputs.stack }} stack(s)"
-          git push https://x-access-token:${{ github.token }}@github.com/${{ github.repository }} "$TAG_NAME"
+          git tag -a "$TAG_NAME" -m "Deployment to $CI_ENVIRONMENT on ${TIMESTAMP} - $CI_STACK stack(s)"
+          git push "https://x-access-token:$CI_GITHUB_TOKEN@github.com/$CI_REPOSITORY" "$TAG_NAME"
 
           echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🏷️ **Created deployment tag**: \`$TAG_NAME\`" >> $GITHUB_STEP_SUMMARY
-
+          echo '🏷️ **Created deployment tag**: `'"$TAG_NAME"'`' >> $GITHUB_STEP_SUMMARY
       - name: 📊 Generate deployment summary
         id: summary
         if: always()
+        env:
+          CI_ENVIRONMENT: ${{ inputs.environment }}
+          CI_STACK: ${{ inputs.stack }}
+          CI_AWS_ACCOUNT: ${{ inputs.aws-account }}
+          CI_AWS_REGION: ${{ inputs.aws-region }}
+          CI_COMMIT_SHA: ${{ github.sha }}
+          CI_ACTOR: ${{ github.actor }}
+          CI_DEPLOYMENT_TAG: ${{ steps.create-tag.outputs.tag }}
         run: |
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 📊 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo '## 📊 Deployment Summary' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Deployment label** | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Stack(s)** | ${{ inputs.stack }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Account** | ${{ inputs.aws-account }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Region** | ${{ inputs.aws-region }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit** | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Triggered by** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployment label** | $CI_ENVIRONMENT |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Stack(s)** | $CI_STACK |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Account** | $CI_AWS_ACCOUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Region** | $CI_AWS_REGION |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | $CI_COMMIT_SHA |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered by** | $CI_ACTOR |" >> $GITHUB_STEP_SUMMARY
           echo "| **Deployment time** | $(date -u) |" >> $GITHUB_STEP_SUMMARY
 
-          if [[ "${{ steps.create-tag.outputs.tag }}" != "" ]]; then
-            echo "| **Tag** | \`${{ steps.create-tag.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          if [[ "$CI_DEPLOYMENT_TAG" != "" ]]; then
+            echo "| **Tag** | \`$CI_DEPLOYMENT_TAG\` |" >> $GITHUB_STEP_SUMMARY
           fi
-
       - name: 📊 Set final status
         id: final-status
         if: always()
+        env:
+          CI_ORG_STATUS: ${{ steps.deploy-org.outputs.status || 'skipped' }}
+          CI_SSO_STATUS: ${{ steps.deploy-sso.outputs.status || 'skipped' }}
         run: |
-          ORG_STATUS="${{ steps.deploy-org.outputs.status || 'skipped' }}"
-          SSO_STATUS="${{ steps.deploy-sso.outputs.status || 'skipped' }}"
+          ORG_STATUS="$CI_ORG_STATUS"
+          SSO_STATUS="$CI_SSO_STATUS"
 
           if [[ "$ORG_STATUS" == "failure" ]] || [[ "$SSO_STATUS" == "failure" ]]; then
             echo "status=failure" >> $GITHUB_OUTPUT

@@ -36,7 +36,7 @@ This document describes the migration from the monolithic CI/CD pipelines to a m
 │
 ├── workflows/
 │   ├── reusable-code-quality.yml    # Ruff + mypy checks
-│   ├── reusable-security-scan.yml   # Bandit + semgrep + checkov
+│   ├── reusable-security-scan.yml   # Bandit + Semgrep; Checkov belongs to synthesis
 │   ├── reusable-cdk-synthesis.yml   # CDK synthesis + validation
 │   ├── reusable-aws-deployment.yml  # Multi-environment deployment
 │   ├── pull-request-validation.yml  # PR validation (replaces ci.yml)
@@ -569,3 +569,25 @@ If you encounter issues with the new pipeline:
 - [Composite Actions](https://docs.github.com/en/actions/creating-actions/creating-a-composite-action)
 - [act - Run GitHub Actions Locally](https://github.com/nektos/act)
 - [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/v2/guide/home.html)
+
+### Scanner evidence and ownership
+
+The source security job runs Bandit and Semgrep; its public
+`security-findings-count` output counts those source findings. The
+`security-reports` artifact includes their JSON reports, execution receipts,
+independent scope plans, version output and logs. CloudFormation Checkov runs
+against actual synthesized `cdk.out` in the synthesis job; its report directory,
+receipt and scope plan belong to `cdk-artifacts`. Valid findings remain advisory;
+execution, report integrity and planned coverage failures block admission.
+
+Planning adapters support Bandit 1.9.4, Semgrep 1.183.0 and Checkov 3.4.0.
+Semgrep resolves normal `--config=auto` once and records the engine's actual
+rule-aware plan in that invocation. Unknown planner versions fail closed.
+Checkov records resource-registry execution, including explicit UNKNOWN outcomes
+that its JSON format omits. Only native CKV_AWS_62/63 nonapplicability with source
+and evaluated-context proof of absent/empty IAM inline policies is accepted.
+Malformed or unclassified UNKNOWNs and exceptions fail closed. Native graph
+workers must finish and return results for every selected check; exceptions are
+captured before the SDK can swallow them. Applicable post-filter resource results
+must match report identities and states exactly. Empty native results need no
+invented records; missing, extra, duplicate or changed records fail admission.

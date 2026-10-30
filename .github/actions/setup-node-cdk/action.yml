@@ -32,11 +32,13 @@ runs:
     - name: 🏗️ Install AWS CDK CLI
       id: install-cdk
       shell: bash
+      env:
+        CI_CDK_VERSION: ${{ inputs.cdk-version }}
       run: |
-        if [ "${{ inputs.cdk-version }}" = "latest" ]; then
+        if [ "$CI_CDK_VERSION" = "latest" ]; then
           npm install -g aws-cdk
         else
-          npm install -g aws-cdk@${{ inputs.cdk-version }}
+          npm install -g "aws-cdk@$CI_CDK_VERSION"
         fi
 
         # Get CDK version for output
