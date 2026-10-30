@@ -22,10 +22,17 @@ execution receipt. Missing, duplicated, extra or invalid targets fail closed.
 
 **Checkov.** Independently enumerate parsed CloudFormation resources and their
 registered applicable checks. Verify actual registry execution and report check
-identities. Preserve explicit UNKNOWN results that Checkov's serializer omits;
-check exceptions are execution failures, not acceptable UNKNOWN results. Do not
-invent checks for unsupported resource types. Per-resource graph-check
-applicability remains unproved and is explicit in receipts and summaries.
+identities. Observe graph workers at their native boundary, including exceptions
+that the pinned SDK's futures otherwise swallow. Require every selected worker
+to finish and return its result, including an empty result for inapplicable
+checks. Bind native post-filter resource outcomes to exact report identities and
+states; missing, extra, duplicate or changed records fail closed. Preserve explicit
+UNKNOWN results that Checkov's serializer omits, admitting only CKV_AWS_62/63 on
+IAM users, groups or roles whose original source and evaluated configuration both
+prove an absent or empty inline-policy list. Malformed policy shapes, other
+UNKNOWNs and check exceptions fail closed. Do not invent checks for unsupported
+resource types. These pinned SDK observations need renewed qualification if the
+scanner version or its native filtering/report projection changes.
 
 **Preservation.** Previous interpolation/Unicode fixes, genuine advisory findings,
 reusable contracts and strict required checks remain. The earlier five-path

@@ -146,8 +146,29 @@ def _fixture_scope(tool: str, findings: int = 0) -> dict[str, Any]:
             for i in range(findings + 1)
         ],
         "evaluation_errors": [],
-        "graph_rule_ids": [],
-        "graph_coverage_limit": "fixture graph coverage limit",
+        "unknown_context": [],
+        "graph_registries": [[]],
+        "graph": {
+            "started": True,
+            "completed": True,
+            "results_observed": True,
+            "batches": [
+                {
+                    key: []
+                    for key in (
+                        "registered",
+                        "selected",
+                        "started",
+                        "completed",
+                        "returned",
+                        "errors",
+                    )
+                }
+            ],
+            "returned_rule_ids": [],
+            "evaluations": [],
+            "errors": [],
+        },
     }
 
 

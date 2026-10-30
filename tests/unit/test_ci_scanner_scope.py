@@ -146,11 +146,33 @@ def test_checkov_keeps_legitimate_unknown_explicit_and_requires_its_execution(
 ) -> None:
     report = _report("checkov")
     scope = _fixture_scope("checkov")
-    identity = ["Sample.template.json", "AWS::S3::Bucket.Sample", "CKV_AWS_2"]
+    # Match the pinned native nonapplicability: an IAM user with no inline
+    # policy. An arbitrary UNKNOWN on an S3 check is not safe to admit.
+    resource = "AWS::IAM::User.Sample"
+    (source / "cdk.out/Sample.template.json").write_text(
+        json.dumps(
+            {
+                "Resources": {
+                    "Sample": {
+                        "Type": "AWS::IAM::User",
+                        "Properties": {"UserName": "sample"},
+                    }
+                }
+            }
+        )
+    )
+    scope["resources"][0][1] = resource
+    scope["checks"][0][1] = resource
+    scope["evaluations"][0][1] = resource
+    report["results"]["passed_checks"][0]["resource"] = resource
+    identity = ["Sample.template.json", resource, "CKV_AWS_62"]
     scope["checks"].append(identity)
     with pytest.raises(scanners.ScanError, match="registry execution"):
         scanners._checkov(report, VERSIONS["checkov"], scope)
     scope["evaluations"].append([*identity, "UNKNOWN"])
+    scope["unknown_context"] = [
+        {"target": identity, "shape": [True, False, False, False]}
+    ]
     assert scanners._checkov(report, VERSIONS["checkov"], scope).findings == 0
     scope["evaluation_errors"].append(identity)
     with pytest.raises(scanners.ScanError, match="execution errors"):

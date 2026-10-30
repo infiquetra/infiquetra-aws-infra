@@ -584,6 +584,10 @@ Planning adapters support Bandit 1.9.4, Semgrep 1.183.0 and Checkov 3.4.0.
 Semgrep resolves normal `--config=auto` once and records the engine's actual
 rule-aware plan in that invocation. Unknown planner versions fail closed.
 Checkov records resource-registry execution, including explicit UNKNOWN outcomes
-that its JSON format omits. Exceptions cannot become accepted UNKNOWN results.
-Graph-check applicability is not independently planned; that remaining limit is
-recorded in the receipt and summary, not treated as proved complete coverage.
+that its JSON format omits. Only native CKV_AWS_62/63 nonapplicability with source
+and evaluated-context proof of absent/empty IAM inline policies is accepted.
+Malformed or unclassified UNKNOWNs and exceptions fail closed. Native graph
+workers must finish and return results for every selected check; exceptions are
+captured before the SDK can swallow them. Applicable post-filter resource results
+must match report identities and states exactly. Empty native results need no
+invented records; missing, extra, duplicate or changed records fail admission.

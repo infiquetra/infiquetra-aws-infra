@@ -2,7 +2,7 @@
 
 Supported planners: Bandit 1.9.4, Semgrep 1.183.0, Checkov 3.4.0. Required
 fields, independent target plans and CLI exits must agree; other versions fail
-closed. Checkov graph-check applicability remains an explicit coverage limit.
+closed. Checkov graph workers and their native filtered outcomes must agree.
 Exit/output contracts: bandit.readthedocs.io/en/latest/man/bandit.html,
 docs.semgrep.dev/cli-reference#exit-codes and checkov.io/2.Basics/
 CLI%20Command%20Reference.html (output-file-path is a DIRECTORY).
@@ -300,6 +300,108 @@ def _semgrep(report: dict[str, Any], version: str, scope: dict[str, Any]) -> Cou
     return Counts(len(results), len(scanned))
 
 
+def _rule_ids(value: Any) -> set[str]:
+    rows = _array(value)
+    ids = {_text(row) for row in rows}
+    _require(len(ids) == len(rows), "duplicate graph rule identity")
+    return ids
+
+
+def _graph_evaluations(scope: dict[str, Any]) -> set[tuple[str, ...]]:
+    graph = _object(scope.get("graph"))
+    _require(
+        all(
+            graph.get(key) is True
+            for key in ("started", "completed", "results_observed")
+        )
+        and not _array(graph.get("errors")),
+        "Checkov graph phase failed or incomplete",
+    )
+    registries = _array(scope.get("graph_registries"))
+    batches = _array(graph.get("batches"))
+    _require(
+        bool(registries) and len(batches) == len(registries),
+        "missing Checkov graph registry execution",
+    )
+    selected: set[str] = set()
+    for registered, batch_value in zip(registries, batches, strict=True):
+        batch = _object(batch_value)
+        required = _rule_ids(batch.get("selected"))
+        _require(
+            _rule_ids(batch.get("registered")) == _rule_ids(registered)
+            and required <= _rule_ids(registered)
+            and not selected & required
+            and all(
+                _rule_ids(batch.get(key)) == required
+                for key in ("started", "completed", "returned")
+            )
+            and not _array(batch.get("errors")),
+            "Checkov graph worker failure or missing/duplicate completion",
+        )
+        selected.update(required)
+    _require(
+        _rule_ids(graph.get("returned_rule_ids")) == selected,
+        "incomplete Checkov filtered graph results",
+    )
+    rows = _identities(graph.get("evaluations"), 4)
+    _require(
+        len({row[:3] for row in rows}) == len(rows)
+        and all(
+            row[2] in selected and row[3] in {"PASSED", "FAILED", "SKIPPED"}
+            for row in rows
+        ),
+        "invalid, duplicate or unassessable Checkov graph outcome",
+    )
+    return rows
+
+
+def _nonapplicable_unknowns(
+    scope: dict[str, Any],
+    unknown: set[tuple[str, ...]],
+    resources: dict[tuple[str, str], dict[str, Any]],
+) -> None:
+    contexts = _array(scope.get("unknown_context"))
+    seen: set[tuple[str, ...]] = set()
+    for value in contexts:
+        item = _object(value)
+        identity = next(iter(_identities([item.get("target")], 3)))
+        _require(
+            identity in unknown and identity not in seen,
+            "unexpected or duplicate UNKNOWN context",
+        )
+        seen.add(identity)
+        key = (identity[0], identity[1])
+        _require(key in resources, "UNKNOWN outside parsed resources")
+        resource = resources[key]
+        properties = resource.get("Properties")
+        valid = isinstance(properties, dict)
+        properties = properties if isinstance(properties, dict) else {}
+        shape = [
+            valid,
+            valid and "Policies" in properties,
+            valid
+            and isinstance(properties.get("Policies"), list)
+            and properties["Policies"] == [],
+            valid and "PolicyDocument" in properties,
+        ]
+        actual = _array(item.get("shape"))
+        # CKV_AWS_62/63 return UNKNOWN when an inline-policy-bearing entity
+        # has no inline policy. The same return for malformed/non-object
+        # Policies is unassessable. Verify both original JSON and native shape.
+        _require(
+            identity[2] in {"CKV_AWS_62", "CKV_AWS_63"}
+            and resource.get("Type")
+            in {"AWS::IAM::User", "AWS::IAM::Group", "AWS::IAM::Role"}
+            and valid
+            and (not shape[1] or shape[2])
+            and not shape[3]
+            and all(type(flag) is bool for flag in actual)
+            and actual == shape,
+            "unassessable Checkov UNKNOWN; nonapplicability not established",
+        )
+    _require(seen == unknown, "missing source/context proof for Checkov UNKNOWN")
+
+
 def _checkov(value: Any, version: str, scope: dict[str, Any]) -> Counts:
     if isinstance(value, list):
         _require(len(value) == 1, "expected one CloudFormation report")
@@ -321,14 +423,14 @@ def _checkov(value: Any, version: str, scope: dict[str, Any]) -> Counts:
     _coverage(["cdk.out/" + path for path in targets], scope)
     planned_resources = _identities(scope.get("resources"), 2)
     source_resources = {
-        (path, f"{_text(_object(resource).get('Type'))}.{name}")
+        (path, f"{_text(_object(resource).get('Type'))}.{name}"): _object(resource)
         for path in targets
         for name, resource in _object(read_json(Path("cdk.out") / path))[
             "Resources"
         ].items()
     }
     _require(
-        planned_resources == source_resources,
+        planned_resources == set(source_resources),
         "Checkov parser/resource inventory mismatch",
     )
     expected_checks = _identities(scope.get("checks"), 3)
@@ -344,9 +446,11 @@ def _checkov(value: Any, version: str, scope: dict[str, Any]) -> Counts:
         ),
         "incomplete Checkov registry execution",
     )
-    # UNKNOWN is omitted by Checkov's JSON serializer. Preserve its explicit
-    # actual execution evidence; never invent passed checks for such resources.
     unknown = {item[:3] for item in evaluated if item[3] == "UNKNOWN"}
+    _nonapplicable_unknowns(scope, unknown, source_resources)
+    graph = _graph_evaluations(scope)
+    graph_checks = {item[:3] for item in graph}
+    _require(not expected_checks & graph_checks, "ambiguous Checkov check ownership")
     observed_checks: set[tuple[str, str, str]] = set()
     _require(
         _count(summary.get("resource_count")) == expected_resources,
@@ -370,8 +474,7 @@ def _checkov(value: Any, version: str, scope: dict[str, Any]) -> Counts:
                 "Checkov check outside parsed resource inventory",
             )
             _require(
-                identity in expected_checks
-                or item["check_id"] in scope["graph_rule_ids"],
+                identity in expected_checks or identity in graph_checks,
                 "unexpected Checkov check target",
             )
             _require(
@@ -387,9 +490,13 @@ def _checkov(value: Any, version: str, scope: dict[str, Any]) -> Counts:
                     (*identity, label.upper()) in evaluated,
                     "Checkov report disagrees with executed check state",
                 )
+            else:
+                _require(
+                    (*identity, label.upper()) in graph,
+                    "Checkov graph report disagrees with native outcome",
+                )
     _require(
-        expected_checks - unknown <= observed_checks
-        and not (unknown & observed_checks),
+        (expected_checks - unknown) | graph_checks == observed_checks,
         "incomplete Checkov applicable resource check coverage",
     )
     _require(
@@ -509,7 +616,10 @@ def run_scan(tool: str) -> int:
             receipt["unknown_checks"] = [
                 row for row in scope["evaluations"] if row[3] == "UNKNOWN"
             ]
-            receipt["graph_coverage_limit"] = scope["graph_coverage_limit"]
+            receipt["graph_execution"] = {
+                "completed_checks": len(scope["graph"]["returned_rule_ids"]),
+                "applicable_results": len(scope["graph"]["evaluations"]),
+            }
         receipt.update(
             asdict(counts),
             execution="success",
@@ -524,8 +634,10 @@ def run_scan(tool: str) -> int:
         )
         if tool == "checkov":
             _summary(
-                f"Checkov: {len(receipt['unknown_checks'])} explicit UNKNOWN check(s); "
-                + receipt["graph_coverage_limit"]
+                f"Checkov: {len(receipt['unknown_checks'])} source-justified "
+                "nonapplicable UNKNOWN check(s); "
+                f"{receipt['graph_execution']['completed_checks']} "
+                "graph checks completed with exact native outcome/report coverage."
             )
         status = 0
     except (ScanError, OSError) as exc:
