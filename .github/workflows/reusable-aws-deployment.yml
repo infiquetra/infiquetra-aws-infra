@@ -29,12 +29,12 @@ on:
         description: 'Python version to use'
         required: false
         type: string
-        default: '3.13'
+        default: '3.13.16'
       node-version:
         description: 'Node.js version to use'
         required: false
         type: string
-        default: '18'
+        default: '22.23.4'
     secrets:
       aws-role-arn:
         description: 'AWS IAM role ARN for OIDC authentication'
