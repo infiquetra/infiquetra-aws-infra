@@ -60,7 +60,7 @@ jobs:
       - name: Set up Python dependencies
         uses: ./.github/actions/setup-python-uv
         with:
-          python-version: '3.13'
+          python-version: '3.13.16'
       - name: Verify the reviewed current main before obtaining credentials
         run: |
           git diff --quiet

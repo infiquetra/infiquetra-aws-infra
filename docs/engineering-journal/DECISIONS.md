@@ -913,3 +913,9 @@ infiquetra-aws-infra#134 + #135 (both CLOSED 2026-06-20); parent campps-platform
 **Commit:** PR [#4](https://github.com/infiquetra/infiquetra-aws-infra/pull/4).
 
 ---
+
+### 2026-10-31 — I06 pinned setup candidate
+
+Propose Python 3.13.16, uv 0.13.6, Node 22.23.4 and CDK CLI 2.1144.0 as one toolchain change. Freeze root dependency installation and cache the actual uv download directory using exact manifest/lock and installed tool identities. Retain caller overrides, outputs and all validation and deployment controls. Dependency cache hits grant no release authority.
+
+The [source proposal and qualification plan](narratives/2026-10-31-i06-toolchain-source-proposal.md) inventories all nine Python and three Node composite calls. This candidate has no new native qualification. Roll back versions, composites and caller updates together on incompatibility. A future merge triggers foundation deployment and requires a new concrete owner decision after review and validation.
