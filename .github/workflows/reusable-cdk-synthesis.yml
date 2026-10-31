@@ -67,7 +67,7 @@ jobs:
           echo '## 🏗️ CDK Synthesis Results' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if uv run cdk synth --all; then
+          if uv run python "$GITHUB_WORKSPACE/tools/locked_cdk.py" synth --all; then
             echo "✅ **CDK synthesis successful**" >> $GITHUB_STEP_SUMMARY
             echo "status=pass" >> $GITHUB_OUTPUT
           else

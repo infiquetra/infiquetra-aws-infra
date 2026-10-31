@@ -51,7 +51,10 @@ APP = "python3 app_campps_bootstrap.py"
 STACK = "CamppsNonProdDeployRolesStack"
 EXPECTED_CHANGED_RESOURCE = "TenantSetupE2eCredentialsPolicyAC488617"
 CDK_VERSION = "2.1144.0"
-CDK_COMMAND: tuple[str, ...] = ("npx", "-y", f"aws-cdk@{CDK_VERSION}")
+CDK_COMMAND: tuple[str, ...] = (
+    sys.executable,
+    str(Path(__file__).resolve().parents[1] / "tools/locked_cdk.py"),
+)
 IGNORED_RESOURCE_TYPES = frozenset({"AWS::CDK::Metadata"})
 REPO_ROOT = Path(__file__).resolve().parent.parent
 

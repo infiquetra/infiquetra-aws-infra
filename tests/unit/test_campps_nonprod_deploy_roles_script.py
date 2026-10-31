@@ -144,8 +144,11 @@ class FakeRunner:
             }
             out = outputs.get(" ".join(argv[1:]), "")
             return subprocess.CompletedProcess(argv, 0, out + "\n", "")
-        assert argv[:3] == ["npx", "-y", "aws-cdk@2.1144.0"], argv
-        command = argv[3]
+        assert argv[:2] == [
+            sys.executable,
+            str(SCRIPT_PATH.parents[1] / "tools/locked_cdk.py"),
+        ], argv
+        command = argv[2]
         self.aws.calls.append(f"cdk {command}")
         if command == "--version":
             return subprocess.CompletedProcess(argv, 0, self.version + "\n", "")
@@ -187,7 +190,7 @@ class FakeRunner:
         return [
             argv
             for argv in self.cdk_argvs()
-            if argv[3] == command and "--help" not in argv
+            if argv[2] == command and "--help" not in argv
         ]
 
 
@@ -277,7 +280,10 @@ def test_cdk_cli_version_is_pinned(
     module.post_merge_check()
     assert runner.cdk_argvs()
     for argv in runner.cdk_argvs():
-        assert argv[:3] == ["npx", "-y", "aws-cdk@2.1144.0"], argv
+        assert argv[:2] == [
+            sys.executable,
+            str(SCRIPT_PATH.parents[1] / "tools/locked_cdk.py"),
+        ], argv
         assert "--all" not in argv
         assert "app.py" not in " ".join(argv).replace("app_campps_bootstrap.py", "")
 
@@ -397,7 +403,7 @@ def test_deploy_uses_the_checked_assembly_and_only_the_stack(
     assembly_dir = synths[0][synths[0].index("-o") + 1]
     deploy_argv = deploys[0]
     assert deploy_argv[deploy_argv.index("--app") + 1] == assembly_dir
-    stack_args = [arg for arg in deploy_argv[4:] if arg.endswith("Stack")]
+    stack_args = [arg for arg in deploy_argv[3:] if arg.endswith("Stack")]
     assert stack_args == ["CamppsNonProdDeployRolesStack"]
     assert "--all" not in deploy_argv
     assert deploy_argv[-2:] == ["--require-approval", "never"]
@@ -411,7 +417,7 @@ def test_deploy_fails_when_stack_still_differs_after_deploy(
     real = runner.__call__
 
     def no_op_deploy(argv: Sequence[str], **kwargs: Any) -> Any:
-        if list(argv)[3:4] == ["deploy"]:
+        if list(argv)[2:3] == ["deploy"]:
             runner.argvs.append(list(argv))
             runner.envs.append(kwargs.get("env"))
             return subprocess.CompletedProcess(list(argv), 0, None, None)

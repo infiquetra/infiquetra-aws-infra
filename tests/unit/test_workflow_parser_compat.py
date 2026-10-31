@@ -100,7 +100,7 @@ def _step(path: str, identity: str) -> dict[str, Any]:
 
 def _inert(script: str, values: dict[str, str]) -> subprocess.CompletedProcess[bytes]:
     # No inherited credentials, profiles, BASH_ENV or command substitution from
-    # data. Callers pass only known printf/echo/conditional expressions.
+    # data. Callers pass inert expressions or setup blocks with refusing stubs.
     return subprocess.run(
         ["/bin/bash", "--noprofile", "--norc", "-euo", "pipefail", "-c", script],
         env={
@@ -149,17 +149,26 @@ def test_log_quoting_preserves_one_argument_and_stdout(
     assert old_stdout.stdout == new_stdout.stdout
 
 
-@pytest.mark.parametrize("version", ["2.166.0", "2.249.0", "next"])
-def test_version_selector_remains_one_inert_argument(version: str) -> None:
+@pytest.mark.parametrize("version", ["2.1144.0", "2.166.0", "2.249.0", "next"])
+def test_version_is_environment_data_and_validation_failure_stops_install(
+    version: str, tmp_path: Path
+) -> None:
     step = _step(".github/actions/setup-node-cdk/action.yml", "install-cdk")
     assert step["env"]["CI_CDK_VERSION"] == "${{ inputs.cdk-version }}"
-    line = next(
-        line.strip() for line in step["run"].splitlines() if 'npm install -g "' in line
+    assert "${{" not in step["run"]
+    # Refuse at the validator boundary without executing Node/npm/CDK. The
+    # actual script must preserve numeric input as data and propagate refusal.
+    result = _inert(
+        "node() { printf '%s\\0' \"$CI_CDK_VERSION\"; return 23; }\n"
+        "npm() { echo unexpected-install; return 99; }\n" + step["run"],
+        {"CI_CDK_VERSION": version, "GITHUB_WORKSPACE": str(tmp_path)},
     )
-    word = line.removeprefix("npm install -g ")
-    result = _inert(r"printf '%s\0' " + word, {"CI_CDK_VERSION": version})
-    assert result.returncode == 0
-    assert result.stdout == f"aws-cdk@{version}\0".encode()
+    if version == "next":
+        assert result.returncode == 1
+        assert result.stdout == b""
+    else:
+        assert result.returncode == 23
+        assert result.stdout == f"{version}\0".encode()
 
 
 def test_tag_transport_is_one_inert_argument_and_keeps_binding() -> None:

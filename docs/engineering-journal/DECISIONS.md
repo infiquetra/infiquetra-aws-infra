@@ -1,5 +1,45 @@
 # DECISIONS
 
+## 2026-10-31 — Revalidate local CDK at every invocation
+
+**Updated.** Offline npm can still use global or cached npx packages; the earlier
+locked-install entry's missing-local refusal claim was not established by that
+setting. Preserve that held evidence. Invoke a checkout-bound guard instead of
+PATH/npx CDK lookup at every workflow and deploy-script call boundary.
+
+The guard compares committed manifest/lock and installed package versions, checks
+the declared bin, canonical local package/target, bin resolution and executable
+permission, then directly executes that target with the original application
+arguments and working directory. It never searches PATH, globals or npm caches.
+This is point-in-time local admission, not a tamper-proof executable attestation.
+The authentic lock and setup/default versions remain unchanged. New source still
+requires both closures, genuine locked setup/invocation and actual CI evidence.
+
+## 2026-10-31 — Install CDK from a committed npm lock
+
+Keep CDK CLI 2.1144.0 in a private root npm manifest and the genuine npm-generated
+lock. Shared setup validates the requested exact version against both committed
+files, installs with `npm ci --ignore-scripts --no-audit --no-fund --include=dev`,
+and verifies the explicit local binary before exporting its path. Another exact
+version requires a matching committed lock; there is no unlocked fallback.
+
+The authentic public CLI tarball declares no dependencies or install lifecycle
+scripts, so ignoring scripts does not omit a declared installation step. The one
+offline metadata-only npm generation used Node 22.23.4/npm 10.9.9 and a private
+copy of the qualified public cache, with a cleared child environment. It was not
+an application install or CDK execution. Its SRI matches the authentic tarball.
+
+All three former direct Node workflow callers now use the shared locked setup.
+Their existing npx arguments remain unchanged. npm 10.9.9's inspected exec source
+checks matching local exact packages before registry lookup; subsequent npm/npx
+commands are explicitly offline so a missing local package cannot download one.
+Ignore node_modules to retain clean-checkout admission. Python/cache behavior,
+permissions, triggers and deployment guards remain unchanged. New source needs
+both critical reviews and genuine setup/caller/CI qualification before integration;
+older local results and the retained Root134 overall REFUSE are not repaired by
+this lock. A later merge can trigger foundation deployment and needs its owning
+decision. Roll back the manifest, lock, setup and callers together if incompatible.
+
 ## 2026-10-31 — Preserve cache-directory discovery failures
 
 Capture `uv cache dir` in a standalone assignment before writing its value to

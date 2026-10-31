@@ -1,5 +1,5 @@
 name: 'Setup Node.js and AWS CDK CLI'
-description: 'Install Node.js and AWS CDK CLI globally'
+description: 'Install Node.js and the repository-locked AWS CDK CLI'
 author: 'Infiquetra LLC'
 
 inputs:
@@ -8,7 +8,7 @@ inputs:
     required: false
     default: '22.23.4'
   cdk-version:
-    description: 'Exact AWS CDK CLI version to install'
+    description: 'Exact AWS CDK CLI version; must match package.json and package-lock.json'
     required: false
     default: '2.1144.0'
 
@@ -39,10 +39,25 @@ runs:
           echo 'cdk-version requires an exact numeric version' >&2
           exit 1
         fi
-        npm install -g "aws-cdk@$CI_CDK_VERSION"
+        cd "$GITHUB_WORKSPACE"
+        node <<'JS'
+        const fs = require('node:fs');
+        const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+        const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+        const version = process.env.CI_CDK_VERSION;
+        if (pkg.devDependencies?.['aws-cdk'] !== version ||
+            lock.packages?.['']?.devDependencies?.['aws-cdk'] !== version ||
+            lock.packages?.['node_modules/aws-cdk']?.version !== version) {
+          throw new Error('CDK input must match the committed package and lock');
+        }
+        JS
+        npm ci --ignore-scripts --no-audit --no-fund --include=dev
 
         # Get CDK version for output
-        CDK_VERSION=$(cdk --version | cut -d' ' -f1)
+        CDK_VERSION=$(python3 "$GITHUB_WORKSPACE/tools/locked_cdk.py" --version | cut -d' ' -f1)
         test "$CDK_VERSION" = "$CI_CDK_VERSION"
+        echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
+        # Defense in depth only; each invocation validates and executes its local target.
+        echo 'NPM_CONFIG_OFFLINE=true' >> "$GITHUB_ENV"
         echo "cdk-version=$CDK_VERSION" >> "$GITHUB_OUTPUT"
         echo "✅ Installed AWS CDK CLI version: $CDK_VERSION"
