@@ -20,7 +20,7 @@ jobs:
     name: 🧹 Code Quality
     uses: ./.github/workflows/reusable-code-quality.yml
     with:
-      python-version: '3.13'
+      python-version: '3.13.16'
     permissions:
       contents: read
 
@@ -28,7 +28,7 @@ jobs:
     name: 🔒 Security Scanning
     uses: ./.github/workflows/reusable-security-scan.yml
     with:
-      python-version: '3.13'
+      python-version: '3.13.16'
       upload-sarif: false
     permissions:
       contents: read
@@ -39,8 +39,8 @@ jobs:
     needs: [code-quality]
     uses: ./.github/workflows/reusable-cdk-synthesis.yml
     with:
-      python-version: '3.13'
-      node-version: '18'
+      python-version: '3.13.16'
+      node-version: '22.23.4'
       cdk-account: '645166163764'
       cdk-region: 'us-east-1'
     permissions:
@@ -60,18 +60,18 @@ jobs:
       - name: 🐍 Setup Python with uv
         uses: ./.github/actions/setup-python-uv
         with:
-          python-version: '3.13'
+          python-version: '3.13.16'
 
       - name: 🟢 Setup Node.js and CDK CLI
         uses: ./.github/actions/setup-node-cdk
         with:
-          node-version: '18'
+          node-version: '22.23.4'
 
       - name: 🧪 Test monitoring role boundaries
         run: uv run pytest tests/unit/test_heimdall_monitoring_stack.py
 
       - name: 🏗️ Synthesize monitoring stacks
-        run: uv run cdk -a 'python3 app_heimdall_monitoring.py' synth --all --quiet
+        run: uv run python "$GITHUB_WORKSPACE/tools/locked_cdk.py" -a 'python3 app_heimdall_monitoring.py' synth --all --quiet
 
       - name: 🔍 Lint monitoring templates
         run: uv run cfn-lint cdk.out/HeimdallMonitoring*.template.json
@@ -85,16 +85,16 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: '3.13'
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+          python-version: '3.13.16'
+      - uses: ./.github/actions/setup-node-cdk
         with:
-          node-version: '22'
+          node-version: '22.23.4'
       - name: Test exact role, workflow and change-set guards
         env:
           PYTHONPATH: .:github-oidc-bootstrap
         run: uv run --frozen pytest tests/unit/test_nonprod_deploy_roles_ci.py tests/unit/test_nonprod_role_bootstrap_ci.py github-oidc-bootstrap/tests/unit/test_github_oidc_stack.py
       - name: Synthesize only the nonproduction deploy-role stack
-        run: uv run --frozen npx -y aws-cdk@2.1144.0 synth --app 'python3 app_campps_nonprod_roles_ci.py' CamppsNonProdDeployRolesStack --quiet
+        run: uv run --frozen python "$GITHUB_WORKSPACE/tools/locked_cdk.py" synth --app 'python3 app_campps_nonprod_roles_ci.py' CamppsNonProdDeployRolesStack --quiet
 
   unit-tests:
     name: 🧪 Offline Unit Tests
@@ -105,14 +105,14 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: '3.13'
+          python-version: '3.13.16'
       - name: Verify reviewed dependency files
         id: verify-dependencies
         # The shared setup runs uv sync; reject any manifest or lock rewrite.
         run: git diff --exit-code -- pyproject.toml uv.lock
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: ./.github/actions/setup-node-cdk
         with:
-          node-version: '22'
+          node-version: '22.23.4'
       - name: Test the complete offline unit suite
         id: unit-tests
         run: uv run --frozen python -m pytest tests/unit/

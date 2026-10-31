@@ -1,0 +1,9 @@
+{
+  "name": "infiquetra-aws-infra-toolchain",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Locked AWS CDK CLI for repository validation and deployment",
+  "devDependencies": {
+    "aws-cdk": "2.1144.0"
+  }
+}

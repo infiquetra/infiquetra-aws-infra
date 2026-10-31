@@ -53,10 +53,10 @@ jobs:
       - name: Set up Python dependencies
         uses: ./.github/actions/setup-python-uv
         with:
-          python-version: '3.13'
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+          python-version: '3.13.16'
+      - uses: ./.github/actions/setup-node-cdk
         with:
-          node-version: '22'
+          node-version: '22.23.4'
       - name: Verify the reviewed main revision before obtaining credentials
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -92,7 +92,7 @@ jobs:
       - name: Verify the exact nonproduction role and region
         run: uv run python tools/nonprod_deploy_roles_ci.py check-nonprod
       - name: Synthesize the one existing nonproduction stack
-        run: uv run npx -y aws-cdk@2.1144.0 synth --app 'python3 app_campps_nonprod_roles_ci.py' CamppsNonProdDeployRolesStack --quiet --output cdk.out
+        run: uv run python "$GITHUB_WORKSPACE/tools/locked_cdk.py" synth --app 'python3 app_campps_nonprod_roles_ci.py' CamppsNonProdDeployRolesStack --quiet --output cdk.out
       - name: Prepare or apply the checked change set
         env:
           GITHUB_TOKEN: ${{ github.token }}

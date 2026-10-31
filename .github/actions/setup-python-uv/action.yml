@@ -1,12 +1,12 @@
 name: 'Setup Python with uv'
-description: 'Install Python, cache dependencies, and install uv package manager'
+description: 'Install pinned Python and uv with locked dependency downloads'
 author: 'Infiquetra LLC'
 
 inputs:
   python-version:
     description: 'Python version to install'
     required: false
-    default: '3.13'
+    default: '3.13.16'
 
 outputs:
   python-version:
@@ -24,33 +24,42 @@ runs:
   steps:
     - name: 🐍 Set up Python
       id: setup-python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
       with:
         python-version: ${{ inputs.python-version }}
 
-    - name: 📦 Cache Python dependencies
-      id: cache-deps
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt', '**/pyproject.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-
     - name: ⚡ Install uv
       id: install-uv
+      uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      with:
+        version: '0.13.6'
+        enable-cache: 'false'
+
+    - name: Require root lock and locate uv downloads
+      id: uv-cache
       shell: bash
       run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        test -f uv.lock
+        test -f pyproject.toml
+        resolved_uv_cache_dir="$(uv cache dir)"
+        if [[ -z "$resolved_uv_cache_dir" || "$resolved_uv_cache_dir" != /* || "$resolved_uv_cache_dir" == *$'\n'* || "$resolved_uv_cache_dir" == *$'\r'* ]]; then
+          printf '%s\n' 'uv cache dir must return one absolute path' >&2
+          exit 1
+        fi
+        printf 'path=%s\n' "$resolved_uv_cache_dir" >> "$GITHUB_OUTPUT"
 
-        # Get uv version for output
-        UV_VERSION=$("$HOME/.local/bin/uv" --version | cut -d' ' -f2)
-        echo "uv-version=$UV_VERSION" >> $GITHUB_OUTPUT
-        echo "✅ Installed uv version: $UV_VERSION"
+    - name: 📦 Cache uv downloads
+      id: cache-deps
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: ${{ steps.uv-cache.outputs.path }}
+        key: ${{ runner.os }}-${{ runner.arch }}-uv-${{ steps.install-uv.outputs.uv-version }}-python-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('uv.lock', 'pyproject.toml') }}
 
     - name: 📦 Install dependencies with uv
       shell: bash
+      env:
+        UV_PYTHON: ${{ steps.setup-python.outputs.python-path }}
+        UV_PYTHON_DOWNLOADS: never
       run: |
-        uv sync --dev
+        uv sync --frozen --dev
         echo "✅ Dependencies installed successfully"

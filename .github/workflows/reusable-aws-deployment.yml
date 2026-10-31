@@ -29,12 +29,12 @@ on:
         description: 'Python version to use'
         required: false
         type: string
-        default: '3.13'
+        default: '3.13.16'
       node-version:
         description: 'Node.js version to use'
         required: false
         type: string
-        default: '18'
+        default: '22.23.4'
     secrets:
       aws-role-arn:
         description: 'AWS IAM role ARN for OIDC authentication'
@@ -106,7 +106,7 @@ jobs:
             APPROVAL_FLAG=""
           fi
 
-          if uv run cdk deploy InfiquetraOrganizationStack $APPROVAL_FLAG; then
+          if uv run python "$GITHUB_WORKSPACE/tools/locked_cdk.py" deploy InfiquetraOrganizationStack $APPROVAL_FLAG; then
             echo "✅ **Organization Stack deployed successfully**" >> $GITHUB_STEP_SUMMARY
             echo "status=success" >> $GITHUB_OUTPUT
           else
@@ -136,7 +136,7 @@ jobs:
             APPROVAL_FLAG=""
           fi
 
-          if uv run cdk deploy InfiquetraSSOStack $APPROVAL_FLAG; then
+          if uv run python "$GITHUB_WORKSPACE/tools/locked_cdk.py" deploy InfiquetraSSOStack $APPROVAL_FLAG; then
             echo "✅ **SSO Stack deployed successfully**" >> $GITHUB_STEP_SUMMARY
             echo "status=success" >> $GITHUB_OUTPUT
           else
