@@ -47,7 +47,8 @@ def main() -> None:
         binary = checked_binary(Path(__file__).resolve().parents[1])
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise SystemExit(f"Locked local CDK refused: {type(exc).__name__}") from exc
-    os.execv(str(binary), [str(binary), *sys.argv[1:]])  # nosec B606
+    # checked_binary admits the canonical local executable before this launch.
+    os.execv(str(binary), [str(binary), *sys.argv[1:]])  # noqa: S606  # nosec B606
 
 
 if __name__ == "__main__":
