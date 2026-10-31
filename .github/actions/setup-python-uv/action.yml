@@ -41,7 +41,12 @@ runs:
       run: |
         test -f uv.lock
         test -f pyproject.toml
-        echo "path=$(uv cache dir)" >> "$GITHUB_OUTPUT"
+        resolved_uv_cache_dir="$(uv cache dir)"
+        if [[ -z "$resolved_uv_cache_dir" || "$resolved_uv_cache_dir" != /* || "$resolved_uv_cache_dir" == *$'\n'* || "$resolved_uv_cache_dir" == *$'\r'* ]]; then
+          printf '%s\n' 'uv cache dir must return one absolute path' >&2
+          exit 1
+        fi
+        printf 'path=%s\n' "$resolved_uv_cache_dir" >> "$GITHUB_OUTPUT"
 
     - name: 📦 Cache uv downloads
       id: cache-deps

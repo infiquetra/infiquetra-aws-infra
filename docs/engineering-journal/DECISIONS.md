@@ -1,5 +1,12 @@
 # DECISIONS
 
+## 2026-10-31 — Preserve cache-directory discovery failures
+
+Capture `uv cache dir` in a standalone assignment before writing its value to
+`GITHUB_OUTPUT`. A command substitution inside `echo` reports the status of
+`echo`, which can hide discovery failure. Require one nonempty absolute path;
+keep failure, empty, relative and multiline results out of cache setup.
+
 ## 2026-10-30
 
 ### Preserve deployment dependencies and prove scanner scope independently
