@@ -1,5 +1,9 @@
 # LEARNINGS
 
+## 2026-11-09 — Deploy permissions do not imply runtime proof permissions
+
+The main-only platform-fee proof reads two Stripe test secrets and exercises the payments table in process; the parent-data-rights proof reads the shared account store, its nested WorkOS key, and three service tables. Their GHA deploy roles had infrastructure management permissions but lacked those runtime reads. Nonprod-only managed policies now grant explicit secret ARNs with six-character suffixes, named tables, and DynamoDB-mediated KMS access constrained by the platform PII alias and table encryption context. Lambda application boundaries and other environments remain unchanged. The guarded plan/apply workflow now accepts exactly these two policy additions and their existing role attachments.
+
 ## 2026-10-28
 
 ### Restrict role-template numbers when SDK parsing loses precision

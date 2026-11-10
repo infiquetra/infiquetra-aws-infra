@@ -1,7 +1,7 @@
 """Plan or apply the reviewed nonproduction deploy-role change set in CI.
 
 The workflow is manual, main-only, and runs this guard immediately before every
-write. It accepts only the four resources introduced by infrastructure PR 178.
+write. It accepts only two proof policies and their existing role attachments.
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ CHANGESET_PREFIX = "campps-nonprod-roles-ci-"
 REPO = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = REPO / "cdk.out" / f"{STACK}.template.json"
 ROLE_POLICIES = {
-    "CoppaConsentDeployRoleB2456F4F": "CoppaConsentHorizonProofPolicyD615C2A4",
-    "TenantSetupDeployRole5914AC60": "TenantFixtureRepairPolicyD1012943",
+    "CoppaConsentDeployRoleB2456F4F": "CoppaConsentLiveCheckPolicyE7D0D98B",
+    "PaymentsDeployRoleD671A591": "PaymentsLiveCheckPolicy1810B979",
 }
 ROLE_IDS = frozenset(ROLE_POLICIES)
 POLICY_IDS = frozenset(ROLE_POLICIES.values())

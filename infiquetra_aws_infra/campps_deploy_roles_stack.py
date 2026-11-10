@@ -116,6 +116,13 @@ class CamppsDeployRolesStack(Stack):
             for deploy_policy in deploy_policies:
                 deploy_role.add_managed_policy(deploy_policy)
 
+            live_check_policy = self._create_nonprod_live_check_policy(
+                service_repository=service_repository,
+                target_environment=target_environment,
+            )
+            if live_check_policy is not None:
+                deploy_role.add_managed_policy(live_check_policy)
+
             horizon_proof_policy = self._create_coppa_horizon_proof_policy(
                 service_repository=service_repository,
                 target_environment=target_environment,
@@ -234,6 +241,174 @@ class CamppsDeployRolesStack(Stack):
                     f"{target_environment} deployments"
                 ),
             )
+
+    def _create_nonprod_live_check_policy(
+        self,
+        *,
+        service_repository: ServiceRepository,
+        target_environment: DeployEnvironment,
+    ) -> iam.ManagedPolicy | None:
+        """Runtime reads for the two main-only, manually dispatched nonprod proofs.
+
+        Application permissions boundaries stay unchanged: these grants attach
+        to the GHA deploy roles, never to service Lambda roles.
+        """
+        service = service_repository.name
+        if target_environment != "nonprod" or service not in (
+            "payments",
+            "coppa-consent",
+        ):
+            return None
+        tables: tuple[str, ...]
+        if service == "payments":
+            secrets = (
+                "campps/payments/nonprod/stripe/restricted-key",
+                "campps/payments/nonprod/stripe/connect-webhook-signing-secret",
+            )
+            tables = ("campps-payments-nonprod",)
+            actions = [
+                "dynamodb:GetItem",
+                "dynamodb:Query",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+            ]
+        else:
+            secrets = (
+                "campps/web-app/e2e/fixture",
+                "campps/identity-access/nonprod/workos/api-key",
+            )
+            tables = (
+                "campps-coppa-consent-nonprod",
+                "campps-identity-access-nonprod",
+                "campps-registration-nonprod",
+            )
+            actions = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"]
+        statements = [
+            iam.PolicyStatement(
+                sid="LiveCheckSecretRead",
+                actions=["secretsmanager:GetSecretValue"],
+                resources=[
+                    self.format_arn(
+                        service="secretsmanager",
+                        resource="secret",
+                        resource_name=f"{name}-??????",
+                        arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                    )
+                    for name in secrets
+                ],
+            ),
+            iam.PolicyStatement(
+                sid="LiveCheckTableAccess",
+                actions=actions,
+                resources=[
+                    self.format_arn(
+                        service="dynamodb",
+                        resource="table",
+                        resource_name=name,
+                        arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                    )
+                    for name in tables
+                ],
+            ),
+            iam.PolicyStatement(
+                sid="LiveCheckTableKey",
+                actions=["kms:Decrypt", "kms:GenerateDataKey"]
+                if service == "payments"
+                else ["kms:Decrypt"],
+                resources=[
+                    self.format_arn(
+                        service="kms",
+                        resource="key",
+                        resource_name="*",
+                        arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                    )
+                ],
+                conditions={
+                    "StringEquals": {
+                        "kms:ViaService": "dynamodb.us-east-1.amazonaws.com",
+                        "kms:EncryptionContext:aws:dynamodb:tableName": list(tables),
+                        "kms:EncryptionContext:aws:dynamodb:subscriberId": (
+                            CAMPPS_NONPROD_ACCOUNT_ID
+                        ),
+                    },
+                    "ForAnyValue:StringEquals": {
+                        "kms:ResourceAliases": "alias/campps-platform-nonprod-pii",
+                    },
+                },
+            ),
+        ]
+        if service == "coppa-consent":
+            statements.extend(
+                [
+                    iam.PolicyStatement(
+                        sid="DataRightsGateCaller",
+                        actions=["sts:AssumeRole"],
+                        resources=[
+                            self.format_arn(
+                                service="iam",
+                                region="",
+                                resource="role",
+                                resource_name="campps-registration-nonprod-e2e-gate-caller",
+                                arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                            )
+                        ],
+                    ),
+                    iam.PolicyStatement(
+                        sid="DataRightsGuardianWrites",
+                        actions=["execute-api:Invoke"],
+                        resources=[
+                            self.format_arn(
+                                service="execute-api",
+                                resource="*",
+                                resource_name=f"nonprod/POST/tenants/*/children/*/{route}",
+                                arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                            )
+                            for route in ("consents", "data-rights-requests")
+                        ],
+                    ),
+                    iam.PolicyStatement(
+                        sid="DataRightsFulfillment",
+                        actions=["lambda:InvokeFunction"],
+                        resources=[
+                            self.format_arn(
+                                service="lambda",
+                                resource="function",
+                                resource_name="campps-coppa-consent-nonprod-data-rights-fulfillment",
+                                arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                            )
+                        ],
+                    ),
+                    iam.PolicyStatement(
+                        sid="DataRightsPeerDiscovery",
+                        actions=["ssm:GetParameter"],
+                        resources=[
+                            self.format_arn(
+                                service="ssm",
+                                resource="parameter",
+                                resource_name=f"campps/services/{peer}/nonprod/api-url",
+                                arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+                            )
+                            for peer in (
+                                "coppa-consent",
+                                "identity-access",
+                                "registration",
+                                "health-forms",
+                                "activities-achievements",
+                                "payments",
+                                "tenant-setup",
+                            )
+                        ],
+                    ),
+                ]
+            )
+        return iam.ManagedPolicy(
+            self,
+            f"{self._logical_id_prefix(service)}LiveCheckPolicy",
+            managed_policy_name=f"campps-{service}-nonprod-gha-live-check-policy",
+            description="Scoped nonprod fee and parent-data-rights proof access",
+            statements=statements,
+        )
 
     def _create_coppa_horizon_proof_policy(
         self,

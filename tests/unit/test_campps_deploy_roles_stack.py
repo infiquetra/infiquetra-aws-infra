@@ -3045,3 +3045,115 @@ def test_tenant_fixture_repair_policy_is_absent_elsewhere() -> None:
             "campps-tenant-setup-nonprod-fixture-repair-policy"
             not in managed_policy_names(template)
         )
+
+
+@pytest.mark.parametrize("service", ["payments", "coppa-consent"])
+def test_nonprod_live_check_policy_is_attached_only_to_its_deploy_role(
+    service: str,
+) -> None:
+    repo = ServiceRepository(name=service, repository=f"infiquetra/campps-{service}")
+    template = synth_template_for_repositories(repo)
+    policy_id, policy = find_managed_policy_with_logical_id(
+        template, f"campps-{service}-nonprod-gha-live-check-policy"
+    )
+    role = find_deploy_role(template, f"campps-{service}-nonprod-gha-deploy-role")
+    assert {"Ref": policy_id} in role["Properties"]["ManagedPolicyArns"]
+    statements = {
+        s["Sid"]: s for s in policy["Properties"]["PolicyDocument"]["Statement"]
+    }
+    secrets = statements["LiveCheckSecretRead"]
+    assert list(normalize_actions(secrets["Action"])) == [
+        "secretsmanager:GetSecretValue"
+    ]
+    expected = (
+        [
+            "campps/payments/nonprod/stripe/restricted-key",
+            "campps/payments/nonprod/stripe/connect-webhook-signing-secret",
+        ]
+        if service == "payments"
+        else [
+            "campps/web-app/e2e/fixture",
+            "campps/identity-access/nonprod/workos/api-key",
+        ]
+    )
+    assert list(secrets["Resource"]) == [
+        _secretsmanager_arn(f"{name}-??????") for name in expected
+    ]
+    access = statements["LiveCheckTableAccess"]
+    expected_tables = (
+        ["campps-payments-nonprod"]
+        if service == "payments"
+        else [
+            "campps-coppa-consent-nonprod",
+            "campps-identity-access-nonprod",
+            "campps-registration-nonprod",
+        ]
+    )
+    assert (
+        access["Resource"]
+        if isinstance(access["Resource"], list)
+        else [access["Resource"]]
+    ) == [
+        _partition_arn(f":dynamodb:us-east-1:477152411873:table/{name}")
+        for name in expected_tables
+    ]
+    assert set(normalize_actions(access["Action"])) == (
+        {
+            "dynamodb:GetItem",
+            "dynamodb:Query",
+            "dynamodb:PutItem",
+            "dynamodb:UpdateItem",
+            "dynamodb:DeleteItem",
+        }
+        if service == "payments"
+        else {"dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"}
+    )
+    key = statements["LiveCheckTableKey"]
+    assert key["Condition"]["StringEquals"] == {
+        "kms:ViaService": "dynamodb.us-east-1.amazonaws.com",
+        "kms:EncryptionContext:aws:dynamodb:tableName": expected_tables,
+        "kms:EncryptionContext:aws:dynamodb:subscriberId": "477152411873",
+    }
+    assert key["Condition"]["ForAnyValue:StringEquals"] == {
+        "kms:ResourceAliases": "alias/campps-platform-nonprod-pii"
+    }
+    assert set(normalize_actions(key["Action"])) == (
+        {"kms:Decrypt", "kms:GenerateDataKey"}
+        if service == "payments"
+        else {"kms:Decrypt"}
+    )
+    if service == "coppa-consent":
+        assert statements["DataRightsGateCaller"]["Action"] == "sts:AssumeRole"
+        assert statements["DataRightsGateCaller"]["Resource"] == _partition_arn(
+            ":iam::477152411873:role/campps-registration-nonprod-e2e-gate-caller"
+        )
+        assert statements["DataRightsFulfillment"]["Action"] == "lambda:InvokeFunction"
+        assert statements["DataRightsFulfillment"]["Resource"] == _partition_arn(
+            ":lambda:us-east-1:477152411873:function:"
+            "campps-coppa-consent-nonprod-data-rights-fulfillment"
+        )
+        assert statements["DataRightsGuardianWrites"]["Resource"] == [
+            _partition_arn(
+                f":execute-api:us-east-1:477152411873:*/nonprod/POST/tenants/*/children/*/{route}"
+            )
+            for route in ("consents", "data-rights-requests")
+        ]
+        assert statements["DataRightsPeerDiscovery"]["Action"] == "ssm:GetParameter"
+        assert all(
+            "/nonprod/api-url" in resource
+            for resource in _rendered_resources(statements["DataRightsPeerDiscovery"])
+        )
+    else:
+        assert not any(sid.startswith("DataRights") for sid in statements)
+    boundary = find_managed_policy(template, repo.permissions_boundary_name("nonprod"))
+    assert "LiveCheck" not in json.dumps(boundary)
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+@pytest.mark.parametrize("service", ["payments", "coppa-consent", "tenant-setup"])
+def test_live_check_policy_does_not_grant_access_outside_nonprod_proof_services(
+    service: str, environment: DeployEnvironment
+) -> None:
+    repo = ServiceRepository(name=service, repository=f"infiquetra/campps-{service}")
+    template = synth_template_for_repositories(repo, target_environment=environment)
+    assert "LiveCheck" not in json.dumps(template.to_json())
