@@ -1,5 +1,16 @@
 # DECISIONS
 
+## 2026-11-19 — Separate website publishing from foundation deployment
+
+Issue #191 places website publishing roles in a standalone management-account
+CDK app. Both roles reuse the account's GitHub OIDC provider and match the
+immutable website repository subject for their GitHub environment together with
+the exact main ref. A publish job can list its two buckets, write or delete
+their objects, and invalidate CloudFront distributions tagged for the website
+and the matching environment. The foundation push workflow ignores the
+standalone app, stack, and test paths so website-only IAM changes can be
+reviewed and deployed independently.
+
 ## 2026-10-31 — Revalidate local CDK at every invocation
 
 **Updated.** Offline npm can still use global or cached npx packages; the earlier

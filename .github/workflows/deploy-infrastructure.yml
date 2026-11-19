@@ -37,6 +37,10 @@ on:
       - 'tests/unit/test_campps_deploy_roles_stack.py'
       - 'tests/unit/test_nonprod_deploy_roles_ci.py'
       - 'tests/unit/test_nonprod_role_bootstrap_ci.py'
+      # Website publishing roles have a separate management-account CDK app.
+      - 'app_infiquetra_website_deploy_roles.py'
+      - 'infiquetra_aws_infra/infiquetra_website_deploy_roles_stack.py'
+      - 'tests/unit/test_infiquetra_website_deploy_roles_stack.py'
   workflow_dispatch:
     inputs:
       environment:
