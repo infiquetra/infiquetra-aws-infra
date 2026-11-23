@@ -1,5 +1,20 @@
 # LEARNINGS
 
+## 2026-11-23 — Verify immutable GitHub subjects at the repository
+
+**Evidence.** For issue #194, GitHub's repository OpenID Connect settings
+returned `use_default: true` and `use_immutable_subject: false` for
+`infiquetra/infiquetra-sdlc`. The role tests verify that both trust policies
+require a subject containing the numeric owner and repository IDs.
+
+**Mechanism.** The repository's immutable subject setting controls whether
+GitHub emits those IDs in its default subject. Offline template checks verify
+the policy conditions. The token GitHub issues depends on the repository
+configuration.
+
+**Generalizable rule.** Verify the repository's immutable subject setting and
+test role assumption with a real workflow before cutting over publishing.
+
 ## 2026-11-09 — Deploy permissions do not imply runtime proof permissions
 
 The main-only platform-fee proof reads two Stripe test secrets and exercises the payments table in process; the parent-data-rights proof reads the shared account store, its nested WorkOS key, and three service tables. Their GHA deploy roles had infrastructure management permissions but lacked those runtime reads. Nonprod-only managed policies now grant explicit secret ARNs with six-character suffixes, named tables, and DynamoDB-mediated KMS access constrained by the platform PII alias and table encryption context. Lambda application boundaries and other environments remain unchanged. The guarded plan/apply workflow now accepts exactly these two policy additions and their existing role attachments.
