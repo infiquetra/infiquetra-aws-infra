@@ -116,6 +116,10 @@ jobs:
       - name: Test the complete offline unit suite
         id: unit-tests
         run: uv run --frozen python -m pytest tests/unit/
+      - name: Synthesize the public SDLC site publishing roles
+        run: uv run --frozen python "$GITHUB_WORKSPACE/tools/locked_cdk.py" -a 'python3 app_infiquetra_sdlc_deploy_roles.py' synth InfiquetraSdlcDeployRolesStack --quiet
+      - name: Lint the public SDLC site publishing template
+        run: uv run --frozen cfn-lint cdk.out/InfiquetraSdlcDeployRolesStack.template.json
 
   validation-summary:
     name: 📋 Validation Summary
@@ -187,11 +191,11 @@ jobs:
               echo "❌ **Nonprod deploy-role CI guards**: Validation failed"
             fi
 
-            # Complete offline unit suite
+            # Offline unit suite and public SDLC publishing template
             if [[ "$UNIT_TESTS_RESULT" == "success" ]]; then
-              echo "✅ **Offline Unit Tests**: Complete suite passed"
+              echo "✅ **Offline Unit Tests**: Complete suite passed. Public SDLC publishing template synthesized and passed lint."
             else
-              echo "❌ **Offline Unit Tests**: Validation failed"
+              echo "❌ **Offline Unit Tests**: Unit tests or public SDLC publishing template validation failed"
             fi
 
             echo ""

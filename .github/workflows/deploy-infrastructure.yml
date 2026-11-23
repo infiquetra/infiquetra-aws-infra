@@ -41,6 +41,10 @@ on:
       - 'app_infiquetra_website_deploy_roles.py'
       - 'infiquetra_aws_infra/infiquetra_website_deploy_roles_stack.py'
       - 'tests/unit/test_infiquetra_website_deploy_roles_stack.py'
+      # Public SDLC site publishing roles also deploy separately.
+      - 'app_infiquetra_sdlc_deploy_roles.py'
+      - 'infiquetra_aws_infra/infiquetra_sdlc_deploy_roles_stack.py'
+      - 'tests/unit/test_infiquetra_sdlc_deploy_roles_stack.py'
   workflow_dispatch:
     inputs:
       environment:
