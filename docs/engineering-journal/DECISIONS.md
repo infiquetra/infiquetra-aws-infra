@@ -1,5 +1,25 @@
 # DECISIONS
 
+## 2026-11-25 — Provision a single `caliber-nonprod` account with a $50/mo budget alarm
+
+**Decision.** Under `Apps`, create `Caliber / NonProd` containing one workload
+account (`caliber-nonprod`, `jeff+caliber-nonprod@infiquetra.com`,
+`RemovalPolicy.RETAIN`), attach `NonProductionCostControl`, attach a `$50/mo`
+`AWS::Budgets::Budget` filtered to `caliber-nonprod`'s `LinkedAccount` (actual
+and forecasted alerts at 50%, 80%, and 100% to `jeff@infiquetra.com`), and
+assign the operator Identity Center admin user with `AdministratorAccess`.
+
+**Rationale & rejected alternatives.** Combining multiple environments (`dev` +
+`staging`) inside one AWS account violates AWS account-isolation guidance and
+complicates automation; creating a separate `caliber-staging` account is
+unnecessary for Caliber Release 1. Local development runs in Docker, deployed
+pre-production runs in `caliber-nonprod`, and `caliber-prod` will be added in a
+separate PR when production launch begins.
+
+**Revisit when.** Caliber enters Release 1 production cutover (add
+`Apps / Caliber / Production` and `caliber-prod`) or requires a dedicated QA
+permission set for automated testing.
+
 ## 2026-11-19 — Separate website publishing from foundation deployment
 
 Issue #191 places website publishing roles in a standalone management-account

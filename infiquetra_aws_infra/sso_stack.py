@@ -20,6 +20,12 @@ CAMPPS_NONPROD_ACCOUNT_ID = "477152411873"
 CAMPPS_PROD_ACCOUNT_ID = "431643435299"
 # team-hermod-qa Identity Center group (created manually; group IDs are not secret)
 CAMPPS_QA_GROUP_ID = "5458e4b8-2051-700c-0959-b2b12771a084"
+# Operator Identity Center admin user and AdministratorAccess permission set
+# (non-secret Identity Center identifiers matching infiquetra-root and campps-nonprod).
+OPERATOR_ADMIN_USER_ID = "90676975b4-c8e7f90d-ea45-4f5e-9715-bb483f59c11c"
+ADMINISTRATOR_ACCESS_PERMISSION_SET_ARN = (
+    "arn:aws:sso:::permissionSet/ssoins-7223f05fc9da6e24/ps-4908f02414180aa1"
+)
 
 
 class SSOStack(Stack):
@@ -424,6 +430,19 @@ class SSOStack(Stack):
             principal_id=CAMPPS_QA_GROUP_ID,
             principal_type="GROUP",
             target_id=CAMPPS_NONPROD_ACCOUNT_ID,
+            target_type="AWS_ACCOUNT",
+        )
+
+        # Operator admin access on caliber-nonprod, matching infiquetra-root and
+        # campps-nonprod so get_caliber_aws_creds.sh works immediately after deploy.
+        sso.CfnAssignment(
+            self,
+            "CaliberNonProdOperatorAdminAssignment",
+            instance_arn=self.sso_instance_arn,
+            permission_set_arn=ADMINISTRATOR_ACCESS_PERMISSION_SET_ARN,
+            principal_id=OPERATOR_ADMIN_USER_ID,
+            principal_type="USER",
+            target_id=self.organization_stack.caliber_nonprod_account.attr_account_id,
             target_type="AWS_ACCOUNT",
         )
 
