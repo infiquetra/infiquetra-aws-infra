@@ -4,6 +4,7 @@ from typing import Any
 
 import aws_cdk as cdk
 from aws_cdk import CfnOutput, Stack
+from aws_cdk import aws_budgets as budgets
 from aws_cdk import aws_organizations as organizations
 from constructs import Construct
 
@@ -30,6 +31,9 @@ class OrganizationStack(Stack):
 
         # Create Service Control Policies
         self.create_service_control_policies()
+
+        # Create per-account cost budgets
+        self.create_cost_budgets()
 
         # Output important information
         self.create_outputs()
@@ -153,6 +157,49 @@ class OrganizationStack(Stack):
             ],
         )
 
+        # Sub-OUs and non-production account for Caliber under Apps OU.
+        # Caliber uses a single deployed nonprod environment (no staging account).
+        self.apps_caliber_ou = organizations.CfnOrganizationalUnit(
+            self,
+            "AppsCaliberOU",
+            name="Caliber",
+            parent_id=self.apps_ou.ref,
+            tags=[
+                cdk.CfnTag(key="Purpose", value="Caliber application workloads"),
+                cdk.CfnTag(key="Project", value="Caliber"),
+                cdk.CfnTag(key="BusinessUnit", value="Apps"),
+            ],
+        )
+
+        self.caliber_nonprod_ou = organizations.CfnOrganizationalUnit(
+            self,
+            "CaliberNonProdOU",
+            name="NonProd",
+            parent_id=self.apps_caliber_ou.ref,
+            tags=[
+                cdk.CfnTag(key="AccountType", value="NonProduction"),
+                cdk.CfnTag(key="Environment", value="NonProd"),
+                cdk.CfnTag(key="Project", value="Caliber"),
+            ],
+        )
+
+        self.caliber_nonprod_account = organizations.CfnAccount(
+            self,
+            "CaliberNonProdAccount",
+            account_name="caliber-nonprod",
+            email="jeff+caliber-nonprod@infiquetra.com",
+            parent_ids=[self.caliber_nonprod_ou.ref],
+            role_name="OrganizationAccountAccessRole",
+            tags=[
+                cdk.CfnTag(key="Project", value="Caliber"),
+                cdk.CfnTag(key="Environment", value="NonProd"),
+                cdk.CfnTag(key="AccountType", value="NonProduction"),
+                cdk.CfnTag(key="BusinessUnit", value="Apps"),
+                cdk.CfnTag(key="ManagedBy", value="CDK"),
+            ],
+        )
+        self.caliber_nonprod_account.apply_removal_policy(cdk.RemovalPolicy.RETAIN)
+
     def create_service_control_policies(self) -> None:
         """Create Service Control Policies for governance and security."""
 
@@ -259,11 +306,54 @@ class OrganizationStack(Stack):
             description="Cost controls for non-production environments",
             type="SERVICE_CONTROL_POLICY",
             content=dev_cost_control_policy,
-            target_ids=[self.campps_nonprod_ou.ref, self.campps_staging_ou.ref],
+            target_ids=[
+                self.campps_nonprod_ou.ref,
+                self.campps_staging_ou.ref,
+                self.caliber_nonprod_ou.ref,
+            ],
             tags=[
                 cdk.CfnTag(key="PolicyType", value="CostControl"),
                 cdk.CfnTag(key="AccountType", value="NonProduction"),
             ],
+        )
+
+    def create_cost_budgets(self) -> None:
+        """Create per-account monthly AWS Budgets spend alarms."""
+
+        subscriber = budgets.CfnBudget.SubscriberProperty(
+            address="jeff@infiquetra.com",
+            subscription_type="EMAIL",
+        )
+        notifications = [
+            budgets.CfnBudget.NotificationWithSubscribersProperty(
+                notification=budgets.CfnBudget.NotificationProperty(
+                    comparison_operator="GREATER_THAN",
+                    notification_type=notification_type,
+                    threshold=threshold,
+                    threshold_type="PERCENTAGE",
+                ),
+                subscribers=[subscriber],
+            )
+            for notification_type in ("ACTUAL", "FORECASTED")
+            for threshold in (50, 80, 100)
+        ]
+
+        self.caliber_nonprod_budget = budgets.CfnBudget(
+            self,
+            "CaliberNonProdMonthlyBudget",
+            budget=budgets.CfnBudget.BudgetDataProperty(
+                budget_name="caliber-nonprod-monthly-50",
+                budget_type="COST",
+                time_unit="MONTHLY",
+                budget_limit=budgets.CfnBudget.SpendProperty(
+                    amount=50,
+                    unit="USD",
+                ),
+                cost_filters={
+                    "LinkedAccount": [self.caliber_nonprod_account.attr_account_id]
+                },
+            ),
+            notifications_with_subscribers=notifications,
         )
 
     def create_outputs(self) -> None:
@@ -332,6 +422,34 @@ class OrganizationStack(Stack):
             description="CAMPPS NonProd OU ID",
         )
 
+        CfnOutput(
+            self,
+            "CaliberOUId",
+            value=self.apps_caliber_ou.ref,
+            description="Caliber OU ID under Apps",
+        )
+
+        CfnOutput(
+            self,
+            "CaliberNonProdOUId",
+            value=self.caliber_nonprod_ou.ref,
+            description="Caliber NonProd OU ID",
+        )
+
+        CfnOutput(
+            self,
+            "CaliberNonProdAccountId",
+            value=self.caliber_nonprod_account.attr_account_id,
+            description="Caliber NonProd account ID",
+        )
+
+        CfnOutput(
+            self,
+            "CaliberNonProdBudgetName",
+            value="caliber-nonprod-monthly-50",
+            description="Monthly $50 AWS Budget alarm name for caliber-nonprod",
+        )
+
     @property
     def organization_structure(self) -> dict[str, str]:
         """Return the organization structure mapping for use by other stacks."""
@@ -345,4 +463,7 @@ class OrganizationStack(Stack):
             "campps_staging_ou_id": self.campps_staging_ou.ref,
             "campps_staging_account_id": self.campps_staging_account.attr_account_id,
             "campps_nonprod_ou_id": self.campps_nonprod_ou.ref,
+            "caliber_ou_id": self.apps_caliber_ou.ref,
+            "caliber_nonprod_ou_id": self.caliber_nonprod_ou.ref,
+            "caliber_nonprod_account_id": self.caliber_nonprod_account.attr_account_id,
         }

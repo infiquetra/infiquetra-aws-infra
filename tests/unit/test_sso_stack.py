@@ -77,7 +77,7 @@ def test_optional_group_parameters_exist() -> None:
 def test_group_assignments_target_expected_accounts() -> None:
     template = synth_template()
 
-    template.resource_count_is("AWS::SSO::Assignment", 6)
+    template.resource_count_is("AWS::SSO::Assignment", 7)
     template.has_resource_properties(
         "AWS::SSO::Assignment",
         {
@@ -131,18 +131,43 @@ def test_group_assignments_target_expected_accounts() -> None:
 
 def test_group_assignments_are_conditionally_created() -> None:
     template_json = synth_template().to_json()
-    # CamppsQaNonprodAssignment is intentionally unconditional (fixed group).
+    # Fixed-principal assignments are intentionally unconditional (no CfnParameter).
+    unconditional_assignments = {
+        "CamppsQaNonprodAssignment",
+        "CaliberNonProdOperatorAdminAssignment",
+    }
     assignment_resources = [
         resource
         for logical_id, resource in template_json["Resources"].items()
         if resource["Type"] == "AWS::SSO::Assignment"
-        and logical_id != "CamppsQaNonprodAssignment"
+        and logical_id not in unconditional_assignments
     ]
 
     assert assignment_resources
     for resource in assignment_resources:
         assert "Condition" in resource
         assert resource["Condition"].endswith("Provided")
+
+
+def test_caliber_nonprod_operator_admin_assignment_targets_caliber_nonprod() -> None:
+    template = synth_template()
+
+    template.has_resource_properties(
+        "AWS::SSO::Assignment",
+        {
+            "PrincipalType": "USER",
+            "PrincipalId": "90676975b4-c8e7f90d-ea45-4f5e-9715-bb483f59c11c",
+            "PermissionSetArn": (
+                "arn:aws:sso:::permissionSet/ssoins-7223f05fc9da6e24/ps-4908f02414180aa1"
+            ),
+            "TargetId": {
+                "Fn::ImportValue": Match.string_like_regexp(
+                    "TestOrganizationStack:ExportsOutputFnGetAttCaliberNonProdAccountAccountId.*"
+                )
+            },
+            "TargetType": "AWS_ACCOUNT",
+        },
+    )
 
 
 def test_core_admin_assignment_uses_core_admin_permission_set() -> None:

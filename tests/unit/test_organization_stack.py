@@ -69,6 +69,7 @@ def test_nonproduction_cost_control_targets_nonprod_and_staging() -> None:
                 [
                     {"Ref": Match.string_like_regexp("CamppsNonProdOU.*")},
                     {"Ref": Match.string_like_regexp("CamppsStagingOU.*")},
+                    {"Ref": Match.string_like_regexp("CaliberNonProdOU.*")},
                 ]
             ),
         },
@@ -115,3 +116,114 @@ def test_campps_staging_outputs_exist() -> None:
 
     assert "CamppsStagingOUId" in outputs
     assert "CamppsStagingAccountId" in outputs
+
+
+def test_caliber_nonprod_ou_and_account_exist_under_apps() -> None:
+    template = synth_template()
+    template_json = template.to_json()
+
+    template.has_resource_properties(
+        "AWS::Organizations::OrganizationalUnit",
+        {
+            "Name": "Caliber",
+            "ParentId": {"Ref": Match.string_like_regexp("AppsOU.*")},
+            "Tags": Match.array_with(
+                [
+                    {"Key": "BusinessUnit", "Value": "Apps"},
+                    {"Key": "Project", "Value": "Caliber"},
+                ]
+            ),
+        },
+    )
+    template.has_resource_properties(
+        "AWS::Organizations::OrganizationalUnit",
+        {
+            "Name": "NonProd",
+            "ParentId": {"Ref": Match.string_like_regexp("AppsCaliberOU.*")},
+            "Tags": Match.array_with(
+                [
+                    {"Key": "AccountType", "Value": "NonProduction"},
+                    {"Key": "Environment", "Value": "NonProd"},
+                    {"Key": "Project", "Value": "Caliber"},
+                ]
+            ),
+        },
+    )
+    template.has_resource_properties(
+        "AWS::Organizations::Account",
+        {
+            "AccountName": "caliber-nonprod",
+            "Email": "jeff+caliber-nonprod@infiquetra.com",
+            "ParentIds": [{"Ref": Match.string_like_regexp("CaliberNonProdOU.*")}],
+            "RoleName": "OrganizationAccountAccessRole",
+            "Tags": Match.array_with(
+                [
+                    {"Key": "AccountType", "Value": "NonProduction"},
+                    {"Key": "BusinessUnit", "Value": "Apps"},
+                    {"Key": "Environment", "Value": "NonProd"},
+                    {"Key": "ManagedBy", "Value": "CDK"},
+                    {"Key": "Project", "Value": "Caliber"},
+                ]
+            ),
+        },
+    )
+
+    account_resource = next(
+        resource
+        for resource in template_json["Resources"].values()
+        if resource["Type"] == "AWS::Organizations::Account"
+        and resource["Properties"]["AccountName"] == "caliber-nonprod"
+    )
+    assert account_resource["DeletionPolicy"] == "Retain"
+
+    outputs = template_json["Outputs"]
+    assert "CaliberOUId" in outputs
+    assert "CaliberNonProdOUId" in outputs
+    assert "CaliberNonProdAccountId" in outputs
+    assert "CaliberNonProdBudgetName" in outputs
+
+
+def test_caliber_nonprod_has_50_dollar_monthly_budget_alarm() -> None:
+    template = synth_template()
+
+    template.has_resource_properties(
+        "AWS::Budgets::Budget",
+        {
+            "Budget": {
+                "BudgetName": "caliber-nonprod-monthly-50",
+                "BudgetType": "COST",
+                "TimeUnit": "MONTHLY",
+                "BudgetLimit": {"Amount": 50, "Unit": "USD"},
+                "CostFilters": {
+                    "LinkedAccount": [
+                        {
+                            "Fn::GetAtt": [
+                                Match.string_like_regexp("CaliberNonProdAccount.*"),
+                                "AccountId",
+                            ]
+                        }
+                    ]
+                },
+            },
+            "NotificationsWithSubscribers": Match.array_with(
+                [
+                    {
+                        "Notification": {
+                            "ComparisonOperator": "GREATER_THAN",
+                            "NotificationType": notification_type,
+                            "Threshold": threshold,
+                            "ThresholdType": "PERCENTAGE",
+                        },
+                        "Subscribers": [
+                            {
+                                "Address": "jeff@infiquetra.com",
+                                "SubscriptionType": "EMAIL",
+                            }
+                        ],
+                    }
+                    for notification_type in ("ACTUAL", "FORECASTED")
+                    for threshold in (50, 80, 100)
+                ]
+            ),
+        },
+    )
